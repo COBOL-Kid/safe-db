@@ -14,6 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.key.Key
@@ -154,9 +155,9 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
             ) {
                 LaunchedEffect(window) { window.minimumSize = Dimension(920, 560) }
                 LaunchedEffect(window, explore) {
-                    if (window.extendedState and java.awt.Frame.ICONIFIED != 0) {
-                        window.extendedState =
-                            window.extendedState and java.awt.Frame.ICONIFIED.inv()
+                    if (exploreWindowState.isMinimized) {
+                        exploreWindowState.isMinimized = false
+                        withFrameNanos {}
                     }
                     window.toFront()
                     window.requestFocus()

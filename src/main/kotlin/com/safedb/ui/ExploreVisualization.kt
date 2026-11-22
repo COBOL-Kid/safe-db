@@ -108,7 +108,6 @@ internal fun VisualizationConfigPanel(
         }
     }
     val transitionMessage = transitionNotice?.takeIf { it.first == config }?.second
-    val suggested = remember(sample, tables) { suggestedVisualizationTemplates(sample, tables, 5) }
     val effectiveType =
         if (config.chartType == ChartType.Auto) resolvedChartType else config.chartType
     val dualAxisEligible = config.supportsSecondaryAxis(effectiveType)
@@ -116,8 +115,7 @@ internal fun VisualizationConfigPanel(
     val horizontalBars =
         effectiveType == ChartType.Bar && config.barOrientation == BarOrientation.Horizontal
     val stackedDualAxisNote =
-        config.isStackedBar(effectiveType) &&
-            config.copy(barArrangement = BarArrangement.Grouped).usesSecondaryAxis(effectiveType)
+        config.isStackedBar(effectiveType) && config.series == null && config.hasMixedAxes()
 
     editingFilter?.let { filter ->
         FilterSettingsDialog(
@@ -171,11 +169,15 @@ internal fun VisualizationConfigPanel(
                 }
             }
 
-            if (!config.isConfigured() && suggested.isNotEmpty()) {
-                ConfigSection("Suggested for this sample") {
-                    suggested.take(3).forEach { template ->
-                        val ready = template.result as VisualizationTemplateBuildResult.Ready
-                        TemplateCard(template, false) { onApplyTemplate(ready.config) }
+            if (!config.isConfigured()) {
+                val suggested =
+                    remember(sample, tables) { suggestedVisualizationTemplates(sample, tables, 3) }
+                if (suggested.isNotEmpty()) {
+                    ConfigSection("Suggested for this sample") {
+                        suggested.forEach { template ->
+                            val ready = template.result as VisualizationTemplateBuildResult.Ready
+                            TemplateCard(template, false) { onApplyTemplate(ready.config) }
+                        }
                     }
                 }
             }

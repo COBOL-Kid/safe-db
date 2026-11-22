@@ -1,8 +1,5 @@
-package com.safedb.ui
+package com.safedb.ui.chart
 
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
@@ -11,39 +8,14 @@ import com.safedb.explore.BarOrientation
 import com.safedb.explore.ChartType
 import com.safedb.explore.MeasureFn
 import com.safedb.explore.NumberFormatKind
-import com.safedb.explore.PivotGrouping
 import com.safedb.explore.PivotNumberFormat
 import com.safedb.explore.ValueAxis
 import com.safedb.explore.VisualizationConfig
-import com.safedb.explore.VisualizationField
 import com.safedb.explore.VisualizationMark
 import com.safedb.explore.VisualizationMeasure
 import com.safedb.explore.VisualizationPreview
 import com.safedb.explore.VisualizationSeries
-import com.safedb.model.QueryResult
-import com.safedb.model.ResultCell
-import com.safedb.model.ResultColumn
 import com.safedb.model.ThemePalette
-import com.safedb.ui.chart.DarkBarLabelColor
-import com.safedb.ui.chart.NiceValueAxis
-import com.safedb.ui.chart.PlotInsets
-import com.safedb.ui.chart.barValueLabelText
-import com.safedb.ui.chart.categoryLabelIndices
-import com.safedb.ui.chart.categoryLabelSpanMaxWidth
-import com.safedb.ui.chart.categoryLabelStep
-import com.safedb.ui.chart.clampLabelX
-import com.safedb.ui.chart.compactNumber
-import com.safedb.ui.chart.contrastingBarLabelColor
-import com.safedb.ui.chart.inBarLabelOrNull
-import com.safedb.ui.chart.legendSeriesLabel
-import com.safedb.ui.chart.niceValueAxis
-import com.safedb.ui.chart.plotRect
-import com.safedb.ui.chart.toCssHex
-import com.safedb.ui.chart.tooltipAlignsToStart
-import com.safedb.ui.chart.valueTickMaxWidth
-import com.safedb.ui.chart.visualizationGeometry
-import com.safedb.ui.chart.visualizationValueAxis
-import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.ui.theme.paletteSpecFor
 import java.util.Locale
 import kotlin.math.max
@@ -51,11 +23,9 @@ import kotlin.math.min
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-class VisualizationChartTest {
+class ChartMathTest {
     @Test
     fun barGeometryProducesDistinctClickableRegionsAtNormalAndNarrowSizes() {
         val preview = preview(ChartType.Bar)
@@ -403,39 +373,6 @@ class VisualizationChartTest {
     }
 
     @Test
-    fun inBarLabelOmitsValuesThatDoNotFitRatherThanChangingUnits() {
-        assertNull(inBarLabelOrNull("50%", formattedWidth = 40f, available = 20f))
-        assertEquals("50%", inBarLabelOrNull("50%", formattedWidth = 20f, available = 40f))
-    }
-
-    @Test
-    fun switchingToScatterClearsIncompatibleAssignments() {
-        val sample =
-            QueryResult(
-                columns =
-                    listOf(ResultColumn("status", "varchar"), ResultColumn("amount", "decimal")),
-                rows = emptyList(),
-                rowCount = 0,
-                truncated = false,
-                warnings = emptyList(),
-            )
-        val fields = buildExploreFieldOptions(sample, emptyList())
-        val config =
-            VisualizationConfig(
-                chartType = ChartType.Bar,
-                x = VisualizationField("status"),
-                values = listOf(VisualizationMeasure.countRows()),
-                size = VisualizationField("status"),
-            )
-
-        val scatter = config.forChartType(ChartType.Scatter, fields)
-
-        assertEquals(null, scatter.x)
-        assertTrue(scatter.values.isEmpty())
-        assertEquals(null, scatter.size)
-    }
-
-    @Test
     fun niceValueAxisProducesCleanIntervalsAcrossReportRanges() {
         val reportA = niceValueAxis(0.0, 3_624_326.7)
         assertEquals(listOf(0.0, 1_000_000.0, 2_000_000.0, 3_000_000.0, 4_000_000.0), reportA.ticks)
@@ -460,6 +397,14 @@ class VisualizationChartTest {
         val overflowSpan = niceValueAxis(-1e308, 1e308)
         assertTrue(overflowSpan.max > overflowSpan.min)
         assertTrue(overflowSpan.ticks.all(Double::isFinite))
+
+        val extremeMax = niceValueAxis(0.0, 1.7e308)
+        assertTrue(extremeMax.max > extremeMax.min)
+        assertTrue(extremeMax.ticks.all(Double::isFinite))
+
+        val extremeSymmetric = niceValueAxis(-8e307, 8e307)
+        assertTrue(extremeSymmetric.max > extremeSymmetric.min)
+        assertTrue(extremeSymmetric.ticks.all(Double::isFinite))
     }
 
     @Test
@@ -531,84 +476,6 @@ class VisualizationChartTest {
     }
 
     @Test
-    fun visualizationSidebarAddValueAddsSecondMeasureAndTemplatesOpensDialog() {
-        val sample =
-            QueryResult(
-                columns =
-                    listOf(
-                        ResultColumn("t0__category", "varchar"),
-                        ResultColumn("t0__amount", "decimal"),
-                        ResultColumn("t0__qty", "integer"),
-                    ),
-                rows =
-                    listOf(
-                        listOf(
-                            ResultCell.text("Services"),
-                            ResultCell.float(100.0),
-                            ResultCell.integer(2),
-                        ),
-                    ),
-                rowCount = 1,
-                truncated = false,
-                warnings = emptyList(),
-            )
-        val fields = buildExploreFieldOptions(sample, emptyList())
-        var config =
-            VisualizationConfig(
-                chartType = ChartType.Bar,
-                x = VisualizationField("t0__category", "category"),
-                values =
-                    listOf(
-                        VisualizationMeasure(
-                            "sum_amount",
-                            MeasureFn.Sum,
-                            "t0__amount",
-                            "Sum amount",
-                        ),
-                    ),
-            )
-
-        withComposeScene(
-            width = 480,
-            height = 900,
-            content = {
-                SafeDbTheme(isDark = false) {
-                    VisualizationConfigPanel(
-                        config = config,
-                        sample = sample,
-                        tables = emptyList(),
-                        fields = fields,
-                        memberOptionsFor = { emptyList() },
-                        onConfigChange = { config = it },
-                        onApplyTemplate = { config = it },
-                        onReset = {},
-                        onHide = {},
-                    )
-                }
-            },
-        ) { scene ->
-            val addValueNode = scene.requireContaining("Add value")
-            scene.click(addValueNode.boundsInRoot.center)
-            scene.settle()
-
-            // Value picker opens with "Count rows", not "Replace X field".
-            val countRows = scene.requireContaining("Count rows")
-            scene.click(countRows.boundsInRoot.center)
-            scene.settle()
-
-            assertEquals("t0__category", config.x?.column)
-            assertEquals(2, config.values.size)
-            assertEquals(MeasureFn.Count, config.values[1].fn)
-
-            val templatesButton = scene.requireExact("Templates")
-            scene.click(templatesButton.boundsInRoot.center)
-            scene.settle()
-
-            assertNotNull(scene.findContaining("Visualization templates"))
-        }
-    }
-
-    @Test
     fun dualAxisGeometryScalesPrimaryAndSecondaryIndependentlyAcrossBarAndLine() {
         val preview =
             VisualizationPreview(
@@ -676,9 +543,10 @@ class VisualizationChartTest {
     }
 
     @Test
-    fun legendSeriesLabelNormalizeAndSidebarAxisToggleWorkTogether() {
+    fun legendSeriesLabelIncludesAxisSideOnlyWhenDualAxisIsActive() {
         val primary = VisualizationSeries("a", "Sum revenue", ValueAxis.Primary)
         val secondary = VisualizationSeries("b", "Count", ValueAxis.Secondary)
+
         assertEquals("Sum revenue", legendSeriesLabel(primary, hasSecondaryAxis = false, false))
         assertEquals(
             "Sum revenue (left)",
@@ -690,280 +558,6 @@ class VisualizationChartTest {
             legendSeriesLabel(primary, hasSecondaryAxis = true, true),
         )
         assertEquals("Count (top)", legendSeriesLabel(secondary, hasSecondaryAxis = true, true))
-
-        val single = listOf(VisualizationMeasure("b", MeasureFn.Count, axis = ValueAxis.Secondary))
-        assertEquals(ValueAxis.Primary, normalizeMeasureAxes(single).single().axis)
-        val allSecondary =
-            listOf(
-                VisualizationMeasure("a", MeasureFn.Count, axis = ValueAxis.Secondary),
-                VisualizationMeasure("b", MeasureFn.Count, axis = ValueAxis.Secondary),
-            )
-        assertEquals(
-            listOf(ValueAxis.Primary, ValueAxis.Secondary),
-            normalizeMeasureAxes(allSecondary).map { it.axis },
-        )
-
-        val sample =
-            QueryResult(
-                columns =
-                    listOf(
-                        ResultColumn("t0__category", "varchar"),
-                        ResultColumn("t0__amount", "decimal"),
-                    ),
-                rows = listOf(listOf(ResultCell.text("Services"), ResultCell.float(100.0))),
-                rowCount = 1,
-                truncated = false,
-                warnings = emptyList(),
-            )
-        val fields = buildExploreFieldOptions(sample, emptyList())
-        var config by
-            mutableStateOf(
-                VisualizationConfig(
-                    chartType = ChartType.Bar,
-                    x = VisualizationField("t0__category", "category"),
-                    values =
-                        listOf(
-                            VisualizationMeasure(
-                                "sum_amount",
-                                MeasureFn.Sum,
-                                "t0__amount",
-                                "Sum amount",
-                            ),
-                            VisualizationMeasure("count", MeasureFn.Count, label = "Count"),
-                        ),
-                ),
-            )
-        withComposeScene(
-            width = 480,
-            height = 900,
-            content = {
-                SafeDbTheme(isDark = false) {
-                    VisualizationConfigPanel(
-                        config = config,
-                        sample = sample,
-                        tables = emptyList(),
-                        fields = fields,
-                        memberOptionsFor = { emptyList() },
-                        resolvedChartType = ChartType.Bar,
-                        onConfigChange = { config = it },
-                        onApplyTemplate = { config = it },
-                        onReset = {},
-                        onHide = {},
-                    )
-                }
-            },
-        ) { scene ->
-            // Toggle second measure to Right axis.
-            val rightPills = scene.nodesLabeled("Right axis")
-            assertEquals(2, rightPills.size)
-            scene.click(rightPills[1].boundsInRoot.center)
-            scene.settle()
-            assertEquals(ValueAxis.Secondary, config.values[1].axis)
-
-            // First measure is the only Primary left, so clicking its Right axis pill is a no-op.
-            scene.click(scene.nodesLabeled("Right axis")[0].boundsInRoot.center)
-            scene.settle()
-            assertEquals(ValueAxis.Primary, config.values[0].axis)
-
-            // Switching to Stacked shows the shared-axis note while preserving the stored axis.
-            config = config.copy(barArrangement = BarArrangement.Stacked)
-            scene.settle()
-            assertNotNull(scene.findContaining("Stacked bars share one axis."))
-            assertEquals(ValueAxis.Secondary, config.values[1].axis)
-
-            // Switching to Horizontal shows Bottom/Top axis labels.
-            config =
-                config.copy(
-                    barArrangement = BarArrangement.Grouped,
-                    barOrientation = BarOrientation.Horizontal,
-                )
-            scene.settle()
-            assertEquals(2, scene.nodesLabeled("Top axis").size)
-            assertEquals(2, scene.nodesLabeled("Bottom axis").size)
-
-            // Switching to KPI via forChartType resets axis to Primary.
-            val kpiConfig = config.forChartType(ChartType.Kpi, fields)
-            assertEquals(ValueAxis.Primary, kpiConfig.values.single().axis)
-        }
-    }
-
-    @Test
-    fun histogramTransitionPromotesNumericMeasureClearsNoticeAndHidesDeadOptions() {
-        val sample =
-            QueryResult(
-                columns =
-                    listOf(
-                        ResultColumn("t0__category", "varchar"),
-                        ResultColumn("t0__region", "varchar"),
-                        ResultColumn("t0__amount", "decimal"),
-                    ),
-                rows =
-                    listOf(
-                        listOf(
-                            ResultCell.text("Services"),
-                            ResultCell.text("West"),
-                            ResultCell.float(100.0),
-                        ),
-                    ),
-                rowCount = 1,
-                truncated = false,
-                warnings = emptyList(),
-            )
-        val fields = buildExploreFieldOptions(sample, emptyList())
-        val barWithSeries =
-            VisualizationConfig(
-                chartType = ChartType.Bar,
-                x = VisualizationField("t0__category", "category"),
-                values =
-                    listOf(
-                        VisualizationMeasure(
-                            "sum_amount",
-                            MeasureFn.Sum,
-                            "t0__amount",
-                            "Sum amount",
-                        ),
-                    ),
-                series = VisualizationField("t0__region", "region"),
-            )
-        val promoted = barWithSeries.forChartType(ChartType.Histogram, fields)
-        assertEquals("t0__amount", promoted.x?.column)
-        assertEquals("amount", promoted.x?.label)
-        assertTrue(promoted.values.isEmpty())
-        assertNull(promoted.series)
-        assertEquals(
-            "Moved amount to X for histogram; removed incompatible series assignment.",
-            chartTypeTransitionMessage(barWithSeries, promoted),
-        )
-
-        val barWithoutSeries = barWithSeries.copy(series = null)
-        assertEquals(
-            "Moved amount to X for histogram.",
-            chartTypeTransitionMessage(
-                barWithoutSeries,
-                barWithoutSeries.forChartType(ChartType.Histogram, fields),
-            ),
-        )
-
-        // Count-rows-only bar has no numeric measure to promote.
-        val countOnlyBar = barWithoutSeries.copy(values = listOf(VisualizationMeasure.countRows()))
-        val countOnlyHistogram = countOnlyBar.forChartType(ChartType.Histogram, fields)
-        assertNull(countOnlyHistogram.x)
-        assertEquals(
-            "Removed incompatible X, values assignments.",
-            chartTypeTransitionMessage(countOnlyBar, countOnlyHistogram),
-        )
-
-        // Options summary adapts to active chart type.
-        assertEquals(
-            "value sort · Top 20",
-            visualizationOptionsSummary(barWithoutSeries, ChartType.Bar),
-        )
-        assertEquals("value sort", visualizationOptionsSummary(barWithoutSeries, ChartType.Line))
-        assertEquals("Auto bins", visualizationOptionsSummary(promoted, ChartType.Histogram))
-        assertEquals(
-            "Bin size 250",
-            visualizationOptionsSummary(
-                promoted.copy(x = promoted.x?.copy(grouping = PivotGrouping.NumberBin(" 250 "))),
-                ChartType.Histogram,
-            ),
-        )
-        listOf("0", "-10", "abc").forEach { invalid ->
-            assertEquals(
-                "Auto bins",
-                visualizationOptionsSummary(
-                    promoted.copy(
-                        x = promoted.x?.copy(grouping = PivotGrouping.NumberBin(invalid)),
-                    ),
-                    ChartType.Histogram,
-                ),
-            )
-        }
-        assertEquals(
-            "Format & title",
-            visualizationOptionsSummary(barWithoutSeries, ChartType.Scatter),
-        )
-        assertEquals("Title & display", visualizationOptionsSummary(VisualizationConfig(), null))
-
-        var config by mutableStateOf(barWithoutSeries)
-        // Keep resolvedChartType pinned to stale ChartType.Bar to verify explicit chartType
-        // switches update Options immediately before debounced preview recomputation finishes.
-        withComposeScene(
-            width = 480,
-            height = 1100,
-            content = {
-                SafeDbTheme(isDark = false) {
-                    VisualizationConfigPanel(
-                        config = config,
-                        sample = sample,
-                        tables = emptyList(),
-                        fields = fields,
-                        memberOptionsFor = { emptyList() },
-                        resolvedChartType = ChartType.Bar,
-                        onConfigChange = { config = it },
-                        onApplyTemplate = { config = it },
-                        onReset = { config = VisualizationConfig() },
-                        onHide = {},
-                    )
-                }
-            },
-        ) { scene ->
-            // Switch Bar -> Histogram: promotes amount to X and shows the transition note.
-            scene.click(scene.requireExact("Histogram").boundsInRoot.center)
-            scene.settle()
-            assertEquals("t0__amount", config.x?.column)
-            assertNotNull(scene.findContaining("Moved amount to X for histogram."))
-            assertNotNull(scene.findContaining("Auto bins"))
-
-            // Expand Options: Histogram hides Sort and Top categories, shows Bin size and value
-            // labels even while preview resolvedChartType is still stale Bar.
-            scene.click(scene.requireContaining("Options").boundsInRoot.center)
-            scene.settle()
-            val binSizeField = scene.requireContaining("Bin size (blank = automatic)")
-            assertNotNull(scene.findContaining("Show value labels"))
-            assertNull(scene.findExact("Sort"))
-            assertNull(scene.findExact("Top categories"))
-
-            // Editing Bin size preserves any existing start and clearing it with no start resets
-            // grouping to None instead of leaving an invalid NumberBin("").
-            config =
-                config.copy(
-                    x = config.x?.copy(grouping = PivotGrouping.NumberBin("250", start = "17")),
-                )
-            scene.settle()
-            val setText =
-                binSizeField.config[androidx.compose.ui.semantics.SemanticsActions.SetText].action!!
-            setText.invoke(androidx.compose.ui.text.AnnotatedString("500"))
-            scene.settle()
-            assertEquals(PivotGrouping.NumberBin("500", start = "17"), config.x?.grouping)
-
-            config = config.copy(x = config.x?.copy(grouping = PivotGrouping.NumberBin("500")))
-            scene.settle()
-            setText.invoke(androidx.compose.ui.text.AnnotatedString(""))
-            scene.settle()
-            assertEquals(PivotGrouping.Exact, config.x?.grouping)
-
-            // Re-trigger transition note via Bar -> Histogram, then toggle Show value labels to
-            // verify it clears immediately and reverting does not resurrect it.
-            config = barWithoutSeries
-            scene.settle()
-            scene.click(scene.requireExact("Histogram").boundsInRoot.center)
-            scene.settle()
-            assertNotNull(scene.findContaining("Moved amount to X for histogram."))
-            scene.click(scene.requireContaining("Show value labels").boundsInRoot.center)
-            scene.settle()
-            assertNull(scene.findContaining("Moved amount to X for histogram."))
-            scene.click(scene.requireContaining("Show value labels").boundsInRoot.center)
-            scene.settle()
-            assertNull(scene.findContaining("Moved amount to X for histogram."))
-
-            // Switch to Line: shows Sort, hides Top categories and Show value labels.
-            scene.click(scene.requireExact("Line").boundsInRoot.center)
-            scene.settle()
-            assertNotNull(scene.findExact("Sort"))
-            assertNull(scene.findExact("Top categories"))
-            assertNull(scene.findContaining("Show value labels"))
-            assertNotNull(scene.findContaining("value sort"))
-        }
     }
 
     @Test
@@ -1039,6 +633,107 @@ class VisualizationChartTest {
         val lastWidth = min(80f, lastMax)
         val lastLeft = clampLabelX(lastCenter - lastWidth / 2f, lastWidth, plotLeft, canvasWidth)
         assertTrue(lastLeft >= prevRight + gapPx)
+    }
+
+    @Test
+    fun layoutHorizontalCategoryLabelsSortsDecimatesAndPreventsNeighborOverlap() {
+        val plotLeft = 72f
+        val plotWidth = 800f
+        val canvasWidth = 900f
+        val gapPx = 6f
+
+        assertTrue(
+            layoutHorizontalCategoryLabels(
+                    entries = emptyList(),
+                    plotLeft = plotLeft,
+                    plotWidth = plotWidth,
+                    canvasWidth = canvasWidth,
+                    gapPx = gapPx,
+                    measureFitted = { _, w -> w },
+                    measuredWidth = { it },
+                )
+                .isEmpty(),
+        )
+
+        // Unsorted scatter entries: cluster near plotLeft collapses to one label while isolated
+        // right-edge point stays labeled and clamped inside canvasWidth.
+        val scatterEntries =
+            listOf(
+                CategoryLabelEntry("far", "900", center = 885f, naturalWidth = 72f),
+                CategoryLabelEntry("c1", "10", center = 92f, naturalWidth = 52f),
+                CategoryLabelEntry("c2", "11", center = 96f, naturalWidth = 52f),
+                CategoryLabelEntry("mid", "400", center = 480f, naturalWidth = 60f),
+            )
+        val naturalWidths = scatterEntries.associate { it.text to it.naturalWidth }
+        val scatterPlaced =
+            layoutHorizontalCategoryLabels(
+                entries = scatterEntries,
+                plotLeft = plotLeft,
+                plotWidth = plotWidth,
+                canvasWidth = canvasWidth,
+                gapPx = gapPx,
+                measureFitted = { text, maxWidth -> min(naturalWidths.getValue(text), maxWidth) },
+                measuredWidth = { it },
+            )
+        assertEquals(listOf("c1", "mid", "far"), scatterPlaced.map { it.entry.xKey })
+        assertTrue(scatterPlaced.first().drawX >= plotLeft)
+        assertTrue(scatterPlaced.last().drawX + scatterPlaced.last().measured <= canvasWidth)
+        scatterPlaced.zipWithNext().forEach { (left, right) ->
+            assertTrue(
+                left.drawX + left.measured + gapPx <= right.drawX,
+                "Expected ${left.entry.xKey} right edge to stay clear of ${right.entry.xKey}",
+            )
+        }
+
+        // Single entry gets the full canvas span from plotLeft to canvasWidth.
+        val singlePlaced =
+            layoutHorizontalCategoryLabels(
+                entries =
+                    listOf(CategoryLabelEntry("only", "Only", center = 100f, naturalWidth = 140f)),
+                plotLeft = plotLeft,
+                plotWidth = plotWidth,
+                canvasWidth = canvasWidth,
+                gapPx = gapPx,
+                measureFitted = { _, maxWidth -> min(140f, maxWidth) },
+                measuredWidth = { it },
+            )
+        assertEquals(1, singlePlaced.size)
+        assertEquals(canvasWidth - plotLeft, singlePlaced.single().maxWidth)
+
+        // Dense 20-bin histogram: every placed label fits inside [plotLeft, canvasWidth] with at
+        // least gapPx clearance between consecutive fitted labels.
+        val histogramEntries =
+            List(20) { index ->
+                val text = "${index * 50} – ${(index + 1) * 50}"
+                val natural = if (index == 0) 52f else 72f
+                CategoryLabelEntry(
+                    xKey = "bin-$index",
+                    text = text,
+                    center = plotLeft + 20f + index * 40f,
+                    naturalWidth = natural,
+                )
+            }
+        val histWidths = histogramEntries.associate { it.text to it.naturalWidth }
+        val histPlaced =
+            layoutHorizontalCategoryLabels(
+                entries = histogramEntries,
+                plotLeft = plotLeft,
+                plotWidth = plotWidth,
+                canvasWidth = canvasWidth,
+                gapPx = gapPx,
+                measureFitted = { text, maxWidth -> min(histWidths.getValue(text), maxWidth) },
+                measuredWidth = { it },
+            )
+        assertEquals("bin-0", histPlaced[0].entry.xKey)
+        assertEquals("bin-3", histPlaced[1].entry.xKey)
+        assertEquals(52f, histPlaced[0].measured)
+        histPlaced.forEach { placed ->
+            assertTrue(placed.drawX >= plotLeft)
+            assertTrue(placed.drawX + placed.measured <= canvasWidth)
+        }
+        histPlaced.zipWithNext().forEach { (left, right) ->
+            assertTrue(left.drawX + left.measured + gapPx <= right.drawX)
+        }
     }
 
     private fun preview(type: ChartType) =

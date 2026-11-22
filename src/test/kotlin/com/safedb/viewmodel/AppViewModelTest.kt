@@ -135,7 +135,10 @@ class AppViewModelTest {
                     warnings = emptyList(),
                 )
 
-            viewModel.openExplore(connection, sampleSpec(), result)
+            viewModel.openExplore(
+                connection,
+                BuilderQuerySample(connection.id, sampleSpec(), result),
+            )
 
             assertEquals("Local", viewModel.explore.value?.session?.connectionLabel)
             viewModel.closeExplore()
@@ -158,10 +161,11 @@ class AppViewModelTest {
                         warnings = emptyList(),
                     )
 
-                viewModel.openExplore(connection, sampleSpec(), result)
+                val sample = BuilderQuerySample(connection.id, sampleSpec(), result)
+                viewModel.openExplore(connection, sample)
                 assertEquals(ExploreOrigin.Builder, viewModel.exploreOrigin.value)
 
-                viewModel.openExplore(connection, sampleSpec(), result, ExploreOrigin.Sql)
+                viewModel.openExplore(connection, sample, ExploreOrigin.Sql)
                 assertEquals(ExploreOrigin.Sql, viewModel.exploreOrigin.value)
             } finally {
                 viewModel.close()
@@ -207,8 +211,11 @@ class AppViewModelTest {
             val specA = sampleSpec()
             val specB = sampleSpec().copy(limit = 50)
 
-            viewModel.openExplore(connection, specA, sampleA)
-            viewModel.refreshExploreSample(connection, specB, sampleB)
+            viewModel.openExplore(connection, BuilderQuerySample(connection.id, specA, sampleA))
+            viewModel.refreshExploreSample(
+                connection,
+                BuilderQuerySample(connection.id, specB, sampleB),
+            )
 
             val session = viewModel.explore.value?.session
             assertEquals(2, session?.sample?.rowCount)
@@ -216,11 +223,8 @@ class AppViewModelTest {
             assertEquals(exploreSpecHash(specB), session?.baseSpecHash)
             assertEquals(50, session?.builderLimit)
 
-            viewModel.refreshExploreSample(
-                connection.copy(id = "c2", name = "Other"),
-                specA,
-                sampleA,
-            )
+            val other = connection.copy(id = "c2", name = "Other")
+            viewModel.refreshExploreSample(other, BuilderQuerySample(other.id, specA, sampleA))
             assertEquals("c1", viewModel.explore.value?.session?.connectionId)
             assertEquals("Local", viewModel.explore.value?.session?.connectionLabel)
             assertEquals(sampleB.rows, viewModel.explore.value?.session?.sample?.rows)
@@ -760,15 +764,49 @@ class AppViewModelTest {
                     viewModel.exploreOriginContext("c1", null, connections, ExploreOrigin.Builder)
                 assertTrue(builderContext.sampleRefreshEnabled)
                 assertEquals(builderSample.spec, builderContext.currentSpec)
-                assertFalse(
-                    viewModel.explore.value!!.isStale(
+                assertEquals(
+                    SampleStaleness.Fresh,
+                    viewModel.explore.value!!.staleness(
                         builderContext.currentSpec,
                         "c1",
                         builderContext.latestSampleRunId,
                     ),
                 )
 
+                val untrackedSample =
+                    BuilderQuerySample(connection.id, builderSample.spec, builderSample.result)
+                assertNull(untrackedSample.runId)
+                assertNotNull(builderContext.latestSampleRunId)
+                viewModel.openExplore(connection, untrackedSample)
+                assertEquals(
+                    SampleStaleness.Fresh,
+                    viewModel.explore.value!!.staleness(
+                        builderContext.currentSpec,
+                        "c1",
+                        builderContext.latestSampleRunId,
+                    ),
+                )
+
+                viewModel.openExplore(connection, builderSample)
                 viewModel.query.setLimit(40)
+                val staleBuilderContext =
+                    viewModel.exploreOriginContext("c1", null, connections, ExploreOrigin.Builder)
+                assertFalse(staleBuilderContext.sampleRefreshEnabled)
+                assertNull(staleBuilderContext.latestSampleRunId)
+                assertEquals(
+                    SampleStaleness.SpecChanged,
+                    viewModel.explore.value!!.staleness(
+                        staleBuilderContext.currentSpec,
+                        "c1",
+                        staleBuilderContext.latestSampleRunId,
+                    ),
+                )
+                viewModel.refreshActiveExploreSample("c1", null, connections)
+                assertEquals(
+                    builderSample.spec.limit,
+                    viewModel.explore.value?.session?.builderLimit,
+                )
+
                 viewModel.query.run("c1")
                 advanceUntilIdle()
                 viewModel.refreshActiveExploreSample("c1", null, connections)
@@ -790,8 +828,9 @@ class AppViewModelTest {
                     viewModel.exploreOriginContext("c1", sqlSpec, connections, ExploreOrigin.Sql)
                 assertTrue(sqlContext.sampleRefreshEnabled)
                 assertEquals(sqlSpec, sqlContext.currentSpec)
-                assertFalse(
-                    viewModel.explore.value!!.isStale(
+                assertEquals(
+                    SampleStaleness.Fresh,
+                    viewModel.explore.value!!.staleness(
                         sqlContext.currentSpec,
                         "c1",
                         sqlContext.latestSampleRunId,
@@ -811,18 +850,12 @@ class AppViewModelTest {
                         rerunContext.latestSampleRunId,
                     ),
                 )
-                assertTrue(
-                    viewModel.explore.value!!.isStale(
-                        rerunContext.currentSpec,
-                        "c1",
-                        rerunContext.latestSampleRunId,
-                    ),
-                )
                 viewModel.refreshActiveExploreSample("c1", sqlSpec, connections)
                 val refreshedContext =
                     viewModel.exploreOriginContext("c1", sqlSpec, connections, ExploreOrigin.Sql)
-                assertFalse(
-                    viewModel.explore.value!!.isStale(
+                assertEquals(
+                    SampleStaleness.Fresh,
+                    viewModel.explore.value!!.staleness(
                         refreshedContext.currentSpec,
                         "c1",
                         refreshedContext.latestSampleRunId,
@@ -855,7 +888,10 @@ class AppViewModelTest {
                         truncated = false,
                         warnings = emptyList(),
                     )
-                viewModel.openExplore(connection, sampleSpec(), sample)
+                viewModel.openExplore(
+                    connection,
+                    BuilderQuerySample(connection.id, sampleSpec(), sample),
+                )
                 assertNotNull(viewModel.explore.value)
 
                 var selectedSchema: String? = null

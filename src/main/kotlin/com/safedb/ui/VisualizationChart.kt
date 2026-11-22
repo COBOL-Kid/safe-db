@@ -48,16 +48,15 @@ import com.safedb.explore.ChartType
 import com.safedb.explore.VisualizationConfig
 import com.safedb.explore.VisualizationMark
 import com.safedb.explore.VisualizationPreview
+import com.safedb.ui.chart.CategoryLabelEntry
 import com.safedb.ui.chart.NiceValueAxis
 import com.safedb.ui.chart.PlotInsets
 import com.safedb.ui.chart.barValueLabelText
-import com.safedb.ui.chart.categoryLabelIndices
-import com.safedb.ui.chart.categoryLabelSpanMaxWidth
 import com.safedb.ui.chart.categoryLabelStep
 import com.safedb.ui.chart.clampLabelX
 import com.safedb.ui.chart.compactNumber
 import com.safedb.ui.chart.contrastingBarLabelColor
-import com.safedb.ui.chart.inBarLabelOrNull
+import com.safedb.ui.chart.layoutHorizontalCategoryLabels
 import com.safedb.ui.chart.legendSeriesLabel
 import com.safedb.ui.chart.tooltipAlignsToStart
 import com.safedb.ui.chart.valueTickMaxWidth
@@ -67,7 +66,6 @@ import com.safedb.ui.chart.visualizationValueAxis
 import com.safedb.ui.theme.DataMono
 import com.safedb.ui.theme.SafeDbTheme
 import kotlin.math.max
-import kotlin.math.min
 
 private const val LegendEntryLimit = 12
 
@@ -260,7 +258,13 @@ private fun PlotChart(
     val surfaceColor = MaterialTheme.colorScheme.surface
     val seriesPalette = SafeDbTheme.colors.series
     val labelStyle = DataMono.copy(color = labelColor)
-    val seriesIndex = preview.series.mapIndexed { index, series -> series.key to index }.toMap()
+    val seriesIndex =
+        remember(preview) {
+            preview.series.mapIndexed { index, series -> series.key to index }.toMap()
+        }
+    val marksById = remember(preview) { preview.marks.associateBy { it.id } }
+    val marksBySeries = remember(preview) { preview.marks.groupBy { it.seriesKey } }
+    val categoryMarks = remember(preview) { preview.marks.distinctBy { it.xKey } }
     val horizontalBars =
         preview.chartType == ChartType.Bar && config.barOrientation == BarOrientation.Horizontal
     val density = LocalDensity.current
@@ -269,11 +273,9 @@ private fun PlotChart(
     val maxGutter = with(density) { 180.dp.toPx() }
     val categoryLabelWidths =
         remember(preview, labelStyle, textMeasurer) {
-            preview.marks
-                .distinctBy { it.xKey }
-                .associate { mark ->
-                    mark.xKey to textMeasurer.measure(mark.xLabel, labelStyle).size.width.toFloat()
-                }
+            categoryMarks.associate { mark ->
+                mark.xKey to textMeasurer.measure(mark.xLabel, labelStyle).size.width.toFloat()
+            }
         }
 
     // Gutters are derived from measured label sizes, not fixed guesses, so nothing is clipped.
@@ -315,7 +317,7 @@ private fun PlotChart(
             val lastCategory =
                 if (preview.chartType == ChartType.Scatter)
                     preview.marks.maxByOrNull { it.xValue ?: Double.NEGATIVE_INFINITY }
-                else preview.marks.distinctBy { it.xKey }.lastOrNull()
+                else categoryMarks.lastOrNull()
             val lastCategoryWidth = lastCategory?.let { categoryLabelWidths[it.xKey] ?: 0f } ?: 0f
             if (horizontalBars) {
                 val category = categoryLabelWidths.values.maxOrNull() ?: 0f
@@ -362,7 +364,7 @@ private fun PlotChart(
                                 ?.let { pointer ->
                                     geometry.regions.firstOrNull { it.contains(pointer) }?.markId
                                 }
-                                ?.let { id -> preview.marks.firstOrNull { it.id == id } }
+                                ?.let(marksById::get)
                     }
                     .onPointerEvent(PointerEventType.Exit) { hovered = null }
                     .pointerInput(geometry, preview) {
@@ -481,7 +483,7 @@ private fun PlotChart(
                     ChartType.Bar,
                     ChartType.Histogram ->
                         geometry.regions.forEach { region ->
-                            val mark = preview.marks.first { it.id == region.markId }
+                            val mark = marksById[region.markId] ?: return@forEach
                             val color =
                                 seriesPalette[
                                     seriesIndex[mark.seriesKey]?.rem(seriesPalette.size) ?: 0]
@@ -502,11 +504,8 @@ private fun PlotChart(
                                         DataMono.copy(color = contrastingBarLabelColor(color)),
                                     )
                                 if (
-                                    inBarLabelOrNull(
-                                        labelText,
-                                        label.size.width.toFloat(),
-                                        available,
-                                    ) != null && label.size.height <= region.bounds.height - 2f
+                                    label.size.width <= available &&
+                                        label.size.height <= region.bounds.height - 2f
                                 ) {
                                     drawText(
                                         label,
@@ -522,37 +521,33 @@ private fun PlotChart(
                             }
                         }
                     ChartType.Line -> {
-                        preview.marks
-                            .groupBy { it.seriesKey }
-                            .forEach { (key, marks) ->
-                                val color =
-                                    seriesPalette[seriesIndex[key]?.rem(seriesPalette.size) ?: 0]
-                                marks.zipWithNext().forEach { (left, right) ->
-                                    // The first frame draws before the measured size feeds back
-                                    // into geometry, so points can be missing.
-                                    val start = geometry.points[left.id] ?: return@forEach
-                                    val end = geometry.points[right.id] ?: return@forEach
-                                    drawLine(color, start, end, strokeWidth = 3f)
-                                }
-                                marks.forEach { mark ->
-                                    val point = geometry.points[mark.id] ?: return@forEach
-                                    drawCircle(
-                                        color,
-                                        if (hovered?.id == mark.id) 7f else 5f,
-                                        point,
-                                    )
-                                    drawCircle(surfaceColor, 2f, point)
-                                }
+                        marksBySeries.forEach { (key, marks) ->
+                            val color =
+                                seriesPalette[seriesIndex[key]?.rem(seriesPalette.size) ?: 0]
+                            marks.zipWithNext().forEach { (left, right) ->
+                                // The first frame draws before the measured size feeds back
+                                // into geometry, so points can be missing.
+                                val start = geometry.points[left.id] ?: return@forEach
+                                val end = geometry.points[right.id] ?: return@forEach
+                                drawLine(color, start, end, strokeWidth = 3f)
                             }
+                            marks.forEach { mark ->
+                                val point = geometry.points[mark.id] ?: return@forEach
+                                drawCircle(
+                                    color,
+                                    if (hovered?.id == mark.id) 7f else 5f,
+                                    point,
+                                )
+                                drawCircle(surfaceColor, 2f, point)
+                            }
+                        }
                     }
                     ChartType.Scatter ->
-                        preview.marks.forEach { mark ->
+                        geometry.regions.forEach { region ->
+                            val mark = marksById[region.markId] ?: return@forEach
                             val color =
                                 seriesPalette[
                                     seriesIndex[mark.seriesKey]?.rem(seriesPalette.size) ?: 0]
-                            val region =
-                                geometry.regions.firstOrNull { it.markId == mark.id }
-                                    ?: return@forEach
                             drawCircle(
                                 color.copy(alpha = 0.82f),
                                 region.bounds.width / 2f,
@@ -571,7 +566,6 @@ private fun PlotChart(
                     null -> Unit
                 }
 
-                val categoryMarks = preview.marks.distinctBy { it.xKey }
                 if (categoryMarks.isEmpty()) return@clipRect
                 if (horizontalBars) {
                     val bandHeight = plot.height / categoryMarks.size.coerceAtLeast(1)
@@ -593,63 +587,31 @@ private fun PlotChart(
                             )
                         }
                 } else {
-                    // Scatter centers arrive in sample order, so decimation must be spatial:
-                    // index stepping labels clustered points and skips isolated ones.
-                    val ordered =
-                        categoryMarks
-                            .mapNotNull { mark ->
-                                geometry.categoryCenters[mark.xKey]?.let { mark to it }
-                            }
-                            .sortedBy { it.second }
-                    val widest = categoryMarks.maxOf { categoryLabelWidths[it.xKey] ?: 0f }
-                    val selected =
-                        categoryLabelIndices(
-                            ordered.map { it.second },
-                            min(widest + gapPx, 160f),
-                            minX = plot.left,
+                    val entries = categoryMarks.mapNotNull { mark ->
+                        geometry.categoryCenters[mark.xKey]?.let { center ->
+                            CategoryLabelEntry(
+                                xKey = mark.xKey,
+                                text = mark.xLabel,
+                                center = center,
+                                naturalWidth = categoryLabelWidths[mark.xKey] ?: 0f,
+                            )
+                        }
+                    }
+                    layoutHorizontalCategoryLabels(
+                            entries = entries,
+                            plotLeft = plot.left,
+                            plotWidth = plot.width,
+                            canvasWidth = canvasWidth,
+                            gapPx = gapPx,
+                            measureFitted = ::fitted,
+                            measuredWidth = { it.size.width.toFloat() },
                         )
-                    val selectedCenters = selected.map { ordered[it].second }
-                    val nominals = selectedCenters.mapIndexed { position, x ->
-                        val previousGap =
-                            if (position == 0) plot.width else x - selectedCenters[position - 1]
-                        val nextGap =
-                            if (position == selectedCenters.lastIndex) plot.width
-                            else selectedCenters[position + 1] - x
-                        (min(min(previousGap, nextGap), plot.width) - gapPx).coerceAtLeast(0f)
-                    }
-                    val estimatedLefts = selected.mapIndexed { position, index ->
-                        val (mark, x) = ordered[index]
-                        val width = min(categoryLabelWidths[mark.xKey] ?: 0f, nominals[position])
-                        clampX(x - width / 2f, width, plot.left)
-                    }
-                    var previousRight = plot.left
-                    selected.forEachIndexed { position, index ->
-                        val (mark, x) = ordered[index]
-                        val leftLimit = if (position == 0) plot.left else previousRight + gapPx
-                        val rightLimit =
-                            if (position == selected.lastIndex) canvasWidth
-                            else estimatedLefts[position + 1] - gapPx
-                        val maxWidth =
-                            categoryLabelSpanMaxWidth(
-                                center = x,
-                                minX = plot.left,
-                                canvasWidth = canvasWidth,
-                                available = nominals[position],
-                                leftLimit = leftLimit,
-                                rightLimit = rightLimit,
-                                isFirst = position == 0,
-                                isLast = position == selected.lastIndex,
+                        .forEach { placed ->
+                            drawText(
+                                placed.measured,
+                                topLeft = Offset(placed.drawX, plot.bottom + gapPx),
                             )
-                        val label = fitted(mark.xLabel, maxWidth)
-                        val drawX =
-                            clampX(
-                                x - label.size.width / 2f,
-                                label.size.width.toFloat(),
-                                plot.left,
-                            )
-                        previousRight = drawX + label.size.width
-                        drawText(label, topLeft = Offset(drawX, plot.bottom + gapPx))
-                    }
+                        }
                 }
             }
         }

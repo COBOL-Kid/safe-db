@@ -73,34 +73,12 @@ class ExploreFormatTest {
 
     @Test
     fun groupedAutoFormatHonorsLocaleStripsTrailingZerosAndUsesHalfEven() {
-        assertEquals(
-            "1,234,567.5",
-            formatGroupedAutoNumber(
-                BigDecimal("1234567.500"),
-                createGroupedAutoDecimalFormat(Locale.US),
-            ),
-        )
-        assertEquals(
-            "1.234.567,5",
-            formatGroupedAutoNumber(
-                BigDecimal("1234567.500"),
-                createGroupedAutoDecimalFormat(Locale.GERMANY),
-            ),
-        )
-        assertEquals(
-            "0.12345678",
-            formatGroupedAutoNumber(
-                BigDecimal("0.123456785"),
-                createGroupedAutoDecimalFormat(Locale.US),
-            ),
-        )
-        assertEquals(
-            "0.1234568",
-            formatGroupedAutoNumber(
-                BigDecimal("0.123456795"),
-                createGroupedAutoDecimalFormat(Locale.US),
-            ),
-        )
+        val us = createGroupedAutoDecimalFormat(Locale.US)
+        val germany = createGroupedAutoDecimalFormat(Locale.GERMANY)
+        assertEquals("1,234,567.5", us.format(BigDecimal("1234567.500")))
+        assertEquals("1.234.567,5", germany.format(BigDecimal("1234567.500")))
+        assertEquals("0.12345678", us.format(BigDecimal("0.123456785")))
+        assertEquals("0.1234568", us.format(BigDecimal("0.123456795")))
     }
 
     private fun fmt(

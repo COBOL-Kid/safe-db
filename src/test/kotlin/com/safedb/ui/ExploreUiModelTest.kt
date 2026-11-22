@@ -1,5 +1,6 @@
 package com.safedb.ui
 
+import com.safedb.explore.ChartType
 import com.safedb.explore.ExploreColumnGroup
 import com.safedb.explore.ExploreConfig
 import com.safedb.explore.ExplorePivotLayout
@@ -10,6 +11,10 @@ import com.safedb.explore.PivotMeasure
 import com.safedb.explore.PivotShowAs
 import com.safedb.explore.ShowAsMode
 import com.safedb.explore.SortDir
+import com.safedb.explore.ValueAxis
+import com.safedb.explore.VisualizationConfig
+import com.safedb.explore.VisualizationField
+import com.safedb.explore.VisualizationMeasure
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultColumn
 import com.safedb.model.TableRef
@@ -258,6 +263,83 @@ class ExploreUiModelTest {
         assertEquals(
             "explore-shopdb-details.csv",
             exploreExportFileName("ShopDB-details", "csv"),
+        )
+    }
+
+    @Test
+    fun forChartTypeRetainsQualifiedNumericMeasureForScatterAndRestoresAggregatedLabel() {
+        val sample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__quantity", "integer"),
+                        ResultColumn("t0__amount", "decimal"),
+                        ResultColumn("t1__amount", "decimal"),
+                    ),
+                rows = emptyList(),
+                rowCount = 0,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val fields =
+            buildExploreFieldOptions(
+                sample = sample,
+                tables =
+                    listOf(
+                        TableRef("public", "orders", "t0"),
+                        TableRef("public", "refunds", "t1"),
+                    ),
+            )
+        val bar =
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("t0__quantity", "quantity"),
+                values =
+                    listOf(
+                        VisualizationMeasure.countRows(),
+                        VisualizationMeasure(
+                            alias = "sum_orders_amount",
+                            fn = MeasureFn.Sum,
+                            sourceColumn = "t0__amount",
+                            label = "Sum orders.amount",
+                            axis = ValueAxis.Secondary,
+                        ),
+                    ),
+            )
+
+        val scatter = bar.forChartType(ChartType.Scatter, fields)
+        val scatterY = scatter.values.single()
+        assertEquals("t0__amount", scatterY.sourceColumn)
+        assertEquals("orders.amount", scatterY.label)
+        assertFalse(scatterY.aggregate)
+        assertEquals(ValueAxis.Primary, scatterY.axis)
+
+        listOf(ChartType.Bar, ChartType.Line, ChartType.Kpi).forEach { target ->
+            val restored = scatter.forChartType(target, fields)
+            val measure = restored.values.single()
+            assertTrue(measure.aggregate, "Expected aggregate=true for $target")
+            assertEquals("Sum orders.amount", measure.label, "Expected restored label for $target")
+            if (target == ChartType.Kpi) {
+                assertNull(restored.x)
+                assertEquals(ValueAxis.Primary, measure.axis)
+            }
+        }
+
+        val customLabeled =
+            bar.copy(
+                values =
+                    listOf(
+                        VisualizationMeasure(
+                            alias = "rev",
+                            fn = MeasureFn.Sum,
+                            sourceColumn = "t0__amount",
+                            label = "Gross Revenue",
+                        ),
+                    ),
+            )
+        assertEquals(
+            "Gross Revenue",
+            customLabeled.forChartType(ChartType.Line, fields).values.single().label,
         )
     }
 

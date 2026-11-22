@@ -32,10 +32,11 @@ data class VisualizationConfig(
             (resolvedType == ChartType.Line ||
                 (resolvedType == ChartType.Bar && barArrangement == BarArrangement.Grouped))
 
+    fun hasMixedAxes(): Boolean =
+        values.any { it.axis == ValueAxis.Primary } && values.any { it.axis == ValueAxis.Secondary }
+
     fun usesSecondaryAxis(resolvedType: ChartType?): Boolean =
-        supportsSecondaryAxis(resolvedType) &&
-            values.any { it.axis == ValueAxis.Primary } &&
-            values.any { it.axis == ValueAxis.Secondary }
+        supportsSecondaryAxis(resolvedType) && hasMixedAxes()
 
     fun validate(): VisualizationConfig {
         require(schemaVersion == VISUALIZATION_SCHEMA_VERSION) {
@@ -141,7 +142,9 @@ data class VisualizationPreview(
         get() = blockingMessage == null && marks.isNotEmpty()
 
     val hasSecondaryAxis: Boolean
-        get() = series.any { it.axis == ValueAxis.Secondary }
+        get() =
+            series.any { it.axis == ValueAxis.Primary } &&
+                series.any { it.axis == ValueAxis.Secondary }
 }
 
 data class VisualizationMark(

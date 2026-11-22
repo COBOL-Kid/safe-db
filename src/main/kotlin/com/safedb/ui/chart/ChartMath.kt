@@ -80,7 +80,11 @@ internal fun niceValueAxis(
     val eps = 1e-9
     val minTick = floor(rawMin / step + eps) * step
     val maxTick = ceil(hi / step - eps) * step
-    val count = ((maxTick - minTick) / step).roundToInt().coerceAtLeast(1)
+    val rawCount = (maxTick - minTick) / step
+    if (!minTick.isFinite() || !maxTick.isFinite() || !rawCount.isFinite()) {
+        return DefaultValueAxis
+    }
+    val count = rawCount.roundToInt().coerceAtLeast(1)
     val ticks =
         List(count + 1) { index ->
             val value = minTick + index * step
@@ -434,14 +438,82 @@ internal fun categoryLabelSpanMaxWidth(
 internal fun categoryLabelStep(labelExtent: Float, band: Float): Int =
     ceil(labelExtent / band.coerceAtLeast(1e-3f)).toInt().coerceAtLeast(1)
 
+internal data class CategoryLabelEntry(
+    val xKey: String,
+    val text: String,
+    val center: Float,
+    val naturalWidth: Float,
+)
+
+internal data class PlacedCategoryLabel<T>(
+    val entry: CategoryLabelEntry,
+    val maxWidth: Float,
+    val drawX: Float,
+    val measured: T,
+)
+
+// Decimates and places horizontal category labels in spatial order so clustered scatter points
+// collapse to one label while dense edge labels stay clamped inside the plot without overlapping
+// their neighbors.
+internal inline fun <T> layoutHorizontalCategoryLabels(
+    entries: List<CategoryLabelEntry>,
+    plotLeft: Float,
+    plotWidth: Float,
+    canvasWidth: Float,
+    gapPx: Float,
+    measureFitted: (text: String, maxWidth: Float) -> T,
+    measuredWidth: (T) -> Float,
+): List<PlacedCategoryLabel<T>> {
+    if (entries.isEmpty()) return emptyList()
+    val ordered = entries.sortedBy { it.center }
+    val widest = ordered.maxOf { it.naturalWidth }
+    val selected =
+        categoryLabelIndices(
+            ordered.map { it.center },
+            min(widest + gapPx, 160f),
+            minX = plotLeft,
+        )
+    val selectedCenters = selected.map { ordered[it].center }
+    val nominals = selectedCenters.mapIndexed { position, x ->
+        val previousGap = if (position == 0) plotWidth else x - selectedCenters[position - 1]
+        val nextGap =
+            if (position == selectedCenters.lastIndex) plotWidth
+            else selectedCenters[position + 1] - x
+        (min(min(previousGap, nextGap), plotWidth) - gapPx).coerceAtLeast(0f)
+    }
+    val estimatedLefts = selected.mapIndexed { position, index ->
+        val entry = ordered[index]
+        val width = min(entry.naturalWidth, nominals[position])
+        clampLabelX(entry.center - width / 2f, width, plotLeft, canvasWidth)
+    }
+    var previousRight = plotLeft
+    return selected.mapIndexed { position, index ->
+        val entry = ordered[index]
+        val leftLimit = if (position == 0) plotLeft else previousRight + gapPx
+        val rightLimit =
+            if (position == selected.lastIndex) canvasWidth
+            else estimatedLefts[position + 1] - gapPx
+        val maxWidth =
+            categoryLabelSpanMaxWidth(
+                center = entry.center,
+                minX = plotLeft,
+                canvasWidth = canvasWidth,
+                available = nominals[position],
+                leftLimit = leftLimit,
+                rightLimit = rightLimit,
+                isFirst = position == 0,
+                isLast = position == selected.lastIndex,
+            )
+        val measured = measureFitted(entry.text, maxWidth)
+        val fittedWidth = measuredWidth(measured)
+        val drawX = clampLabelX(entry.center - fittedWidth / 2f, fittedWidth, plotLeft, canvasWidth)
+        previousRight = drawX + fittedWidth
+        PlacedCategoryLabel(entry = entry, maxWidth = maxWidth, drawX = drawX, measured = measured)
+    }
+}
+
 internal fun clampLabelX(x: Float, labelWidth: Float, minX: Float, canvasWidth: Float): Float =
     min(max(minX, x), max(minX, canvasWidth - labelWidth))
 
 internal fun tooltipAlignsToStart(pointerX: Float, plotCenterX: Float): Boolean =
     pointerX > plotCenterX
-
-internal fun inBarLabelOrNull(
-    formattedY: String,
-    formattedWidth: Float,
-    available: Float,
-): String? = if (formattedWidth <= available) formattedY else null

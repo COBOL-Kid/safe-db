@@ -554,6 +554,11 @@ internal fun buildChartSection(
     )
 }
 
+private data class VisualizationTableColumn(
+    val label: String,
+    val cell: (VisualizationMark) -> HtmlCell,
+)
+
 internal fun buildVisualizationTableSection(
     preview: VisualizationPreview,
     config: VisualizationConfig,
@@ -561,49 +566,56 @@ internal fun buildVisualizationTableSection(
     val includeSeries = config.series != null
     val isScatter = preview.chartType == ChartType.Scatter
     val includeSize = isScatter && config.size != null
-    val labels = buildList {
+    val columns = buildList {
         if (isScatter) {
-            add(config.x?.label ?: "X")
-            add(config.values.firstOrNull()?.label ?: "Y")
-            if (includeSeries) add("Series")
-            if (includeSize) add("Size")
-        } else {
-            add(config.x?.label ?: "Category")
-            if (includeSeries) add("Series")
-            add("Measure")
-            add("Value")
-        }
-        add("Source rows")
-    }
-    val rows =
-        preview.marks.map { mark ->
-            HtmlTableRow(
-                cells =
-                    buildList {
-                        if (isScatter) {
-                            add(
-                                finiteNumericCell(
-                                    mark.xLabel.ifBlank { mark.xValue?.toString().orEmpty() },
-                                    mark.xValue,
-                                ),
-                            )
-                            add(finiteNumericCell(mark.formattedY, mark.y))
-                            if (includeSeries) add(HtmlCell(mark.seriesLabel))
-                            if (includeSize) {
-                                add(finiteNumericCell(mark.size?.toString().orEmpty(), mark.size))
-                            }
-                        } else {
-                            add(HtmlCell(mark.xLabel))
-                            if (includeSeries) add(HtmlCell(mark.seriesLabel))
-                            add(HtmlCell(mark.measureLabel))
-                            add(finiteNumericCell(mark.formattedY, mark.y))
-                        }
-                        add(sourceRowCountCell(mark.sourceRowIndices.size))
+            add(
+                VisualizationTableColumn(config.x?.label ?: "X") { mark ->
+                    finiteNumericCell(
+                        mark.xLabel.ifBlank { mark.xValue?.toString().orEmpty() },
+                        mark.xValue,
+                    )
+                },
+            )
+            add(
+                VisualizationTableColumn(config.values.firstOrNull()?.label ?: "Y") { mark ->
+                    finiteNumericCell(mark.formattedY, mark.y)
+                },
+            )
+            if (includeSeries) {
+                add(VisualizationTableColumn("Series") { mark -> HtmlCell(mark.seriesLabel) })
+            }
+            if (includeSize) {
+                add(
+                    VisualizationTableColumn("Size") { mark ->
+                        finiteNumericCell(mark.size?.toString().orEmpty(), mark.size)
                     },
+                )
+            }
+        } else {
+            add(
+                VisualizationTableColumn(config.x?.label ?: "Category") { mark ->
+                    HtmlCell(mark.xLabel)
+                },
+            )
+            if (includeSeries) {
+                add(VisualizationTableColumn("Series") { mark -> HtmlCell(mark.seriesLabel) })
+            }
+            add(VisualizationTableColumn("Measure") { mark -> HtmlCell(mark.measureLabel) })
+            add(
+                VisualizationTableColumn("Value") { mark ->
+                    finiteNumericCell(mark.formattedY, mark.y)
+                },
             )
         }
+        add(
+            VisualizationTableColumn("Source rows") { mark ->
+                sourceRowCountCell(mark.sourceRowIndices.size)
+            },
+        )
+    }
+    val rows = preview.marks.map { mark -> HtmlTableRow(cells = columns.map { it.cell(mark) }) }
     return HtmlTableSection(
-        columns = columnsWithNumericFlags(labels, rows),
+        columns = columnsWithNumericFlags(columns.map { it.label }, rows),
         rows = rows,
         sortable = true,
     )

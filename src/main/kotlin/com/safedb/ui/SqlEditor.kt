@@ -212,6 +212,8 @@ internal fun SqlEditor(
             Popup(
                 offset = offset,
                 onDismissRequest = { completionOpen = false },
+                // Keep outside clicks live so toolbar actions (e.g. Run) fire on first click;
+                // dismissal is handled by onFocusChanged and Escape.
                 properties = PopupProperties(focusable = false, dismissOnClickOutside = false),
             ) {
                 CompletionList(

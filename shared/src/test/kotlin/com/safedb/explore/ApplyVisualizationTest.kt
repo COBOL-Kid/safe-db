@@ -412,7 +412,70 @@ class ApplyVisualizationTest {
                 listOf("status", "Measure", "Value", "Source rows"),
                 export.columns.map { it.name },
             )
-            assertEquals(ResultCell.FloatCell(3_624_326.0), export.rows.first()[2])
+            assertEquals("decimal", export.columns[2].dataType)
+            assertEquals(ResultCell.text("3624326"), export.rows.first()[2])
+
+            // High-precision decimals beyond Double's 53-bit mantissa stay exact in Auto export.
+            val preciseSample =
+                QueryResult(
+                    columns =
+                        listOf(
+                            ResultColumn("status", "varchar"),
+                            ResultColumn("amount", "decimal"),
+                        ),
+                    rows =
+                        listOf(
+                            listOf(
+                                ResultCell.text("pending"),
+                                ResultCell.text("12345678901234567890.125"),
+                            ),
+                            listOf(ResultCell.text("pending"), ResultCell.text("0.250")),
+                        ),
+                    rowCount = 2,
+                    truncated = false,
+                    warnings = emptyList(),
+                )
+            val preciseBar =
+                applyVisualization(
+                    preciseSample,
+                    VisualizationConfig(
+                        chartType = ChartType.Bar,
+                        x = VisualizationField("status"),
+                        values =
+                            listOf(
+                                VisualizationMeasure(
+                                    "revenue",
+                                    MeasureFn.Sum,
+                                    "amount",
+                                    "Sum amount",
+                                ),
+                            ),
+                    ),
+                )
+            assertEquals(
+                ResultCell.text("12345678901234567890.375"),
+                preciseBar.exportResult!!.rows.single()[2],
+            )
+            val preciseKpi =
+                applyVisualization(
+                    preciseSample,
+                    VisualizationConfig(
+                        chartType = ChartType.Kpi,
+                        values =
+                            listOf(
+                                VisualizationMeasure(
+                                    "revenue",
+                                    MeasureFn.Sum,
+                                    "amount",
+                                    "Sum amount",
+                                ),
+                            ),
+                    ),
+                )
+            assertEquals(
+                ResultCell.text("12345678901234567890.375"),
+                preciseKpi.exportResult!!.rows.single()[2],
+            )
         } finally {
             Locale.setDefault(previous)
         }
@@ -774,6 +837,115 @@ class ApplyVisualizationTest {
             )
         assertEquals(listOf("BigRev", "SmallRev"), dualSorted.categories)
         assertFalse(singleAxisPreview.hasSecondaryAxis)
+    }
+
+    @Test
+    fun orphanSecondarySeriesNormalizeBackToPrimaryWhenNoPrimaryMarksSurvive() {
+        val allNullPrimary =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("status", "varchar"),
+                        ResultColumn("amount", "decimal"),
+                        ResultColumn("score", "decimal"),
+                    ),
+                rows =
+                    listOf(
+                        listOf(
+                            ResultCell.text("pending"),
+                            ResultCell.Null,
+                            ResultCell.IntegerCell(10),
+                        ),
+                        listOf(
+                            ResultCell.text("shipped"),
+                            ResultCell.Null,
+                            ResultCell.IntegerCell(20),
+                        ),
+                    ),
+                rowCount = 2,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val dualConfig =
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("status"),
+                values =
+                    listOf(
+                        VisualizationMeasure("avg_amount", MeasureFn.Avg, "amount", "Avg amount"),
+                        VisualizationMeasure(
+                            "sum_score",
+                            MeasureFn.Sum,
+                            "score",
+                            "Sum score",
+                            axis = ValueAxis.Secondary,
+                        ),
+                    ),
+            )
+
+        val nullPrimaryPreview = applyVisualization(allNullPrimary, dualConfig)
+        assertFalse(nullPrimaryPreview.hasSecondaryAxis)
+        assertTrue(nullPrimaryPreview.series.isNotEmpty())
+        assertTrue(nullPrimaryPreview.series.all { it.axis == ValueAxis.Primary })
+        assertTrue(nullPrimaryPreview.marks.all { it.axis == ValueAxis.Primary })
+
+        val valueFilteredPreview =
+            applyVisualization(
+                sample(),
+                dualConfig.copy(
+                    filters =
+                        listOf(
+                            PivotFilter.Value(
+                                id = "f1",
+                                column = "status",
+                                label = "status",
+                                measureAlias = "avg_amount",
+                                op = ValueFilterOp.GreaterThan,
+                                value = "999999",
+                            ),
+                        ),
+                ),
+            )
+        assertFalse(valueFilteredPreview.hasSecondaryAxis)
+        assertTrue(valueFilteredPreview.series.isNotEmpty())
+        assertTrue(valueFilteredPreview.series.all { it.axis == ValueAxis.Primary })
+        assertTrue(valueFilteredPreview.marks.all { it.axis == ValueAxis.Primary })
+
+        val topNSecondaryOnly =
+            QueryResult(
+                columns = allNullPrimary.columns,
+                rows =
+                    (1..10).map { index ->
+                        listOf(
+                            ResultCell.text("s$index"),
+                            ResultCell.Null,
+                            ResultCell.IntegerCell((100 + index).toLong()),
+                        )
+                    } +
+                        listOf(
+                            listOf(
+                                ResultCell.text("primary_low"),
+                                ResultCell.IntegerCell(1),
+                                ResultCell.IntegerCell(1),
+                            ),
+                        ),
+                rowCount = 11,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val topNPreview =
+            applyVisualization(
+                topNSecondaryOnly,
+                dualConfig.copy(
+                    sort = VisualizationSort(VisualizationSortTarget.Value, SortDir.Desc),
+                    topN = 10,
+                ),
+            )
+        assertFalse(topNPreview.hasSecondaryAxis)
+        assertEquals(10, topNPreview.categories.size)
+        assertTrue(topNPreview.series.isNotEmpty())
+        assertTrue(topNPreview.series.all { it.axis == ValueAxis.Primary })
+        assertTrue(topNPreview.marks.all { it.axis == ValueAxis.Primary })
     }
 
     private fun sample() =

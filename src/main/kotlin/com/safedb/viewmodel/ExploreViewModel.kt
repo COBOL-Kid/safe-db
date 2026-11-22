@@ -63,7 +63,7 @@ class ExploreViewModel(
     private val computeDispatcher: CoroutineDispatcher = Dispatchers.Default.limitedParallelism(1),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     initialRecipe: ExploreRecipe? = null,
-    val sampleRunId: Long? = null,
+    private val sampleRunId: Long? = null,
 ) {
     private val defaultConfig = ExploreConfig.defaultFor(session.sample, session.baseSpec.tables)
 
@@ -393,13 +393,6 @@ class ExploreViewModel(
                 SampleStaleness.NewerSample
             else -> SampleStaleness.Fresh
         }
-
-    fun isStale(
-        currentSpec: QuerySpec?,
-        currentConnectionId: String? = session.connectionId,
-        latestSampleRunId: Long? = null,
-    ): Boolean =
-        staleness(currentSpec, currentConnectionId, latestSampleRunId) != SampleStaleness.Fresh
 
     fun savePreviewCsv(path: Path) {
         val formattedRows = preview.layout.formattedRows

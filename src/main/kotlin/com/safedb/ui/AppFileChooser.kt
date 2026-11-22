@@ -24,7 +24,22 @@ internal fun chooseAppFile(
     parent: Component? = null,
 ): File? {
     val chooser =
-        createAppFileChooser(suggestedFileName, extensionFilter).apply { dialogTitle = title }
+        object : JFileChooser() {
+                override fun createDialog(parent: Component?): JDialog =
+                    super.createDialog(parent).apply {
+                        iconImages = listOf(loadAppWindowIconImage())
+                    }
+            }
+            .apply {
+                dialogTitle = title
+                lastChooserDirectory?.takeIf { it.isDirectory }?.let { currentDirectory = it }
+                if (suggestedFileName != null) {
+                    selectedFile = File(currentDirectory, suggestedFileName)
+                }
+                if (extensionFilter != null) {
+                    fileFilter = extensionFilter
+                }
+            }
     val result = if (open) chooser.showOpenDialog(parent) else chooser.showSaveDialog(parent)
     if (result != JFileChooser.APPROVE_OPTION) return null
     val selected = chooser.selectedFile ?: return null
@@ -33,21 +48,3 @@ internal fun chooseAppFile(
         ?.let { lastChooserDirectory = it }
     return selected
 }
-
-private fun createAppFileChooser(
-    suggestedFileName: String? = null,
-    extensionFilter: FileNameExtensionFilter? = null,
-): JFileChooser =
-    object : JFileChooser() {
-            override fun createDialog(parent: Component?): JDialog =
-                super.createDialog(parent).apply { iconImages = listOf(loadAppWindowIconImage()) }
-        }
-        .apply {
-            lastChooserDirectory?.takeIf { it.isDirectory }?.let { currentDirectory = it }
-            if (suggestedFileName != null) {
-                selectedFile = File(currentDirectory, suggestedFileName)
-            }
-            if (extensionFilter != null) {
-                fileFilter = extensionFilter
-            }
-        }

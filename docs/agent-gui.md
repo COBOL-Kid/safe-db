@@ -75,7 +75,7 @@ Tips:
 | `scripts/agent_gui.sh focus <title-substring>` | Activate and raise a window matching `<title-substring>`. |
 | `scripts/agent_gui.sh click X Y [left\|right\|double]` | Move pointer to `(X, Y)` and click. |
 | `scripts/agent_gui.sh drag X1 Y1 X2 Y2` | Drag with the left mouse button from `(X1, Y1)` to `(X2, Y2)`. |
-| `scripts/agent_gui.sh scroll up\|down [N] [X Y]` | Scroll `N` wheel ticks (default `3`), optionally moving to `(X, Y)` first. |
+| `scripts/agent_gui.sh scroll up\|down [N [X Y]]` | Scroll `N` wheel ticks (default `3`), optionally moving to `(X, Y)` first (`N` is required before `X Y`, e.g. `scroll down 5 400 500`). |
 | `scripts/agent_gui.sh type "<text>"` | Type text into the focused window. |
 | `scripts/agent_gui.sh key <combo>...` | Press key(s), e.g. `ctrl+a`, `Return`, `Tab`, `Escape`. |
 | `scripts/agent_gui.sh logs [N]` | Tail the last `N` lines of `build/agent-gui/app.log` (default `50`). |

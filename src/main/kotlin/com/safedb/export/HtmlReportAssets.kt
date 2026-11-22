@@ -6,20 +6,20 @@ import com.safedb.ui.chart.toCssHex
 
 internal val HTML_SERIES_COLORS =
     listOf(
-        "#2f6fed" to Color(0xFF2F6FED),
-        "#e8863a" to Color(0xFFE8863A),
-        "#2e9e6b" to Color(0xFF2E9E6B),
-        "#d05574" to Color(0xFFD05574),
-        "#8a63d2" to Color(0xFF8A63D2),
-        "#3aa5b9" to Color(0xFF3AA5B9),
-        "#c2a032" to Color(0xFFC2A032),
-        "#7a7f8a" to Color(0xFF7A7F8A),
+        Color(0xFF2F6FED),
+        Color(0xFFE8863A),
+        Color(0xFF2E9E6B),
+        Color(0xFFD05574),
+        Color(0xFF8A63D2),
+        Color(0xFF3AA5B9),
+        Color(0xFFC2A032),
+        Color(0xFF7A7F8A),
     )
 
 private val SERIES_CSS_VARS =
-    HTML_SERIES_COLORS.mapIndexed { i, (hex, color) ->
+    HTML_SERIES_COLORS.mapIndexed { i, color ->
             val labelHex = contrastingBarLabelColor(color).toCssHex()
-            "      --s$i: $hex; --s$i-label: $labelHex;"
+            "      --s$i: ${color.toCssHex()}; --s$i-label: $labelHex;"
         }
         .joinToString("\n")
 

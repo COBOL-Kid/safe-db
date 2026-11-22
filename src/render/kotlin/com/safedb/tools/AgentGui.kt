@@ -25,7 +25,10 @@ fun main(args: Array<String>) {
     }
     SecretsManager.initStore(envValue = "disabled")
     val dataDir =
-        Path.of(System.getenv("SAFEDB_AGENT_GUI_DATA_DIR") ?: "build/agent-gui/data")
+        Path.of(
+                System.getenv("SAFEDB_AGENT_GUI_DATA_DIR")?.takeIf { it.isNotBlank() }
+                    ?: "build/agent-gui/data",
+            )
             .toAbsolutePath()
             .also { Files.createDirectories(it) }
     val service =

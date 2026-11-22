@@ -8,7 +8,11 @@ export DISPLAY="$DISPLAY_NUM"
 SCREEN_RES="${AGENT_GUI_SCREEN:-1600x1000}"
 STATE_DIR="$ROOT/build/agent-gui"
 SHOTS_DIR="$STATE_DIR/shots"
-DATA_DIR="${SAFEDB_AGENT_GUI_DATA_DIR:-$STATE_DIR/data}"
+if [[ -n "${SAFEDB_AGENT_GUI_DATA_DIR:-}" && -n "${SAFEDB_AGENT_GUI_DATA_DIR//[[:space:]]/}" ]]; then
+  DATA_DIR="$SAFEDB_AGENT_GUI_DATA_DIR"
+else
+  DATA_DIR="$STATE_DIR/data"
+fi
 APP_LOG="$STATE_DIR/app.log"
 XVFB_LOG="$STATE_DIR/xvfb.log"
 OPENBOX_LOG="$STATE_DIR/openbox.log"
@@ -35,7 +39,8 @@ Commands:
   click X Y [left|right|double]
                              Move mouse to (X, Y) and click.
   drag X1 Y1 X2 Y2           Drag with left button from (X1, Y1) to (X2, Y2).
-  scroll up|down [N] [X Y]   Scroll N wheel ticks (default 3), optionally at (X, Y).
+  scroll up|down [N [X Y]]   Scroll N wheel ticks (default 3), optionally at (X, Y)
+                             (N is required before X Y, e.g. scroll down 5 400 500).
   type <text>                Type text into the focused window.
   key <combo>...             Press key or combo (e.g. ctrl+a, Return, Tab, Escape).
   logs [N]                   Show last N lines of build/agent-gui/app.log (default 50).
@@ -62,7 +67,7 @@ is_pid_running() {
 
 check_prereqs() {
   local need_vnc="${1:-false}"
-  local required=(Xvfb xdotool import openbox)
+  local required=(Xvfb xdotool import openbox setsid)
   if [[ "$need_vnc" == "true" ]]; then
     required+=(x11vnc)
   fi
@@ -86,29 +91,45 @@ require_display() {
   fi
 }
 
+is_group_alive() {
+  local pgid="$1"
+  ps -o stat= -g "$pgid" 2>/dev/null | grep -qEv '^[[:space:]]*(Z|$)'
+}
+
 stop_pidfile() {
   local pid_file="$1"
-  local fallback_pattern="${2:-}"
+  local kill_group="${2:-false}"
   if [[ -f "$pid_file" ]]; then
     local pid
     pid="$(<"$pid_file")"
-    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
-      pkill -TERM -P "$pid" 2>/dev/null || true
-      kill -TERM "$pid" 2>/dev/null || true
-      local i=0
-      while kill -0 "$pid" 2>/dev/null && ((i < 20)); do
-        sleep 0.2
-        ((i += 1))
-      done
-      if kill -0 "$pid" 2>/dev/null; then
-        pkill -KILL -P "$pid" 2>/dev/null || true
-        kill -KILL "$pid" 2>/dev/null || true
+    if [[ -n "$pid" ]]; then
+      if [[ "$kill_group" == "true" ]]; then
+        if is_group_alive "$pid"; then
+          kill -TERM -- "-$pid" 2>/dev/null || true
+          local i=0
+          while is_group_alive "$pid" && ((i < 20)); do
+            sleep 0.2
+            ((i += 1))
+          done
+          if is_group_alive "$pid"; then
+            kill -KILL -- "-$pid" 2>/dev/null || true
+          fi
+        fi
+      elif kill -0 "$pid" 2>/dev/null; then
+        pkill -TERM -P "$pid" 2>/dev/null || true
+        kill -TERM "$pid" 2>/dev/null || true
+        local i=0
+        while kill -0 "$pid" 2>/dev/null && ((i < 20)); do
+          sleep 0.2
+          ((i += 1))
+        done
+        if kill -0 "$pid" 2>/dev/null; then
+          pkill -KILL -P "$pid" 2>/dev/null || true
+          kill -KILL "$pid" 2>/dev/null || true
+        fi
       fi
     fi
     rm -f "$pid_file"
-  fi
-  if [[ -n "$fallback_pattern" ]]; then
-    pkill -TERM -f "$fallback_pattern" 2>/dev/null || true
   fi
 }
 
@@ -130,6 +151,10 @@ cmd_up() {
   check_prereqs "$use_vnc"
   mkdir -p "$STATE_DIR" "$SHOTS_DIR" "$DATA_DIR"
 
+  if [[ "$foreground" == "true" ]]; then
+    trap 'trap - INT TERM; cmd_down; exit 0' INT TERM
+  fi
+
   if ! is_pid_running "$XVFB_PID_FILE"; then
     nohup Xvfb "$DISPLAY_NUM" -screen 0 "${SCREEN_RES}x24" -nolisten tcp -ac \
       >"$XVFB_LOG" 2>&1 &
@@ -144,6 +169,7 @@ cmd_up() {
       ((i += 1))
       if ((i >= 50)); then
         echo "Timed out waiting for Xvfb on $DISPLAY_NUM." >&2
+        stop_pidfile "$XVFB_PID_FILE"
         exit 1
       fi
       sleep 0.1
@@ -166,7 +192,7 @@ cmd_up() {
     (
       cd "$ROOT"
       export SAFEDB_AGENT_GUI_DATA_DIR="$DATA_DIR"
-      exec nohup ./gradlew --no-daemon runAgentGui >"$APP_LOG" 2>&1
+      exec setsid ./gradlew --no-daemon runAgentGui >"$APP_LOG" 2>&1 </dev/null
     ) &
     echo $! >"$APP_PID_FILE"
   fi
@@ -181,7 +207,11 @@ cmd_up() {
     if ! is_pid_running "$APP_PID_FILE"; then
       echo "Safe-DB failed to start. Last 40 lines of $APP_LOG:" >&2
       tail -n 40 "$APP_LOG" >&2 || true
-      rm -f "$APP_PID_FILE"
+      if [[ "$foreground" == "true" ]]; then
+        cmd_down
+      else
+        stop_pidfile "$APP_PID_FILE" true
+      fi
       exit 1
     fi
     sleep 1
@@ -191,6 +221,11 @@ cmd_up() {
   if [[ -z "$win_id" ]]; then
     echo "Timed out after 120s waiting for Safe-DB window. Last 40 lines of $APP_LOG:" >&2
     tail -n 40 "$APP_LOG" >&2 || true
+    if [[ "$foreground" == "true" ]]; then
+      cmd_down
+    else
+      stop_pidfile "$APP_PID_FILE" true
+    fi
     exit 1
   fi
 
@@ -204,7 +239,6 @@ cmd_up() {
   fi
 
   if [[ "$foreground" == "true" ]]; then
-    trap 'cmd_down; exit 0' INT TERM
     while is_pid_running "$APP_PID_FILE"; do
       sleep 1
     done
@@ -213,7 +247,7 @@ cmd_up() {
 }
 
 cmd_down() {
-  stop_pidfile "$APP_PID_FILE" "com\.safedb\.tools\.AgentGuiKt"
+  stop_pidfile "$APP_PID_FILE" true
   stop_pidfile "$VNC_PID_FILE"
   stop_pidfile "$OPENBOX_PID_FILE"
   stop_pidfile "$XVFB_PID_FILE"
@@ -228,13 +262,20 @@ cmd_windows() {
     echo "No visible windows."
     return 0
   fi
-  local wid title X Y WIDTH HEIGHT
+  local wid title X Y WIDTH HEIGHT key val
   while IFS= read -r wid; do
-    [[ -z "$wid" ]] && continue
+    if [[ -z "$wid" ]]; then continue; fi
     title="$(xdotool getwindowname "$wid" 2>/dev/null || true)"
-    [[ -z "$title" ]] && continue
+    if [[ -z "$title" ]]; then continue; fi
     X="" Y="" WIDTH="" HEIGHT=""
-    eval "$(xdotool getwindowgeometry --shell "$wid" 2>/dev/null | grep -E '^(X|Y|WIDTH|HEIGHT)=' || true)"
+    while IFS='=' read -r key val || [[ -n "$key" ]]; do
+      case "$key" in
+        X) X="$val" ;;
+        Y) Y="$val" ;;
+        WIDTH) WIDTH="$val" ;;
+        HEIGHT) HEIGHT="$val" ;;
+      esac
+    done < <(xdotool getwindowgeometry --shell "$wid" 2>/dev/null || true)
     printf "%s\t%sx%s+%s+%s\t%s\n" "$wid" "${WIDTH:-?}" "${HEIGHT:-?}" "${X:-?}" "${Y:-?}" "$title"
   done <<<"$ids"
 }
@@ -301,13 +342,36 @@ cmd_screenshot() {
   echo "$out"
 }
 
+pick_window_match() {
+  local pattern="$1"
+  shift
+  local ids
+  ids="$(xdotool search "$@" --name "$pattern" 2>/dev/null || true)"
+  if [[ -z "$ids" ]]; then
+    return 0
+  fi
+  local first="" wid title
+  while IFS= read -r wid; do
+    if [[ -z "$wid" ]]; then continue; fi
+    if [[ -z "$first" ]]; then
+      first="$wid"
+    fi
+    title="$(xdotool getwindowname "$wid" 2>/dev/null || true)"
+    if [[ "$title" == "$pattern" ]]; then
+      echo "$wid"
+      return 0
+    fi
+  done <<<"$ids"
+  echo "$first"
+}
+
 cmd_focus() {
   require_display
   local pattern="${1:?focus requires a title substring}"
   local wid
-  wid="$(xdotool search --onlyvisible --name "$pattern" 2>/dev/null | head -n 1 || true)"
+  wid="$(pick_window_match "$pattern" --onlyvisible)"
   if [[ -z "$wid" ]]; then
-    wid="$(xdotool search --name "$pattern" 2>/dev/null | head -n 1 || true)"
+    wid="$(pick_window_match "$pattern")"
   fi
   if [[ -z "$wid" ]]; then
     echo "No window matching '$pattern' found." >&2
@@ -352,8 +416,11 @@ cmd_drag() {
 }
 
 cmd_scroll() {
-  require_display
-  local dir="${1:?scroll requires up|down}"
+  if (($# != 1 && $# != 2 && $# != 4)); then
+    echo "Usage: scripts/agent_gui.sh scroll up|down [N [X Y]] (e.g. scroll down 5 400 500)" >&2
+    exit 2
+  fi
+  local dir="$1"
   local btn
   case "$dir" in
     up) btn=4 ;;
@@ -363,17 +430,21 @@ cmd_scroll() {
       exit 2
       ;;
   esac
+  require_display
   local count="${2:-3}"
-  if (($# >= 4)); then
+  if (($# == 4)); then
     xdotool mousemove --sync "$3" "$4"
   fi
   xdotool click --repeat "$count" --delay 30 "$btn"
 }
 
 cmd_type() {
+  if (($# != 1)); then
+    echo "Usage: scripts/agent_gui.sh type <text> (quote text containing spaces)" >&2
+    exit 2
+  fi
   require_display
-  local text="${1?type requires text}"
-  xdotool type --clearmodifiers --delay 15 -- "$text"
+  xdotool type --clearmodifiers --delay 15 -- "$1"
 }
 
 cmd_key() {

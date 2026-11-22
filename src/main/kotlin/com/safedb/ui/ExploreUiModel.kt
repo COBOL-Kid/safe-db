@@ -209,16 +209,23 @@ internal fun VisualizationConfig.forChartType(
 ): VisualizationConfig {
     fun numeric(column: String?): Boolean =
         fields.firstOrNull { it.column == column }?.category?.isNumeric() == true
+    fun fieldLabel(column: String): String =
+        fields.firstOrNull { it.column == column }?.label ?: displayColumnLabel(column)
+    fun VisualizationMeasure.asAggregated(): VisualizationMeasure =
+        if (aggregate) this
+        else {
+            val label = sourceColumn?.let { "${fn.shortLabel} ${fieldLabel(it)}" } ?: label
+            copy(aggregate = true, label = label)
+        }
     return when (type) {
         ChartType.Histogram -> {
             val promotedX =
                 x?.takeIf { numeric(it.column) }
                     ?: values.firstNotNullOfOrNull { measure ->
                         measure.sourceColumn?.takeIf(::numeric)?.let { column ->
-                            val field = fields.firstOrNull { it.column == column }
                             VisualizationField(
                                 column = column,
-                                label = field?.label ?: displayColumnLabel(column),
+                                label = fieldLabel(column),
                             )
                         }
                     }
@@ -234,7 +241,7 @@ internal fun VisualizationConfig.forChartType(
             copy(
                 chartType = type,
                 x = null,
-                values = values.take(1).map { it.copy(aggregate = true, axis = ValueAxis.Primary) },
+                values = values.take(1).map { it.asAggregated().copy(axis = ValueAxis.Primary) },
                 series = null,
                 size = null,
             )
@@ -244,12 +251,12 @@ internal fun VisualizationConfig.forChartType(
                 x = x?.takeIf { numeric(it.column) },
                 values =
                     values
-                        .take(1)
                         .filter { numeric(it.sourceColumn) }
+                        .take(1)
                         .map {
                             it.copy(
                                 aggregate = false,
-                                label = it.sourceColumn?.let(::displayColumnLabel) ?: it.label,
+                                label = it.sourceColumn?.let(::fieldLabel) ?: it.label,
                                 axis = ValueAxis.Primary,
                             )
                         },
@@ -258,7 +265,7 @@ internal fun VisualizationConfig.forChartType(
             )
         ChartType.Bar,
         ChartType.Line ->
-            copy(chartType = type, values = values.map { it.copy(aggregate = true) }, size = null)
+            copy(chartType = type, values = values.map { it.asAggregated() }, size = null)
         ChartType.Auto -> copy(chartType = type)
     }
 }

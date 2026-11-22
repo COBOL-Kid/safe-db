@@ -26,6 +26,8 @@ import com.safedb.model.QuerySpec
 import com.safedb.model.ResultCell
 import com.safedb.model.ResultColumn
 import com.safedb.model.TableRef
+import com.safedb.ui.chart.contrastingBarLabelColor
+import com.safedb.ui.chart.toCssHex
 import java.io.ByteArrayOutputStream
 import kotlin.math.abs
 import kotlin.test.Test
@@ -584,10 +586,11 @@ class HtmlReportWriterTest {
         val shownChart = buildChartSection(shownPreview, shownConfig)
         assertEquals(listOf("3.6M", "1.6M"), shownChart.shapes.map { it.label })
         assertTrue(shownChart.shapes.all { it.lx != null && it.ly != null })
-        assertTrue(REPORT_CSS.contains("--s0-label: #ffffff;"))
-        assertTrue(REPORT_CSS.contains("--s1-label: #0f172a;"))
-        assertTrue(REPORT_CSS.contains("svg.chart text.label-s0 { fill: var(--s0-label); }"))
-        assertTrue(REPORT_JS.contains("'bar-label label-' + seriesClass"))
+        HTML_SERIES_COLORS.forEachIndexed { index, color ->
+            val expectedHex = contrastingBarLabelColor(color).toCssHex()
+            assertTrue(REPORT_CSS.contains("--s$index: ${color.toCssHex()};"))
+            assertTrue(REPORT_CSS.contains("--s$index-label: $expectedHex;"))
+        }
     }
 
     @Test
@@ -681,11 +684,6 @@ class HtmlReportWriterTest {
 
         assertEquals(12, chart.shapes.size)
         assertEquals(12, chart.shapes.count { it.label != null })
-        assertTrue(
-            REPORT_CSS.contains(
-                "svg.chart text.bar-label { pointer-events: none; font-size: 10px; font-weight: 500; }",
-            ),
-        )
 
         val longLabelConfig =
             config.copy(
