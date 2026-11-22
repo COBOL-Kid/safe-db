@@ -81,8 +81,6 @@ class ConnectionsScreenTest {
                 assertEquals(listOf(beta), selected)
 
                 // Clicking Delete icon opens confirm dialog without firing onSelectConnection.
-                editing = null
-                scene.settle()
                 val deleteButtons = scene.nodesLabeled("Delete")
                 assertEquals(2, deleteButtons.size)
                 scene.click(deleteButtons[0].boundsInRoot.center)

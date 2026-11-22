@@ -23,11 +23,19 @@ data class VisualizationConfig(
 ) {
     fun isConfigured(): Boolean = x != null || values.isNotEmpty()
 
+    fun isStackedBar(resolvedType: ChartType?): Boolean =
+        resolvedType == ChartType.Bar && barArrangement == BarArrangement.Stacked
+
     fun supportsSecondaryAxis(resolvedType: ChartType?): Boolean =
         series == null &&
             values.size > 1 &&
             (resolvedType == ChartType.Line ||
                 (resolvedType == ChartType.Bar && barArrangement == BarArrangement.Grouped))
+
+    fun usesSecondaryAxis(resolvedType: ChartType?): Boolean =
+        supportsSecondaryAxis(resolvedType) &&
+            values.any { it.axis == ValueAxis.Primary } &&
+            values.any { it.axis == ValueAxis.Secondary }
 
     fun validate(): VisualizationConfig {
         require(schemaVersion == VISUALIZATION_SCHEMA_VERSION) {

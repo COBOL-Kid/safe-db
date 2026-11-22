@@ -1,7 +1,8 @@
 package com.safedb.export
 
 import androidx.compose.ui.graphics.Color
-import com.safedb.ui.contrastingBarLabelColor
+import com.safedb.ui.chart.contrastingBarLabelColor
+import com.safedb.ui.chart.toCssHex
 
 internal val HTML_SERIES_COLORS =
     listOf(
@@ -17,8 +18,7 @@ internal val HTML_SERIES_COLORS =
 
 private val SERIES_CSS_VARS =
     HTML_SERIES_COLORS.mapIndexed { i, (hex, color) ->
-            val labelHex =
-                if (contrastingBarLabelColor(color) == Color.White) "#ffffff" else "#0f172a"
+            val labelHex = contrastingBarLabelColor(color).toCssHex()
             "      --s$i: $hex; --s$i-label: $labelHex;"
         }
         .joinToString("\n")

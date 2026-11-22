@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import com.safedb.explore.BarArrangement
 import com.safedb.explore.BarOrientation
@@ -23,6 +24,25 @@ import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
 import com.safedb.model.ResultColumn
 import com.safedb.model.ThemePalette
+import com.safedb.ui.chart.DarkBarLabelColor
+import com.safedb.ui.chart.NiceValueAxis
+import com.safedb.ui.chart.PlotInsets
+import com.safedb.ui.chart.barValueLabelText
+import com.safedb.ui.chart.categoryLabelIndices
+import com.safedb.ui.chart.categoryLabelSpanMaxWidth
+import com.safedb.ui.chart.categoryLabelStep
+import com.safedb.ui.chart.clampLabelX
+import com.safedb.ui.chart.compactNumber
+import com.safedb.ui.chart.contrastingBarLabelColor
+import com.safedb.ui.chart.inBarLabelOrNull
+import com.safedb.ui.chart.legendSeriesLabel
+import com.safedb.ui.chart.niceValueAxis
+import com.safedb.ui.chart.plotRect
+import com.safedb.ui.chart.toCssHex
+import com.safedb.ui.chart.tooltipAlignsToStart
+import com.safedb.ui.chart.valueTickMaxWidth
+import com.safedb.ui.chart.visualizationGeometry
+import com.safedb.ui.chart.visualizationValueAxis
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.ui.theme.paletteSpecFor
 import java.util.Locale
@@ -103,11 +123,10 @@ class VisualizationChartTest {
         val second = geometry.regions.first { it.markId == "n2" }.bounds
         val zero =
             geometry.plot.bottom -
-                ((0.0 - geometry.yMin) / (geometry.yMax - geometry.yMin) * geometry.plot.height)
-                    .toFloat()
+                (geometry.valueAxis.fraction(0.0) * geometry.plot.height).toFloat()
 
         assertEquals(-30.0, visualizationValueAxis(preview, config).min)
-        assertEquals(-30.0, geometry.yMin)
+        assertEquals(-30.0, geometry.valueAxis.min)
         assertTrue(first.height > 0f && first.top < first.bottom)
         assertTrue(second.height > 0f && second.top < second.bottom)
         assertEquals(first.left, second.left)
@@ -155,7 +174,7 @@ class VisualizationChartTest {
             )
 
         assertTrue(geometry.regions.isNotEmpty())
-        assertEquals(10.0, geometry.yMax)
+        assertEquals(10.0, geometry.valueAxis.max)
     }
 
     @Test
@@ -198,9 +217,7 @@ class VisualizationChartTest {
                 380f,
             )
         val zero =
-            geometry.plot.left +
-                ((0.0 - geometry.yMin) / (geometry.yMax - geometry.yMin) * geometry.plot.width)
-                    .toFloat()
+            geometry.plot.left + (geometry.valueAxis.fraction(0.0) * geometry.plot.width).toFloat()
         val negative = geometry.regions.first { it.markId == "negative" }.bounds
         val positive = geometry.regions.first { it.markId == "positive" }.bounds
 
@@ -367,16 +384,16 @@ class VisualizationChartTest {
     }
 
     @Test
-    fun edgeClampedFirstLineLabelDoesNotOverlapItsNeighbour() {
-        val plotLeft = 72f
-        val slot = 200f
-        val available = slot - 6f
-        val firstWidth = categoryLabelMaxWidth(plotLeft, plotLeft, 500f, available)
-        val firstLeft = clampLabelX(plotLeft - firstWidth / 2f, firstWidth, plotLeft, 500f)
-        val secondCenter = plotLeft + slot
+    fun niceValueAxisFractionAndColorCssHexHandleBoundaryInputs() {
+        val axis = NiceValueAxis(min = -10.0, max = 30.0, ticks = listOf(-10.0, 10.0, 30.0))
+        assertEquals(0.25, axis.fraction(0.0), 1e-9)
+        assertEquals(0.5, axis.fraction(10.0), 1e-9)
 
-        assertTrue(firstLeft + firstWidth <= secondCenter - available / 2f)
-        assertEquals(available, categoryLabelMaxWidth(secondCenter, plotLeft, 500f, available))
+        val zeroSpan = NiceValueAxis(min = 5.0, max = 5.0, ticks = listOf(5.0))
+        assertEquals(2.0, zeroSpan.fraction(7.0), 1e-9)
+
+        assertEquals("#ffffff", Color.White.toCssHex())
+        assertEquals("#0f172a", DarkBarLabelColor.toCssHex())
     }
 
     @Test
@@ -612,8 +629,8 @@ class VisualizationChartTest {
         val vertical = visualizationGeometry(preview, verticalConfig, 900f, 500f)
         val revBar = vertical.regions.first { it.markId == "a-rev" }.bounds
         val catBar = vertical.regions.first { it.markId == "a-cat" }.bounds
-        assertEquals(4_000_000.0, vertical.yMax)
-        assertEquals(1.0, vertical.secondaryYMax)
+        assertEquals(4_000_000.0, vertical.valueAxis.max)
+        assertEquals(1.0, vertical.secondaryValueAxis?.max)
         assertTrue(revBar.height > vertical.plot.height * 0.85f)
         assertEquals(vertical.plot.height, catBar.height, 1e-3f)
 
@@ -650,9 +667,9 @@ class VisualizationChartTest {
                     ),
             )
         val signed = visualizationGeometry(signedPreview, verticalConfig, 800f, 500f)
-        assertEquals(0.0, signed.yMin)
-        assertEquals(-10.0, signed.secondaryYMin)
-        assertEquals(0.0, signed.secondaryYMax)
+        assertEquals(0.0, signed.valueAxis.min)
+        assertEquals(-10.0, signed.secondaryValueAxis?.min)
+        assertEquals(0.0, signed.secondaryValueAxis?.max)
         val negBounds = signed.regions.first { it.markId == "a-neg" }.bounds
         assertEquals(signed.plot.top, negBounds.top, 1e-3f)
         assertEquals(signed.plot.bottom, negBounds.bottom, 1e-3f)

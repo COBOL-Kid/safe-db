@@ -108,13 +108,17 @@ class ViewModelsTest {
                     username = "user",
                 )
 
-            viewModel.updateConnection(updated, null)
-            assertEquals(listOf(updated), service.updatedConnections)
-            assertEquals(0, service.connectionListCalls)
-
-            viewModel.refresh()
+            var saveResult: Result<ConnectionDef>? = null
+            viewModel.saveConnection(
+                def = updated,
+                password = null,
+                editing = true,
+                credentialMaterialChanged = false,
+                onComplete = { saveResult = it },
+            )
             advanceUntilIdle()
-
+            assertEquals(Result.success(updated), saveResult)
+            assertEquals(listOf(updated), service.updatedConnections)
             assertEquals(1, service.connectionListCalls)
             assertEquals("connection list failed", viewModel.error.value)
         }

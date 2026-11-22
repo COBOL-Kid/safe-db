@@ -847,7 +847,7 @@ private fun renderRecipeLibrary(name: String, isDark: Boolean) {
 }
 
 fun main() {
-    System.setProperty("java.awt.headless", "false")
+    System.setProperty("java.awt.headless", "true")
 
     for (dark in listOf(false, true)) {
         val suffix = if (dark) "dark" else "light"

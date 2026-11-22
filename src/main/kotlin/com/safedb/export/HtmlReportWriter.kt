@@ -14,13 +14,14 @@ import com.safedb.explore.displayColumnLabels
 import com.safedb.explore.pivotCellLineageKey
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
-import com.safedb.ui.PlotInsets
-import com.safedb.ui.barValueLabelText
-import com.safedb.ui.categoryLabelIndices
-import com.safedb.ui.compactNumber
-import com.safedb.ui.legendSeriesLabel
-import com.safedb.ui.visualizationGeometry
-import com.safedb.ui.visualizationSecondaryValueAxis
+import com.safedb.ui.chart.NiceValueAxis
+import com.safedb.ui.chart.PlotInsets
+import com.safedb.ui.chart.barValueLabelText
+import com.safedb.ui.chart.categoryLabelIndices
+import com.safedb.ui.chart.compactNumber
+import com.safedb.ui.chart.legendSeriesLabel
+import com.safedb.ui.chart.visualizationGeometry
+import com.safedb.ui.chart.visualizationSecondaryValueAxis
 import java.io.OutputStream
 import java.nio.charset.StandardCharsets
 import java.time.Instant
@@ -499,10 +500,9 @@ internal fun buildChartSection(
         null -> Unit
     }
 
-    val valueSpan = (geometry.yMax - geometry.yMin).takeIf { it > 0.0 } ?: 1.0
-    val valueTicks =
-        geometry.valueTicks.map { value ->
-            val fraction = ((value - geometry.yMin) / valueSpan).toFloat().coerceIn(0f, 1f)
+    fun axisTicks(axis: NiceValueAxis): List<HtmlAxisTick> =
+        axis.ticks.map { value ->
+            val fraction = axis.fraction(value).toFloat().coerceIn(0f, 1f)
             HtmlAxisTick(
                 pos =
                     if (horizontal) (plot.left + plot.width * fraction).rounded()
@@ -510,6 +510,8 @@ internal fun buildChartSection(
                 label = compactNumber(value),
             )
         }
+
+    val valueTicks = axisTicks(geometry.valueAxis)
     val categories = preview.marks.distinctBy { it.xKey }
     val centered =
         categories
@@ -528,24 +530,7 @@ internal fun buildChartSection(
         categoryLabelIndices(centered.map { it.first }, requiredGap).map { index ->
             HtmlAxisTick(pos = centered[index].first.rounded(), label = centered[index].second)
         }
-    val secondaryAxisMin = geometry.secondaryYMin
-    val secondaryAxisMax = geometry.secondaryYMax
-    val secondaryValueTicks =
-        if (secondaryAxisMin != null && secondaryAxisMax != null) {
-            val secondarySpan = (secondaryAxisMax - secondaryAxisMin).takeIf { it > 0.0 } ?: 1.0
-            geometry.secondaryValueTicks.map { value ->
-                val fraction =
-                    ((value - secondaryAxisMin) / secondarySpan).toFloat().coerceIn(0f, 1f)
-                HtmlAxisTick(
-                    pos =
-                        if (horizontal) (plot.left + plot.width * fraction).rounded()
-                        else (plot.bottom - plot.height * fraction).rounded(),
-                    label = compactNumber(value),
-                )
-            }
-        } else {
-            emptyList()
-        }
+    val secondaryValueTicks = geometry.secondaryValueAxis?.let(::axisTicks).orEmpty()
     val shownLegend = if (multiSeries) preview.series.take(12) else emptyList()
     return HtmlChartSection(
         title = preview.title,

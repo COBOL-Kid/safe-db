@@ -1,7 +1,7 @@
 # Agent-driven GUI testing on Linux / WSL
 
 > [!WARNING]
-> **Dev-only and unsupported on Linux.** Production `safe-db` supports macOS and Windows only; [`Main.kt`](../src/main/kotlin/com/safedb/Main.kt) and [`DataDirectory.kt`](../shared/src/main/kotlin/com/safedb/platform/DataDirectory.kt) continue to reject Linux. The `runAgentGui` entry point lives in the `render` source set, which is never packaged into shipped artifacts, and holds credentials in process memory (`SAFEDB_KEYCHAIN_BACKEND=disabled`). Font rendering, Swing file choosers, and window chrome may differ slightly from macOS and Windows.
+> **Dev-only and unsupported on Linux.** Production `safe-db` supports macOS and Windows only; [`Main.kt`](../src/main/kotlin/com/safedb/Main.kt) and [`DataDirectory.kt`](../shared/src/main/kotlin/com/safedb/platform/DataDirectory.kt) continue to reject Linux. The `runAgentGui` entry point lives in the `render` source set, which is never packaged into shipped artifacts, and disables the OS keychain backend in `AgentGui.kt` so credentials stay in process memory. Font rendering, Swing file choosers, and window chrome may differ slightly from macOS and Windows.
 
 This workflow lets any CLI agent manually test the real Compose Desktop GUI on a Linux or WSL dev box using a headless virtual X display (`Xvfb`), a lightweight window manager (`openbox`), `xdotool` for input, and ImageMagick (`import`) for screenshots.
 
@@ -61,7 +61,7 @@ Tips:
 - Coordinates are absolute screen pixels (including the `openbox` title bar at the top of the window).
 - Click the center of elements read from the latest screenshot. Clicking on a text field's border or label can leave focus in the previously focused field.
 - Pasting a connection string and clicking **Apply** is the fastest way to fill the New Connection form.
-- The New Connection screen says "OS keychain", but in this dev-only mode credentials stay in process memory (`SAFEDB_KEYCHAIN_BACKEND=disabled`).
+- The New Connection screen says "OS keychain", but in this dev-only mode `AgentGui.kt` disables the OS keychain backend so credentials stay in process memory.
 
 ## Script commands
 
@@ -85,16 +85,7 @@ Environment overrides: `AGENT_GUI_DISPLAY` (default `:99`), `AGENT_GUI_SCREEN` (
 
 ## Docker fixture connections
 
-All test-only fixture passwords live in [compose.yaml](../compose.yaml). Use the connection parameters below when creating connections in the GUI:
-
-| Engine | Host | Port | Database / Service | User | Notes |
-| --- | --- | --- | --- | --- | --- |
-| MySQL (plain) | `127.0.0.1` | `3306` | `safedb_test` | `safedb` | Plain TCP (`mysql-connectivity`); seeded with `testdata_mysql.sql`. |
-| MySQL (TLS) | `127.0.0.1` | `3307` | `safedb_ssl` | `safedb` | Requires TLS (`--require-secure-transport=ON`). |
-| PostgreSQL | `127.0.0.1` | `5433` | `safedb_test` | `postgres` | Seeded with `testdata_postgres.sql` (`customers`, `orders`, `scan_events`, etc.). SSL is enabled on the server; use Trust-all or the generated CA in `.docker/safedb-ssl/` when testing TLS. |
-| SQL Server | `127.0.0.1` | `14333` | `safedb_ssl` | `sa` | Seeded by `mssql-init`; TLS configured on server. |
-| Oracle | `127.0.0.1` | `1522` | `FREEPDB1` | `safedb` | Seeded in schema `SAFEDB`; plain TCP by default. |
-| Db2 | `127.0.0.1` | `50000` | `SAFEDB` | `db2inst1` | Plain TCP on `50000` (no TLS). |
+All test-only fixture connection parameters and passwords live in [testing.md](testing.md#integration-tests) and [compose.yaml](../compose.yaml). For TLS testing, MySQL TLS listens on `127.0.0.1:3307` (`safedb_ssl`, user `safedb`) and generated CAs live under `.docker/safedb-ssl/`.
 
 ## Watching live from Windows
 

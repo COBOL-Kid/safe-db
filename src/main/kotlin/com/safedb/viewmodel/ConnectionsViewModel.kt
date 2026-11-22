@@ -56,21 +56,6 @@ class ConnectionsViewModel(
         return service.createConnection(def, password)
     }
 
-    suspend fun updateConnection(def: ConnectionDef, password: String?) {
-        updateConnectionInternal(def, password, notifyCredentialsUpdated = password != null)
-    }
-
-    private suspend fun updateConnectionInternal(
-        def: ConnectionDef,
-        password: String?,
-        notifyCredentialsUpdated: Boolean,
-    ) {
-        service.updateConnection(def, password)
-        if (notifyCredentialsUpdated) {
-            onCredentialsUpdated(def)
-        }
-    }
-
     fun saveConnection(
         def: ConnectionDef,
         password: String?,
@@ -82,13 +67,12 @@ class ConnectionsViewModel(
         try {
             val saved =
                 if (editing) {
+                    service.updateConnection(def, password)
                     // Only re-probe in place for password-only updates; credential-material edits
                     // trigger onConnectionChanged, which clears the active connection immediately.
-                    updateConnectionInternal(
-                        def,
-                        password,
-                        notifyCredentialsUpdated = password != null && !credentialMaterialChanged,
-                    )
+                    if (password != null && !credentialMaterialChanged) {
+                        onCredentialsUpdated(def)
+                    }
                     def
                 } else {
                     createConnection(def, password ?: "")

@@ -4,10 +4,11 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DISPLAY_NUM="${AGENT_GUI_DISPLAY:-:99}"
+export DISPLAY="$DISPLAY_NUM"
 SCREEN_RES="${AGENT_GUI_SCREEN:-1600x1000}"
 STATE_DIR="$ROOT/build/agent-gui"
 SHOTS_DIR="$STATE_DIR/shots"
-DATA_DIR="$STATE_DIR/data"
+DATA_DIR="${SAFEDB_AGENT_GUI_DATA_DIR:-$STATE_DIR/data}"
 APP_LOG="$STATE_DIR/app.log"
 XVFB_LOG="$STATE_DIR/xvfb.log"
 OPENBOX_LOG="$STATE_DIR/openbox.log"
@@ -79,7 +80,7 @@ check_prereqs() {
 }
 
 require_display() {
-  if ! DISPLAY="$DISPLAY_NUM" xdotool getdisplaygeometry >/dev/null 2>&1; then
+  if ! xdotool getdisplaygeometry >/dev/null 2>&1; then
     echo "Display $DISPLAY_NUM is not running. Run 'scripts/agent_gui.sh up' first." >&2
     exit 1
   fi
@@ -134,7 +135,7 @@ cmd_up() {
       >"$XVFB_LOG" 2>&1 &
     echo $! >"$XVFB_PID_FILE"
     local i=0
-    until DISPLAY="$DISPLAY_NUM" xdotool getdisplaygeometry >/dev/null 2>&1; do
+    until xdotool getdisplaygeometry >/dev/null 2>&1; do
       if ! is_pid_running "$XVFB_PID_FILE"; then
         echo "Xvfb exited unexpectedly. Log ($XVFB_LOG):" >&2
         cat "$XVFB_LOG" >&2 || true
@@ -150,7 +151,7 @@ cmd_up() {
   fi
 
   if ! is_pid_running "$OPENBOX_PID_FILE"; then
-    DISPLAY="$DISPLAY_NUM" nohup openbox >"$OPENBOX_LOG" 2>&1 &
+    nohup openbox >"$OPENBOX_LOG" 2>&1 &
     echo $! >"$OPENBOX_PID_FILE"
     sleep 0.3
   fi
@@ -164,9 +165,7 @@ cmd_up() {
   if ! is_pid_running "$APP_PID_FILE"; then
     (
       cd "$ROOT"
-      export DISPLAY="$DISPLAY_NUM"
-      export SAFEDB_KEYCHAIN_BACKEND=disabled
-      export SAFEDB_AGENT_GUI_DATA_DIR="${SAFEDB_AGENT_GUI_DATA_DIR:-$DATA_DIR}"
+      export SAFEDB_AGENT_GUI_DATA_DIR="$DATA_DIR"
       exec nohup ./gradlew --no-daemon runAgentGui >"$APP_LOG" 2>&1
     ) &
     echo $! >"$APP_PID_FILE"
@@ -175,7 +174,7 @@ cmd_up() {
   local win_id=""
   local elapsed=0
   while ((elapsed < 120)); do
-    win_id="$(DISPLAY="$DISPLAY_NUM" xdotool search --onlyvisible --name "Safe-DB" 2>/dev/null | head -n 1 || true)"
+    win_id="$(xdotool search --onlyvisible --name "Safe-DB" 2>/dev/null | head -n 1 || true)"
     if [[ -n "$win_id" ]]; then
       break
     fi
@@ -195,11 +194,11 @@ cmd_up() {
     exit 1
   fi
 
-  DISPLAY="$DISPLAY_NUM" xdotool windowmove "$win_id" 0 0 || true
-  DISPLAY="$DISPLAY_NUM" xdotool windowactivate "$win_id" || true
+  xdotool windowmove "$win_id" 0 0 || true
+  xdotool windowactivate "$win_id" || true
 
   echo "Agent GUI ready on DISPLAY=$DISPLAY_NUM ($SCREEN_RES), window=$win_id"
-  echo "Data dir: ${SAFEDB_AGENT_GUI_DATA_DIR:-$DATA_DIR}"
+  echo "Data dir: $DATA_DIR"
   if is_pid_running "$VNC_PID_FILE"; then
     echo "VNC listening on localhost:5900"
   fi
@@ -224,7 +223,7 @@ cmd_down() {
 cmd_windows() {
   require_display
   local ids
-  ids="$(DISPLAY="$DISPLAY_NUM" xdotool search --onlyvisible --name ".*" 2>/dev/null || true)"
+  ids="$(xdotool search --onlyvisible --name ".*" 2>/dev/null || true)"
   if [[ -z "$ids" ]]; then
     echo "No visible windows."
     return 0
@@ -232,10 +231,10 @@ cmd_windows() {
   local wid title X Y WIDTH HEIGHT
   while IFS= read -r wid; do
     [[ -z "$wid" ]] && continue
-    title="$(DISPLAY="$DISPLAY_NUM" xdotool getwindowname "$wid" 2>/dev/null || true)"
+    title="$(xdotool getwindowname "$wid" 2>/dev/null || true)"
     [[ -z "$title" ]] && continue
     X="" Y="" WIDTH="" HEIGHT=""
-    eval "$(DISPLAY="$DISPLAY_NUM" xdotool getwindowgeometry --shell "$wid" 2>/dev/null | grep -E '^(X|Y|WIDTH|HEIGHT)=' || true)"
+    eval "$(xdotool getwindowgeometry --shell "$wid" 2>/dev/null | grep -E '^(X|Y|WIDTH|HEIGHT)=' || true)"
     printf "%s\t%sx%s+%s+%s\t%s\n" "$wid" "${WIDTH:-?}" "${HEIGHT:-?}" "${X:-?}" "${Y:-?}" "$title"
   done <<<"$ids"
 }
@@ -251,7 +250,7 @@ cmd_status() {
       echo "$label: stopped"
     fi
   done
-  if DISPLAY="$DISPLAY_NUM" xdotool getdisplaygeometry >/dev/null 2>&1; then
+  if xdotool getdisplaygeometry >/dev/null 2>&1; then
     echo "display $DISPLAY_NUM: up"
     cmd_windows
   else
@@ -290,7 +289,7 @@ cmd_screenshot() {
 
   if [[ "$target_window" == "true" ]]; then
     local wid
-    wid="$(DISPLAY="$DISPLAY_NUM" xdotool getactivewindow 2>/dev/null || true)"
+    wid="$(xdotool getactivewindow 2>/dev/null || true)"
     if [[ -z "$wid" ]]; then
       echo "No active window found on $DISPLAY_NUM." >&2
       exit 1
@@ -306,18 +305,18 @@ cmd_focus() {
   require_display
   local pattern="${1:?focus requires a title substring}"
   local wid
-  wid="$(DISPLAY="$DISPLAY_NUM" xdotool search --onlyvisible --name "$pattern" 2>/dev/null | head -n 1 || true)"
+  wid="$(xdotool search --onlyvisible --name "$pattern" 2>/dev/null | head -n 1 || true)"
   if [[ -z "$wid" ]]; then
-    wid="$(DISPLAY="$DISPLAY_NUM" xdotool search --name "$pattern" 2>/dev/null | head -n 1 || true)"
+    wid="$(xdotool search --name "$pattern" 2>/dev/null | head -n 1 || true)"
   fi
   if [[ -z "$wid" ]]; then
     echo "No window matching '$pattern' found." >&2
     exit 1
   fi
-  DISPLAY="$DISPLAY_NUM" xdotool windowactivate "$wid"
-  DISPLAY="$DISPLAY_NUM" xdotool windowraise "$wid"
+  xdotool windowactivate "$wid"
+  xdotool windowraise "$wid"
   local title
-  title="$(DISPLAY="$DISPLAY_NUM" xdotool getwindowname "$wid" 2>/dev/null || true)"
+  title="$(xdotool getwindowname "$wid" 2>/dev/null || true)"
   echo "Focused $wid ($title)"
 }
 
@@ -328,13 +327,13 @@ cmd_click() {
   local mode="${3:-left}"
   case "$mode" in
     left)
-      DISPLAY="$DISPLAY_NUM" xdotool mousemove --sync "$x" "$y" click 1
+      xdotool mousemove --sync "$x" "$y" click 1
       ;;
     right)
-      DISPLAY="$DISPLAY_NUM" xdotool mousemove --sync "$x" "$y" click 3
+      xdotool mousemove --sync "$x" "$y" click 3
       ;;
     double)
-      DISPLAY="$DISPLAY_NUM" xdotool mousemove --sync "$x" "$y" click --repeat 2 --delay 50 1
+      xdotool mousemove --sync "$x" "$y" click --repeat 2 --delay 50 1
       ;;
     *)
       echo "Unknown click mode '$mode' (expected left|right|double)" >&2
@@ -349,7 +348,7 @@ cmd_drag() {
   local y1="${2:?drag requires Y1}"
   local x2="${3:?drag requires X2}"
   local y2="${4:?drag requires Y2}"
-  DISPLAY="$DISPLAY_NUM" xdotool mousemove --sync "$x1" "$y1" mousedown 1 mousemove --sync "$x2" "$y2" mouseup 1
+  xdotool mousemove --sync "$x1" "$y1" mousedown 1 mousemove --sync "$x2" "$y2" mouseup 1
 }
 
 cmd_scroll() {
@@ -366,15 +365,15 @@ cmd_scroll() {
   esac
   local count="${2:-3}"
   if (($# >= 4)); then
-    DISPLAY="$DISPLAY_NUM" xdotool mousemove --sync "$3" "$4"
+    xdotool mousemove --sync "$3" "$4"
   fi
-  DISPLAY="$DISPLAY_NUM" xdotool click --repeat "$count" --delay 30 "$btn"
+  xdotool click --repeat "$count" --delay 30 "$btn"
 }
 
 cmd_type() {
   require_display
   local text="${1?type requires text}"
-  DISPLAY="$DISPLAY_NUM" xdotool type --clearmodifiers --delay 15 -- "$text"
+  xdotool type --clearmodifiers --delay 15 -- "$text"
 }
 
 cmd_key() {
@@ -383,7 +382,7 @@ cmd_key() {
     echo "key requires at least one key or combo" >&2
     exit 2
   fi
-  DISPLAY="$DISPLAY_NUM" xdotool key --clearmodifiers -- "$@"
+  xdotool key --clearmodifiers -- "$@"
 }
 
 cmd_logs() {

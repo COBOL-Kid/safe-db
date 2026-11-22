@@ -536,6 +536,8 @@ class ApplyVisualizationTest {
                     ),
             )
         val groupedBar = applyVisualization(sample(), baseConfig)
+        assertTrue(baseConfig.usesSecondaryAxis(ChartType.Bar))
+        assertFalse(baseConfig.isStackedBar(ChartType.Bar))
         assertTrue(groupedBar.hasSecondaryAxis)
         assertEquals(
             mapOf("revenue" to ValueAxis.Primary, "score" to ValueAxis.Secondary),
@@ -543,20 +545,22 @@ class ApplyVisualizationTest {
         )
 
         val line = applyVisualization(sample(), baseConfig.copy(chartType = ChartType.Line))
+        assertTrue(baseConfig.copy(chartType = ChartType.Line).usesSecondaryAxis(ChartType.Line))
         assertTrue(line.hasSecondaryAxis)
 
-        val stackedBar =
-            applyVisualization(sample(), baseConfig.copy(barArrangement = BarArrangement.Stacked))
+        val stackedConfig = baseConfig.copy(barArrangement = BarArrangement.Stacked)
+        assertTrue(stackedConfig.isStackedBar(ChartType.Bar))
+        assertFalse(stackedConfig.usesSecondaryAxis(ChartType.Bar))
+        val stackedBar = applyVisualization(sample(), stackedConfig)
         assertFalse(stackedBar.hasSecondaryAxis)
         assertTrue(stackedBar.marks.all { it.axis == ValueAxis.Primary })
 
-        val allSecondary =
-            applyVisualization(
-                sample(),
-                baseConfig.copy(
-                    values = baseConfig.values.map { it.copy(axis = ValueAxis.Secondary) },
-                ),
+        val allSecondaryConfig =
+            baseConfig.copy(
+                values = baseConfig.values.map { it.copy(axis = ValueAxis.Secondary) },
             )
+        assertFalse(allSecondaryConfig.usesSecondaryAxis(ChartType.Bar))
+        val allSecondary = applyVisualization(sample(), allSecondaryConfig)
         assertFalse(allSecondary.hasSecondaryAxis)
         assertTrue(allSecondary.marks.all { it.axis == ValueAxis.Primary })
 
@@ -566,6 +570,77 @@ class ApplyVisualizationTest {
                 baseConfig.copy(values = listOf(baseConfig.values[1])),
             )
         assertFalse(singleMeasure.hasSecondaryAxis)
+    }
+
+    @Test
+    fun binnedAndDateSeriesSortByBucketSortKeyInsteadOfDisplayLabel() {
+        val binned =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("status", "varchar"),
+                        ResultColumn("amount", "decimal"),
+                        ResultColumn("created_at", "datetime"),
+                    ),
+                rows =
+                    listOf(
+                        listOf(
+                            ResultCell.text("open"),
+                            ResultCell.IntegerCell(105),
+                            ResultCell.text("2026-04-02"),
+                        ),
+                        listOf(
+                            ResultCell.text("open"),
+                            ResultCell.IntegerCell(25),
+                            ResultCell.text("2026-01-15"),
+                        ),
+                        listOf(
+                            ResultCell.text("open"),
+                            ResultCell.IntegerCell(5),
+                            ResultCell.text("2026-02-10"),
+                        ),
+                    ),
+                rowCount = 3,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val numericSeriesPreview =
+            applyVisualization(
+                binned,
+                VisualizationConfig(
+                    chartType = ChartType.Bar,
+                    x = VisualizationField("status"),
+                    values = listOf(VisualizationMeasure.countRows()),
+                    series =
+                        VisualizationField(
+                            "amount",
+                            grouping = PivotGrouping.NumberBin("10"),
+                        ),
+                ),
+            )
+        assertEquals(
+            listOf("0 – 10", "20 – 30", "100 – 110"),
+            numericSeriesPreview.series.map { it.label },
+        )
+
+        val dateSeriesPreview =
+            applyVisualization(
+                binned,
+                VisualizationConfig(
+                    chartType = ChartType.Bar,
+                    x = VisualizationField("status"),
+                    values = listOf(VisualizationMeasure.countRows()),
+                    series =
+                        VisualizationField(
+                            "created_at",
+                            grouping = PivotGrouping.Date(DateGroupUnit.Month),
+                        ),
+                ),
+            )
+        assertEquals(
+            listOf("Jan 2026", "Feb 2026", "Apr 2026"),
+            dateSeriesPreview.series.map { it.label },
+        )
     }
 
     @Test

@@ -51,6 +51,7 @@ tasks.register<JavaExec>("renderPreview") {
     description = "Render main screens headlessly to /tmp/safedb-preview for visual checks."
     classpath = render.runtimeClasspath
     mainClass.set("com.safedb.tools.RenderPreviewKt")
+    jvmArgs("-Djava.awt.headless=true")
 }
 
 tasks.register<JavaExec>("renderReportExport") {
@@ -65,6 +66,7 @@ tasks.register<JavaExec>("renderHeroFrames") {
     description = "Render the query-builder build-up sequence to /tmp/safedb-preview/hero."
     classpath = render.runtimeClasspath
     mainClass.set("com.safedb.tools.HeroFramesKt")
+    jvmArgs("-Djava.awt.headless=true")
 }
 
 tasks.register<JavaExec>("renderThemeGallery") {
@@ -72,6 +74,7 @@ tasks.register<JavaExec>("renderThemeGallery") {
     description = "Render the color scheme picker and Connections screen for every scheme."
     classpath = render.runtimeClasspath
     mainClass.set("com.safedb.tools.RenderThemeGalleryKt")
+    jvmArgs("-Djava.awt.headless=true")
 }
 
 tasks.register<JavaExec>("runAgentGui") {
@@ -82,5 +85,4 @@ tasks.register<JavaExec>("runAgentGui") {
     workingDir = projectDir
     // Deterministic 1:1 pixels so screenshot coordinates == click coordinates.
     jvmArgs("-Dsun.java2d.uiScale=1")
-    environment("SAFEDB_KEYCHAIN_BACKEND", "disabled")
 }

@@ -4,7 +4,7 @@ import com.safedb.AppRoute
 import com.safedb.model.ThemePalette
 
 fun main() {
-    System.setProperty("java.awt.headless", "false")
+    System.setProperty("java.awt.headless", "true")
 
     ThemePalette.entries.forEach { palette ->
         listOf(false, true).forEach { dark ->

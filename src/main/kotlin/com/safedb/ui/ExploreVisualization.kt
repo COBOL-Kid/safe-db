@@ -65,7 +65,6 @@ import com.safedb.explore.VisualizationMeasure
 import com.safedb.explore.VisualizationSortTarget
 import com.safedb.explore.VisualizationTemplate
 import com.safedb.explore.VisualizationTemplateBuildResult
-import com.safedb.explore.displayColumnLabel
 import com.safedb.explore.suggestedVisualizationTemplates
 import com.safedb.explore.visualizationTemplates
 import com.safedb.model.ColumnCategory
@@ -117,11 +116,8 @@ internal fun VisualizationConfigPanel(
     val horizontalBars =
         effectiveType == ChartType.Bar && config.barOrientation == BarOrientation.Horizontal
     val stackedDualAxisNote =
-        config.series == null &&
-            config.values.size > 1 &&
-            effectiveType == ChartType.Bar &&
-            config.barArrangement == BarArrangement.Stacked &&
-            config.values.any { it.axis == ValueAxis.Secondary }
+        config.isStackedBar(effectiveType) &&
+            config.copy(barArrangement = BarArrangement.Grouped).usesSecondaryAxis(effectiveType)
 
     editingFilter?.let { filter ->
         FilterSettingsDialog(
@@ -989,136 +985,6 @@ private fun TemplateCard(
         }
     }
 }
-
-internal fun VisualizationConfig.forChartType(
-    type: ChartType,
-    fields: List<ExploreFieldOption>,
-): VisualizationConfig {
-    fun numeric(column: String?): Boolean =
-        fields.firstOrNull { it.column == column }?.category?.isNumeric() == true
-    return when (type) {
-        ChartType.Histogram -> {
-            val promotedX =
-                x?.takeIf { numeric(it.column) }
-                    ?: values.firstNotNullOfOrNull { measure ->
-                        measure.sourceColumn?.takeIf(::numeric)?.let { column ->
-                            val field = fields.firstOrNull { it.column == column }
-                            VisualizationField(
-                                column = column,
-                                label = field?.label ?: displayColumnLabel(column),
-                            )
-                        }
-                    }
-            copy(
-                chartType = type,
-                x = promotedX,
-                values = emptyList(),
-                series = null,
-                size = null,
-            )
-        }
-        ChartType.Kpi ->
-            copy(
-                chartType = type,
-                x = null,
-                values = values.take(1).map { it.copy(aggregate = true, axis = ValueAxis.Primary) },
-                series = null,
-                size = null,
-            )
-        ChartType.Scatter ->
-            copy(
-                chartType = type,
-                x = x?.takeIf { numeric(it.column) },
-                values =
-                    values
-                        .take(1)
-                        .filter { numeric(it.sourceColumn) }
-                        .map {
-                            it.copy(
-                                aggregate = false,
-                                label = it.sourceColumn?.let(::displayColumnLabel) ?: it.label,
-                                axis = ValueAxis.Primary,
-                            )
-                        },
-                series = series,
-                size = size?.takeIf { numeric(it.column) },
-            )
-        ChartType.Bar,
-        ChartType.Line ->
-            copy(chartType = type, values = values.map { it.copy(aggregate = true) }, size = null)
-        ChartType.Auto -> copy(chartType = type)
-    }
-}
-
-internal fun chartTypeTransitionMessage(
-    previous: VisualizationConfig,
-    next: VisualizationConfig,
-): String? {
-    val nextX = next.x
-    if (
-        nextX != null &&
-            next.chartType == ChartType.Histogram &&
-            previous.x?.column != nextX.column &&
-            previous.values.any { it.sourceColumn == nextX.column }
-    ) {
-        val otherRemoved = buildList {
-            if (previous.series != null && next.series == null) add("series")
-            if (previous.size != null && next.size == null) add("size")
-        }
-        val moved = "Moved ${nextX.label} to X for histogram"
-        return if (otherRemoved.isEmpty()) {
-            "$moved."
-        } else {
-            "$moved; removed incompatible ${otherRemoved.joinToString()} assignment${if (otherRemoved.size == 1) "" else "s"}."
-        }
-    }
-    val removed = buildList {
-        if (previous.x != null && next.x == null) add("X")
-        if (previous.values.isNotEmpty() && next.values.isEmpty()) add("values")
-        if (previous.series != null && next.series == null) add("series")
-        if (previous.size != null && next.size == null) add("size")
-    }
-    return removed
-        .takeIf { it.isNotEmpty() }
-        ?.let {
-            "Removed incompatible ${it.joinToString()} assignment${if (it.size == 1) "" else "s"}."
-        }
-}
-
-internal fun visualizationOptionsSummary(
-    config: VisualizationConfig,
-    effectiveType: ChartType?,
-): String =
-    when (effectiveType) {
-        ChartType.Bar -> "${config.sort.target.name.lowercase()} sort · Top ${config.topN}"
-        ChartType.Line -> "${config.sort.target.name.lowercase()} sort"
-        ChartType.Histogram -> {
-            val binSize =
-                (config.x?.grouping as? PivotGrouping.NumberBin)?.size?.trim()?.takeIf { raw ->
-                    raw.toBigDecimalOrNull()?.let { it > java.math.BigDecimal.ZERO } == true
-                }
-            if (binSize != null) "Bin size $binSize" else "Auto bins"
-        }
-        ChartType.Scatter,
-        ChartType.Kpi -> if (config.values.isNotEmpty()) "Format & title" else "Title & display"
-        ChartType.Auto,
-        null -> "Title & display"
-    }
-
-internal fun normalizeMeasureAxes(
-    values: List<VisualizationMeasure>,
-): List<VisualizationMeasure> =
-    when {
-        values.size <= 1 ->
-            values.map {
-                if (it.axis == ValueAxis.Primary) it else it.copy(axis = ValueAxis.Primary)
-            }
-        values.none { it.axis == ValueAxis.Primary } ->
-            values.mapIndexed { index, measure ->
-                if (index == 0) measure.copy(axis = ValueAxis.Primary) else measure
-            }
-        else -> values
-    }
 
 private fun xCompatible(type: ChartType, field: ExploreFieldOption): Boolean =
     when (type) {

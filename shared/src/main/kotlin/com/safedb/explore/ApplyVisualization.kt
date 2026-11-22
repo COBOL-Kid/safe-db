@@ -28,6 +28,7 @@ private class VisualizationPlanner(
     private val sampleIndex = SampleIndex(sample)
     private val types = sample.columns.associate { it.name to classifyColumn(it.dataType) }
     private val warnings = linkedSetOf<String>()
+    private val seriesSortKeys = mutableMapOf<String, String>()
     private val autoDecimalFormat by lazy { createGroupedAutoDecimalFormat() }
 
     fun apply(): VisualizationPreview {
@@ -132,14 +133,12 @@ private class VisualizationPlanner(
     ): List<VisualizationMark> {
         val x = config.x ?: return emptyList()
         val dualAxisAllowed = config.supportsSecondaryAxis(type)
-        val hasPrimary = config.values.any { it.axis == ValueAxis.Primary }
-        val hasSecondary = config.values.any { it.axis == ValueAxis.Secondary }
-        val effectiveDualAxis = dualAxisAllowed && hasPrimary && hasSecondary
+        val effectiveDualAxis = config.usesSecondaryAxis(type)
         val groups = linkedMapOf<Pair<ExploreBucket, ExploreBucket>, MutableList<ChartRecord>>()
         records.forEach { record ->
             val xBucket = bucket(record.cell(x.column), x)
             val seriesBucket =
-                config.series?.let { bucket(record.cell(it.column), it) }
+                config.series?.let { seriesBucket(record.cell(it.column), it) }
                     ?: ExploreBucket("", "", "", ordinal = null)
             groups.getOrPut(xBucket to seriesBucket, ::mutableListOf) += record
         }
@@ -198,7 +197,7 @@ private class VisualizationPlanner(
             val xValue = resultCellDecimal(record.cell(x.column))
             val yValue = resultCellDecimal(record.cell(yColumn))
             if (xValue == null || yValue == null) return@mapNotNull null
-            val seriesBucket = config.series?.let { bucket(record.cell(it.column), it) }
+            val seriesBucket = config.series?.let { seriesBucket(record.cell(it.column), it) }
             val size = config.size?.let { resultCellDecimal(record.cell(it.column))?.toDouble() }
             VisualizationMark(
                 id = "row:${record.index}",
@@ -333,7 +332,7 @@ private class VisualizationPlanner(
                 .distinctBy { it.seriesKey }
                 .map { VisualizationSeries(it.seriesKey, it.seriesLabel, it.axis) }
         return if (config.series != null) {
-            distinct.sortedBy { it.label.lowercase(Locale.ROOT) }
+            distinct.sortedBy { (seriesSortKeys[it.key] ?: it.label).lowercase(Locale.ROOT) }
         } else {
             distinct
         }
@@ -373,6 +372,9 @@ private class VisualizationPlanner(
             group.sortedBy { mark -> seriesRank[mark.seriesKey] ?: Int.MAX_VALUE }
         }
     }
+
+    private fun seriesBucket(cell: ResultCell, field: VisualizationField): ExploreBucket =
+        bucket(cell, field).also { seriesSortKeys.putIfAbsent(it.key, it.sortKey) }
 
     private fun bucket(cell: ResultCell, field: VisualizationField): ExploreBucket {
         if (cell is ResultCell.Null)
