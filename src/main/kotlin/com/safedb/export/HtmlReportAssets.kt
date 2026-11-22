@@ -71,7 +71,7 @@ internal val REPORT_CSS =
     svg .shape:hover { opacity: 0.75; }
     svg.chart text.bar-label { pointer-events: none; font-weight: 500; }
     svg.chart text.bar-label-light { fill: #ffffff; }
-    svg.chart text.bar-label-dark { fill: #1c1f26; }
+    svg.chart text.bar-label-dark { fill: #0f172a; }
     .fill-s0 { fill: var(--s0); } .fill-s1 { fill: var(--s1); } .fill-s2 { fill: var(--s2); } .fill-s3 { fill: var(--s3); }
     .fill-s4 { fill: var(--s4); } .fill-s5 { fill: var(--s5); } .fill-s6 { fill: var(--s6); } .fill-s7 { fill: var(--s7); }
     .stroke-s0 { stroke: var(--s0); } .stroke-s1 { stroke: var(--s1); } .stroke-s2 { stroke: var(--s2); } .stroke-s3 { stroke: var(--s3); }
