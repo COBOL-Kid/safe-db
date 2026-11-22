@@ -27,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -43,6 +44,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import com.safedb.model.Dialect
 import com.safedb.model.Schema
 import com.safedb.query.sql.SqlCompletionItem
@@ -141,37 +143,41 @@ internal fun SqlEditor(
             },
             enabled = enabled,
             modifier =
-                Modifier.fillMaxSize().padding(EditorPadding).onPreviewKeyEvent { event ->
-                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                    val shortcut = event.isCtrlPressed || event.isMetaPressed
-                    when {
-                        shortcut && event.key == Key.Enter -> {
-                            onRun()
-                            true
+                Modifier.fillMaxSize()
+                    .padding(EditorPadding)
+                    .onFocusChanged { if (!it.isFocused) completionOpen = false }
+                    .onPreviewKeyEvent { event ->
+                        if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                        val shortcut = event.isCtrlPressed || event.isMetaPressed
+                        when {
+                            shortcut && event.key == Key.Enter -> {
+                                completionOpen = false
+                                onRun()
+                                true
+                            }
+                            shortcut && event.key == Key.Spacebar -> {
+                                completionOpen = true
+                                true
+                            }
+                            popupVisible && event.key == Key.DirectionDown -> {
+                                selectedIndex = (selectedIndex + 1).coerceAtMost(items.lastIndex)
+                                true
+                            }
+                            popupVisible && event.key == Key.DirectionUp -> {
+                                selectedIndex = (selectedIndex - 1).coerceAtLeast(0)
+                                true
+                            }
+                            popupVisible && (event.key == Key.Enter || event.key == Key.Tab) -> {
+                                items.getOrNull(selectedIndex)?.let(::applyCompletion)
+                                true
+                            }
+                            popupVisible && event.key == Key.Escape -> {
+                                completionOpen = false
+                                true
+                            }
+                            else -> false
                         }
-                        shortcut && event.key == Key.Spacebar -> {
-                            completionOpen = true
-                            true
-                        }
-                        popupVisible && event.key == Key.DirectionDown -> {
-                            selectedIndex = (selectedIndex + 1).coerceAtMost(items.lastIndex)
-                            true
-                        }
-                        popupVisible && event.key == Key.DirectionUp -> {
-                            selectedIndex = (selectedIndex - 1).coerceAtLeast(0)
-                            true
-                        }
-                        popupVisible && (event.key == Key.Enter || event.key == Key.Tab) -> {
-                            items.getOrNull(selectedIndex)?.let(::applyCompletion)
-                            true
-                        }
-                        popupVisible && event.key == Key.Escape -> {
-                            completionOpen = false
-                            true
-                        }
-                        else -> false
-                    }
-                },
+                    },
             textStyle = DataMono.copy(color = MaterialTheme.colorScheme.onSurface),
             cursorBrush = SolidColor(SafeDbTheme.colors.actionPrimary),
             visualTransformation =
@@ -203,7 +209,11 @@ internal fun SqlEditor(
                     x = paddingPx + (caretRect?.left?.toInt() ?: 0),
                     y = paddingPx + (caretRect?.bottom?.toInt() ?: 0) + 4,
                 )
-            Popup(offset = offset, onDismissRequest = { completionOpen = false }) {
+            Popup(
+                offset = offset,
+                onDismissRequest = { completionOpen = false },
+                properties = PopupProperties(focusable = false, dismissOnClickOutside = false),
+            ) {
                 CompletionList(
                     items = items,
                     selectedIndex = selectedIndex,

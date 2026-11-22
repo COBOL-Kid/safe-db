@@ -60,6 +60,7 @@ fun ConnectionsScreen(
     viewModel: ConnectionsViewModel,
     onDeleted: (String) -> Unit,
     onConnectionChanged: (String) -> Unit,
+    onSelectConnection: (ConnectionDef) -> Unit = {},
     openNewConnectionForm: Boolean = false,
     onOpenNewConnectionFormConsumed: () -> Unit = {},
     activeConnectionId: String? = null,
@@ -82,6 +83,7 @@ fun ConnectionsScreen(
         onEditingConnectionChange = { editingConnection = it },
         onDeleted = onDeleted,
         onConnectionChanged = onConnectionChanged,
+        onSelectConnection = onSelectConnection,
         activeConnectionId = activeConnectionId,
         defaultConnectionId = defaultConnectionId,
     )
@@ -96,6 +98,7 @@ internal fun ConnectionsScreenContent(
     onEditingConnectionChange: (ConnectionDef?) -> Unit,
     onDeleted: (String) -> Unit,
     onConnectionChanged: (String) -> Unit,
+    onSelectConnection: (ConnectionDef) -> Unit = {},
     activeConnectionId: String? = null,
     defaultConnectionId: String? = null,
 ) {
@@ -241,6 +244,7 @@ internal fun ConnectionsScreenContent(
                                 connection = connection,
                                 isSelected = connection.id == activeConnectionId,
                                 isDefault = connection.id == defaultConnectionId,
+                                onSelect = { onSelectConnection(connection) },
                                 onEdit = { onEditingConnectionChange(connection) },
                                 onDelete = { pendingDelete = connection },
                             )
@@ -257,10 +261,11 @@ private fun ConnectionCard(
     connection: ConnectionDef,
     isSelected: Boolean = false,
     isDefault: Boolean = false,
+    onSelect: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    AppCard {
+    AppCard(onClick = onSelect) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),

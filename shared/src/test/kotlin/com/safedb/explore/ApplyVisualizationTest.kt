@@ -146,6 +146,91 @@ class ApplyVisualizationTest {
     }
 
     @Test
+    fun histogramSnapsExplicitAndAutomaticBinsToCleanMultiplesAndPreservesExplicitStart() {
+        val decimalSample =
+            QueryResult(
+                columns = listOf(ResultColumn("line_total", "decimal")),
+                rows =
+                    listOf(17.1, 140.5, 250.0, 499.9, 1245.0, 4900.0).map {
+                        listOf(ResultCell.float(it))
+                    },
+                rowCount = 6,
+                truncated = false,
+                warnings = emptyList(),
+            )
+
+        val explicitSize =
+            applyVisualization(
+                decimalSample,
+                VisualizationConfig(
+                    chartType = ChartType.Histogram,
+                    x =
+                        VisualizationField(
+                            "line_total",
+                            grouping = PivotGrouping.NumberBin(" 250 "),
+                        ),
+                ),
+            )
+        assertEquals(
+            listOf("0 – 250", "250 – 500", "1000 – 1250", "4750 – 5000"),
+            explicitSize.marks.map { it.xLabel },
+        )
+        assertEquals(listOf(2.0, 2.0, 1.0, 1.0), explicitSize.marks.map { it.y })
+
+        val explicitStart =
+            applyVisualization(
+                decimalSample,
+                VisualizationConfig(
+                    chartType = ChartType.Histogram,
+                    x =
+                        VisualizationField(
+                            "line_total",
+                            grouping = PivotGrouping.NumberBin("250", start = " 17 "),
+                        ),
+                ),
+            )
+        assertEquals("17 – 267", explicitStart.marks.first().xLabel)
+        assertEquals(3.0, explicitStart.marks.first().y)
+
+        val autoBins =
+            applyVisualization(
+                decimalSample,
+                VisualizationConfig(
+                    chartType = ChartType.Histogram,
+                    x = VisualizationField("line_total"),
+                ),
+            )
+        // rough = (4900 - 17.1) / 5 = 976.58 -> nice step 1000, aligned to 0.
+        assertEquals(
+            listOf("0 – 1000", "1000 – 2000", "4000 – 5000"),
+            autoBins.marks.map { it.xLabel },
+        )
+        assertEquals(listOf(4.0, 1.0, 1.0), autoBins.marks.map { it.y })
+
+        val signedSample =
+            QueryResult(
+                columns = listOf(ResultColumn("delta", "decimal")),
+                rows = listOf(-17.1, -5.0, 0.0, 17.1, 250.0).map { listOf(ResultCell.float(it)) },
+                rowCount = 5,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val signedBins =
+            applyVisualization(
+                signedSample,
+                VisualizationConfig(
+                    chartType = ChartType.Histogram,
+                    x = VisualizationField("delta", grouping = PivotGrouping.NumberBin("250")),
+                ),
+            )
+        assertEquals(
+            listOf("-250 – 0", "0 – 250", "250 – 500"),
+            signedBins.marks.map { it.xLabel },
+        )
+        assertEquals(listOf(2.0, 2.0, 1.0), signedBins.marks.map { it.y })
+    }
+
+    @Test
     fun kpiFormatsValueAndExportsTransformedRow() {
         val preview =
             applyVisualization(

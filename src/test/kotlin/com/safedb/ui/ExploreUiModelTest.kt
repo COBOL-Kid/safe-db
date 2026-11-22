@@ -225,6 +225,42 @@ class ExploreUiModelTest {
         assertEquals("Region", pivotLeafLabel(layout, 0, "Region"))
     }
 
+    @Test
+    fun visualizationExportStemUsesTitleFallsBackCleanlyAndAvoidsDoubleExplorePrefix() {
+        assertEquals(
+            "sum-line-total-by-category",
+            visualizationExportStem("Sum line_total by category", "ShopDB"),
+        )
+        assertEquals(
+            "sum-line-total-by-category-data",
+            visualizationExportStem("Sum line_total by category", "ShopDB", dataExport = true),
+        )
+        assertEquals(
+            "shopdb-chart",
+            visualizationExportStem("   ", "ShopDB"),
+        )
+        assertEquals(
+            "shopdb-chart-data",
+            visualizationExportStem("!!!", "ShopDB", dataExport = true),
+        )
+        val longTitle = "word-".repeat(20)
+        val capped = visualizationExportStem(longTitle, "ShopDB")
+        assertTrue(capped.length <= 64)
+        assertFalse(capped.endsWith("-"))
+
+        assertEquals(
+            "explore-sum-line-total-by-category.png",
+            exploreExportFileName(
+                visualizationExportStem("Sum line_total by category", "ShopDB"),
+                "png",
+            ),
+        )
+        assertEquals(
+            "explore-shopdb-details.csv",
+            exploreExportFileName("ShopDB-details", "csv"),
+        )
+    }
+
     private fun buildField(name: String, type: String): ExploreFieldOption =
         buildExploreFieldOptions(
                 QueryResult(

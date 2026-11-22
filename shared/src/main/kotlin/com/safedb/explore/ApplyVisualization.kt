@@ -226,13 +226,16 @@ private class VisualizationPlanner(
         val configured = field.grouping as? PivotGrouping.NumberBin
         val min = values.minOf { it.second }
         val max = values.maxOf { it.second }
-        val requested = configured?.size?.toBigDecimalOrNull()
+        val requested = configured?.size?.trim()?.toBigDecimalOrNull()
         val binCount = ceil(sqrt(values.size.toDouble())).toInt().coerceIn(5, 20)
         val computed =
             if (max.compareTo(min) == 0) BigDecimal.ONE
-            else max.subtract(min).divide(binCount.toBigDecimal(), MathContext.DECIMAL128)
+            else
+                niceHistogramBinSize(
+                    max.subtract(min).divide(binCount.toBigDecimal(), MathContext.DECIMAL128),
+                )
         val size = requested?.takeIf { it > BigDecimal.ZERO } ?: computed
-        val start = configured?.start?.toBigDecimalOrNull() ?: min
+        val start = configured?.start?.trim()?.toBigDecimalOrNull() ?: BigDecimal.ZERO
         val groups = linkedMapOf<BigDecimal, MutableList<ChartRecord>>()
         values.forEach { (record, value) ->
             val index = value.subtract(start).divide(size, 0, RoundingMode.FLOOR)
@@ -482,3 +485,18 @@ private class VisualizationPlanner(
 private data class ChartRecord(val index: Int, val row: List<ResultCell>)
 
 private fun plain(value: BigDecimal): String = value.stripTrailingZeros().toPlainString()
+
+private fun niceHistogramBinSize(rough: BigDecimal): BigDecimal {
+    if (rough <= BigDecimal.ZERO) return BigDecimal.ONE
+    val exponent = rough.precision() - rough.scale() - 1
+    val fraction = rough.scaleByPowerOfTen(-exponent)
+    val niceFraction =
+        when {
+            fraction <= BigDecimal.ONE -> BigDecimal.ONE
+            fraction <= BigDecimal("2") -> BigDecimal("2")
+            fraction <= BigDecimal("2.5") -> BigDecimal("2.5")
+            fraction <= BigDecimal("5") -> BigDecimal("5")
+            else -> BigDecimal.TEN
+        }
+    return niceFraction.scaleByPowerOfTen(exponent).stripTrailingZeros()
+}

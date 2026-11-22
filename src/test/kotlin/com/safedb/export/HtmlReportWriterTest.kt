@@ -5,8 +5,10 @@ import com.safedb.explore.ChartType
 import com.safedb.explore.ExploreConfig
 import com.safedb.explore.ExploreSession
 import com.safedb.explore.MeasureFn
+import com.safedb.explore.NumberFormatKind
 import com.safedb.explore.PivotDimension
 import com.safedb.explore.PivotMeasure
+import com.safedb.explore.PivotNumberFormat
 import com.safedb.explore.ValueAxis
 import com.safedb.explore.VisualizationConfig
 import com.safedb.explore.VisualizationField
@@ -637,6 +639,70 @@ class HtmlReportWriterTest {
         assertTrue(labeled.all { shape -> shape.ly == shape.y!! + 10.0 })
         assertEquals(listOf(0, 1), labeled.map { it.series })
         assertNull(chart.shapes.last().label)
+    }
+
+    @Test
+    fun groupedBarReportEmitsAllBarLabelsWhileOmittingOverflowingLabels() {
+        val categories = listOf("Services", "Subscription", "Hardware", "Add-on")
+        val segments = listOf("Enterprise", "Mid-Market", "SMB")
+        val rows = categories.flatMapIndexed { cIndex, category ->
+            segments.mapIndexed { sIndex, segment ->
+                listOf(
+                    ResultCell.text(category),
+                    ResultCell.text(segment),
+                    ResultCell.float(514_400.0 - cIndex * 12_000.0 - sIndex * 5_000.0),
+                )
+            }
+        }
+        val sample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__category", "varchar"),
+                        ResultColumn("t0__segment", "varchar"),
+                        ResultColumn("t0__amount", "decimal"),
+                    ),
+                rows = rows,
+                rowCount = rows.size,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val config =
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("t0__category", "Category"),
+                values = listOf(VisualizationMeasure("sum", MeasureFn.Sum, "t0__amount")),
+                series = VisualizationField("t0__segment", "Segment"),
+                barOrientation = BarOrientation.Vertical,
+                showLabels = true,
+            )
+        val preview = applyVisualization(sample, config, session().baseSpec.tables)
+        val chart = buildChartSection(preview, config)
+
+        assertEquals(12, chart.shapes.size)
+        assertEquals(12, chart.shapes.count { it.label != null })
+        assertTrue(
+            REPORT_CSS.contains(
+                "svg.chart text.bar-label { pointer-events: none; font-size: 10px; font-weight: 500; }",
+            ),
+        )
+
+        val longLabelConfig =
+            config.copy(
+                values =
+                    listOf(
+                        VisualizationMeasure(
+                            "sum",
+                            MeasureFn.Sum,
+                            "t0__amount",
+                            numberFormat =
+                                PivotNumberFormat(NumberFormatKind.Currency, decimals = 2),
+                        ),
+                    ),
+            )
+        val longPreview = applyVisualization(sample, longLabelConfig, session().baseSpec.tables)
+        val longChart = buildChartSection(longPreview, longLabelConfig)
+        assertTrue(longChart.shapes.all { it.label == null })
     }
 
     @Test

@@ -96,7 +96,7 @@ $SERIES_CSS_VARS
     svg .shape { transition: opacity 0.1s; }
     svg .shape.drill { cursor: pointer; }
     svg .shape:hover { opacity: 0.75; }
-    svg.chart text.bar-label { pointer-events: none; font-weight: 500; }
+    svg.chart text.bar-label { pointer-events: none; font-size: 10px; font-weight: 500; }
 $SERIES_CSS_RULES
     .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 10px 0; font-size: 13px; }
     .legend .chip { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }

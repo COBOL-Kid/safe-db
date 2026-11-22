@@ -10,7 +10,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-class ConnectionsViewModel(private val service: SafeDbService, private val scope: CoroutineScope) {
+class ConnectionsViewModel(
+    private val service: SafeDbService,
+    private val scope: CoroutineScope,
+    private val onCredentialsUpdated: (ConnectionDef) -> Unit = {},
+) {
     private val _connections = MutableStateFlow<List<ConnectionDef>>(emptyList())
     val connections: StateFlow<List<ConnectionDef>> = _connections.asStateFlow()
 
@@ -53,7 +57,18 @@ class ConnectionsViewModel(private val service: SafeDbService, private val scope
     }
 
     suspend fun updateConnection(def: ConnectionDef, password: String?) {
+        updateConnectionInternal(def, password, notifyCredentialsUpdated = password != null)
+    }
+
+    private suspend fun updateConnectionInternal(
+        def: ConnectionDef,
+        password: String?,
+        notifyCredentialsUpdated: Boolean,
+    ) {
         service.updateConnection(def, password)
+        if (notifyCredentialsUpdated) {
+            onCredentialsUpdated(def)
+        }
     }
 
     fun saveConnection(
@@ -67,7 +82,13 @@ class ConnectionsViewModel(private val service: SafeDbService, private val scope
         try {
             val saved =
                 if (editing) {
-                    updateConnection(def, password)
+                    // Only re-probe in place for password-only updates; credential-material edits
+                    // trigger onConnectionChanged, which clears the active connection immediately.
+                    updateConnectionInternal(
+                        def,
+                        password,
+                        notifyCredentialsUpdated = password != null && !credentialMaterialChanged,
+                    )
                     def
                 } else {
                     createConnection(def, password ?: "")

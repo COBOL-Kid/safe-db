@@ -10,6 +10,7 @@ import com.safedb.resolveConnectionSchemaSelection
 import com.safedb.resolveQuerySchemaSelection
 import com.safedb.service.DispatchingSafeDbService
 import com.safedb.service.SafeDbService
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -33,8 +34,13 @@ class AppViewModel(
     private val service = DispatchingSafeDbService(service, ioDispatcher)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
-    val connections = ConnectionsViewModel(service, scope)
-    val schema = SchemaViewModel(service, scope)
+    val connections =
+        ConnectionsViewModel(
+            service,
+            scope,
+            onCredentialsUpdated = ::onConnectionCredentialsUpdated,
+        )
+    val schema = SchemaViewModel(service, scope, onConnectionReachable = ::markConnectionReachable)
     val settings =
         SettingsViewModel(
             service,
@@ -44,8 +50,20 @@ class AppViewModel(
     val savedQueries = SavedQueriesViewModel(service, scope)
     val history = HistoryViewModel(service, scope)
     val recipes = RecipesViewModel(service, scope, ioDispatcher)
-    val query = QueryViewModel(service, scope, onRunFinished = history::refresh)
-    val sqlEditor = SqlEditorViewModel(service, scope, onRunFinished = history::refresh)
+    val query =
+        QueryViewModel(
+            service,
+            scope,
+            onRunFinished = history::refresh,
+            onConnectionReachable = ::markConnectionReachable,
+        )
+    val sqlEditor =
+        SqlEditorViewModel(
+            service,
+            scope,
+            onRunFinished = history::refresh,
+            onConnectionReachable = ::markConnectionReachable,
+        )
     internal val schemaMap = SchemaMapViewModel()
 
     private val _explore = MutableStateFlow<ExploreViewModel?>(null)
@@ -116,7 +134,25 @@ class AppViewModel(
             ++reachabilityGeneration
             return
         }
-        activeReachabilityConnection?.let(::launchReachabilityLoop)
+        activeReachabilityConnection?.let { launchReachabilityLoop(it) }
+    }
+
+    private fun onConnectionCredentialsUpdated(connection: ConnectionDef) {
+        if (activeReachabilityConnection?.id == connection.id) {
+            refreshDatabaseReachability(connection)
+        }
+    }
+
+    private fun markConnectionReachable(connectionId: String) {
+        val active = activeReachabilityConnection ?: return
+        if (active.id != connectionId) return
+        reachabilityJob?.cancel()
+        reachabilityJob = null
+        ++reachabilityGeneration
+        _databaseReachability.value = DatabaseReachability.Connected
+        if (windowActive) {
+            launchReachabilityLoop(active, initialDelay = ReachabilityPollInterval)
+        }
     }
 
     fun refreshDatabaseReachability(connection: ConnectionDef?) {
@@ -137,10 +173,16 @@ class AppViewModel(
         launchReachabilityLoop(connection)
     }
 
-    private fun launchReachabilityLoop(connection: ConnectionDef) {
+    private fun launchReachabilityLoop(
+        connection: ConnectionDef,
+        initialDelay: Duration = Duration.ZERO,
+    ) {
         reachabilityJob?.cancel()
         val generation = ++reachabilityGeneration
         reachabilityJob = scope.launch {
+            if (initialDelay > Duration.ZERO) {
+                delay(initialDelay)
+            }
             while (generation == reachabilityGeneration) {
                 val reachable =
                     try {

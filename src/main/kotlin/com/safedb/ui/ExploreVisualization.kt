@@ -37,6 +37,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -101,9 +102,16 @@ internal fun VisualizationConfigPanel(
     var templatesOpen by remember { mutableStateOf(false) }
     var optionsExpanded by remember { mutableStateOf(false) }
     var editingFilter by remember { mutableStateOf<PivotFilter?>(null) }
-    var transitionMessage by remember { mutableStateOf<String?>(null) }
+    var transitionNotice by remember { mutableStateOf<Pair<VisualizationConfig, String>?>(null) }
+    LaunchedEffect(config) {
+        if (transitionNotice?.first != config) {
+            transitionNotice = null
+        }
+    }
+    val transitionMessage = transitionNotice?.takeIf { it.first == config }?.second
     val suggested = remember(sample, tables) { suggestedVisualizationTemplates(sample, tables, 5) }
-    val effectiveType = resolvedChartType ?: config.chartType.takeUnless { it == ChartType.Auto }
+    val effectiveType =
+        if (config.chartType == ChartType.Auto) resolvedChartType else config.chartType
     val dualAxisEligible = config.supportsSecondaryAxis(effectiveType)
     val primaryCount = config.values.count { it.axis == ValueAxis.Primary }
     val horizontalBars =
@@ -184,19 +192,8 @@ internal fun VisualizationConfigPanel(
                     ChartType.entries.forEach { type ->
                         SelectablePill(chartTypeLabel(type), config.chartType == type) {
                             val next = config.forChartType(type, fields)
-                            val removed = buildList {
-                                if (config.x != null && next.x == null) add("X")
-                                if (config.values.isNotEmpty() && next.values.isEmpty())
-                                    add("values")
-                                if (config.series != null && next.series == null) add("series")
-                                if (config.size != null && next.size == null) add("size")
-                            }
-                            transitionMessage =
-                                removed
-                                    .takeIf { it.isNotEmpty() }
-                                    ?.let {
-                                        "Removed incompatible ${it.joinToString()} assignment${if (it.size == 1) "" else "s"}."
-                                    }
+                            transitionNotice =
+                                chartTypeTransitionMessage(config, next)?.let { next to it }
                             onConfigChange(next)
                         }
                     }
@@ -405,7 +402,7 @@ internal fun VisualizationConfigPanel(
                 Column(modifier = Modifier.weight(1f)) {
                     Text("Options", fontWeight = FontWeight.SemiBold)
                     Text(
-                        "${config.sort.target.name.lowercase()} sort · Top ${config.topN}",
+                        visualizationOptionsSummary(config, effectiveType),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -416,7 +413,7 @@ internal fun VisualizationConfigPanel(
                 )
             }
             if (optionsExpanded) {
-                VisualizationOptions(config, fields, onConfigChange)
+                VisualizationOptions(config, effectiveType, fields, onConfigChange)
             }
         }
     }
@@ -444,6 +441,7 @@ private fun VisualizationConfigScroller(content: @Composable ColumnScope.() -> U
 @Composable
 private fun VisualizationOptions(
     config: VisualizationConfig,
+    effectiveType: ChartType?,
     fields: List<ExploreFieldOption>,
     onChange: (VisualizationConfig) -> Unit,
 ) {
@@ -468,21 +466,25 @@ private fun VisualizationOptions(
                 }
             }
         }
-        if (xField?.category?.isNumeric() == true && config.chartType == ChartType.Histogram) {
+        if (xField?.category?.isNumeric() == true && effectiveType == ChartType.Histogram) {
             val current = config.x?.grouping as? PivotGrouping.NumberBin
             OutlinedTextField(
                 value = current?.size.orEmpty(),
                 onValueChange = { value ->
-                    onChange(
-                        config.copy(x = config.x?.copy(grouping = PivotGrouping.NumberBin(value))),
-                    )
+                    val nextGrouping =
+                        if (value.isBlank() && current?.start.isNullOrBlank()) {
+                            PivotGrouping.Exact
+                        } else {
+                            current?.copy(size = value) ?: PivotGrouping.NumberBin(value)
+                        }
+                    onChange(config.copy(x = config.x?.copy(grouping = nextGrouping)))
                 },
                 label = { Text("Bin size (blank = automatic)") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        if (config.chartType == ChartType.Bar) {
+        if (effectiveType == ChartType.Bar) {
             Text("Bars", style = MaterialTheme.typography.labelMedium)
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(5.dp),
@@ -553,27 +555,31 @@ private fun VisualizationOptions(
                 )
             }
         }
-        Text("Sort", style = MaterialTheme.typography.labelMedium)
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
-            verticalArrangement = Arrangement.spacedBy(5.dp),
-        ) {
-            VisualizationSortTarget.entries.forEach { target ->
-                SelectablePill(target.name, config.sort.target == target) {
-                    onChange(config.copy(sort = config.sort.copy(target = target)))
+        if (effectiveType == ChartType.Bar || effectiveType == ChartType.Line) {
+            Text("Sort", style = MaterialTheme.typography.labelMedium)
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                VisualizationSortTarget.entries.forEach { target ->
+                    SelectablePill(target.name, config.sort.target == target) {
+                        onChange(config.copy(sort = config.sort.copy(target = target)))
+                    }
                 }
-            }
-            SortDir.entries.forEach { dir ->
-                SelectablePill(dir.name, config.sort.dir == dir) {
-                    onChange(config.copy(sort = config.sort.copy(dir = dir)))
+                SortDir.entries.forEach { dir ->
+                    SelectablePill(dir.name, config.sort.dir == dir) {
+                        onChange(config.copy(sort = config.sort.copy(dir = dir)))
+                    }
                 }
             }
         }
-        Text("Top categories", style = MaterialTheme.typography.labelMedium)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-            listOf(10, 20, 50, 100).forEach { count ->
-                SelectablePill(count.toString(), config.topN == count) {
-                    onChange(config.copy(topN = count))
+        if (effectiveType == ChartType.Bar) {
+            Text("Top categories", style = MaterialTheme.typography.labelMedium)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                listOf(10, 20, 50, 100).forEach { count ->
+                    SelectablePill(count.toString(), config.topN == count) {
+                        onChange(config.copy(topN = count))
+                    }
                 }
             }
         }
@@ -584,15 +590,17 @@ private fun VisualizationOptions(
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
-        Row(
-            modifier =
-                Modifier.fillMaxWidth().clickable {
-                    onChange(config.copy(showLabels = !config.showLabels))
-                },
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Checkbox(config.showLabels, onCheckedChange = null)
-            Text("Show value labels")
+        if (effectiveType == ChartType.Bar || effectiveType == ChartType.Histogram) {
+            Row(
+                modifier =
+                    Modifier.fillMaxWidth().clickable {
+                        onChange(config.copy(showLabels = !config.showLabels))
+                    },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(config.showLabels, onCheckedChange = null)
+                Text("Show value labels")
+            }
         }
     }
 }
@@ -637,7 +645,7 @@ private fun VisualizationValueChip(
                         onChange(value.copy(fn = fn, label = "${fn.shortLabel} ${field.label}"))
                     }
                 }
-                IconButton(onClick = onRemove, modifier = Modifier.size(28.dp)) {
+                IconButton(onClick = onRemove, modifier = Modifier.size(32.dp)) {
                     Icon(
                         Icons.Default.Close,
                         contentDescription = "Remove ${value.label}",
@@ -874,7 +882,7 @@ private fun VisualizationFieldChip(
                     )
                 }
             }
-            IconButton(onClick = onRemove, modifier = Modifier.size(28.dp)) {
+            IconButton(onClick = onRemove, modifier = Modifier.size(32.dp)) {
                 Icon(
                     Icons.Default.Close,
                     contentDescription = "Remove $label",
@@ -989,14 +997,26 @@ internal fun VisualizationConfig.forChartType(
     fun numeric(column: String?): Boolean =
         fields.firstOrNull { it.column == column }?.category?.isNumeric() == true
     return when (type) {
-        ChartType.Histogram ->
+        ChartType.Histogram -> {
+            val promotedX =
+                x?.takeIf { numeric(it.column) }
+                    ?: values.firstNotNullOfOrNull { measure ->
+                        measure.sourceColumn?.takeIf(::numeric)?.let { column ->
+                            val field = fields.firstOrNull { it.column == column }
+                            VisualizationField(
+                                column = column,
+                                label = field?.label ?: displayColumnLabel(column),
+                            )
+                        }
+                    }
             copy(
                 chartType = type,
-                x = x?.takeIf { numeric(it.column) },
+                x = promotedX,
                 values = emptyList(),
                 series = null,
                 size = null,
             )
+        }
         ChartType.Kpi ->
             copy(
                 chartType = type,
@@ -1029,6 +1049,61 @@ internal fun VisualizationConfig.forChartType(
         ChartType.Auto -> copy(chartType = type)
     }
 }
+
+internal fun chartTypeTransitionMessage(
+    previous: VisualizationConfig,
+    next: VisualizationConfig,
+): String? {
+    val nextX = next.x
+    if (
+        nextX != null &&
+            next.chartType == ChartType.Histogram &&
+            previous.x?.column != nextX.column &&
+            previous.values.any { it.sourceColumn == nextX.column }
+    ) {
+        val otherRemoved = buildList {
+            if (previous.series != null && next.series == null) add("series")
+            if (previous.size != null && next.size == null) add("size")
+        }
+        val moved = "Moved ${nextX.label} to X for histogram"
+        return if (otherRemoved.isEmpty()) {
+            "$moved."
+        } else {
+            "$moved; removed incompatible ${otherRemoved.joinToString()} assignment${if (otherRemoved.size == 1) "" else "s"}."
+        }
+    }
+    val removed = buildList {
+        if (previous.x != null && next.x == null) add("X")
+        if (previous.values.isNotEmpty() && next.values.isEmpty()) add("values")
+        if (previous.series != null && next.series == null) add("series")
+        if (previous.size != null && next.size == null) add("size")
+    }
+    return removed
+        .takeIf { it.isNotEmpty() }
+        ?.let {
+            "Removed incompatible ${it.joinToString()} assignment${if (it.size == 1) "" else "s"}."
+        }
+}
+
+internal fun visualizationOptionsSummary(
+    config: VisualizationConfig,
+    effectiveType: ChartType?,
+): String =
+    when (effectiveType) {
+        ChartType.Bar -> "${config.sort.target.name.lowercase()} sort · Top ${config.topN}"
+        ChartType.Line -> "${config.sort.target.name.lowercase()} sort"
+        ChartType.Histogram -> {
+            val binSize =
+                (config.x?.grouping as? PivotGrouping.NumberBin)?.size?.trim()?.takeIf { raw ->
+                    raw.toBigDecimalOrNull()?.let { it > java.math.BigDecimal.ZERO } == true
+                }
+            if (binSize != null) "Bin size $binSize" else "Auto bins"
+        }
+        ChartType.Scatter,
+        ChartType.Kpi -> if (config.values.isNotEmpty()) "Format & title" else "Title & display"
+        ChartType.Auto,
+        null -> "Title & display"
+    }
 
 internal fun normalizeMeasureAxes(
     values: List<VisualizationMeasure>,

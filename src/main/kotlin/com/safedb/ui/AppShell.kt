@@ -189,6 +189,7 @@ internal fun AppShellContent(
                         onOpenNewConnectionFormConsumed = appState::consumeNewConnectionFormRequest,
                         activeConnectionId = activeConnectionId,
                         defaultConnectionId = settings.defaultConnectionId,
+                        onSelectConnection = { target -> selectConnection(target) },
                         onDeleted = { id ->
                             appState.clearActiveConnectionIf(id)
                             viewModel.settings.clearDefaultIfConnection(id)

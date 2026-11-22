@@ -12,7 +12,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
-class SchemaViewModel(private val service: SafeDbService, private val scope: CoroutineScope) {
+class SchemaViewModel(
+    private val service: SafeDbService,
+    private val scope: CoroutineScope,
+    private val onConnectionReachable: (String) -> Unit = {},
+) {
     private var requestGeneration = 0
     private var requestedConnectionId: String? = null
 
@@ -87,6 +91,7 @@ class SchemaViewModel(private val service: SafeDbService, private val scope: Cor
                 }
                 schema = loaded
                 loadedConnectionId = connectionId
+                onConnectionReachable(connectionId)
                 applySelection(selection, onUnavailableSelection)
                 onComplete?.invoke(true)
             } catch (e: CancellationException) {

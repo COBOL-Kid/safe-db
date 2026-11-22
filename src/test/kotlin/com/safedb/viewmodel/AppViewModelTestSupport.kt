@@ -61,6 +61,12 @@ internal class FakeSafeDbService(
     var schemaLoadCount = 0
         private set
 
+    var updateConnectionCalls = 0
+        private set
+
+    var lastUpdatedPassword: String? = null
+        private set
+
     val recordedHistory = mutableListOf<HistoryEntry>()
     val recordedSavedQueries = mutableListOf<SavedQuery>()
     private var historySeq = 0
@@ -85,6 +91,11 @@ internal class FakeSafeDbService(
 
     override suspend fun lockCredentials() {
         locked = true
+    }
+
+    override suspend fun updateConnection(def: ConnectionDef, password: String?) {
+        updateConnectionCalls += 1
+        lastUpdatedPassword = password
     }
 
     override suspend fun testConnection(def: ConnectionDef, password: String?): String {

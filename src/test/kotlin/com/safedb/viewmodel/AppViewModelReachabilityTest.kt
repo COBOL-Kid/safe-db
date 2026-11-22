@@ -301,4 +301,151 @@ class AppViewModelReachabilityTest {
                 viewModel.close()
             }
         }
+
+    @Test
+    fun passwordOnlySaveReprobesActiveConnectionImmediatelyWithoutWaitingForPollInterval() =
+        runTest(dispatcher) {
+            val service =
+                FakeSafeDbService(
+                    testConnectionOutcome = Result.failure(IllegalStateException("bad password")),
+                )
+            val viewModel = AppViewModel(service, dispatcher)
+            try {
+                advanceUntilIdle()
+                val connection = testConnection()
+                viewModel.refreshDatabaseReachability(connection)
+                runCurrent()
+                assertEquals(
+                    DatabaseReachability.Disconnected,
+                    viewModel.databaseReachability.value,
+                )
+                assertEquals(1, service.testConnectionCalls)
+
+                service.testConnectionOutcome = Result.success("ok")
+
+                // Saving without a password does not re-probe.
+                viewModel.connections.saveConnection(
+                    def = connection,
+                    password = null,
+                    editing = true,
+                    credentialMaterialChanged = false,
+                )
+                runCurrent()
+                assertEquals(1, service.testConnectionCalls)
+                assertEquals(
+                    DatabaseReachability.Disconnected,
+                    viewModel.databaseReachability.value,
+                )
+
+                // Saving a password for a different connection does not re-probe the active one.
+                viewModel.connections.saveConnection(
+                    def = connection.copy(id = "c2"),
+                    password = "secret",
+                    editing = true,
+                    credentialMaterialChanged = false,
+                )
+                runCurrent()
+                assertEquals(1, service.testConnectionCalls)
+
+                // Saving a password alongside credential-material changes (host/user/port) notifies
+                // onConnectionChanged instead of firing a spurious in-place probe.
+                var changedId: String? = null
+                viewModel.connections.saveConnection(
+                    def = connection.copy(host = "db2.local"),
+                    password = "new-password",
+                    editing = true,
+                    credentialMaterialChanged = true,
+                    onConnectionChanged = { changedId = it },
+                )
+                runCurrent()
+                assertEquals(connection.id, changedId)
+                assertEquals(1, service.testConnectionCalls)
+
+                // Password-only save on the active connection triggers an immediate re-probe.
+                viewModel.connections.saveConnection(
+                    def = connection,
+                    password = "new-password",
+                    editing = true,
+                    credentialMaterialChanged = false,
+                )
+                runCurrent()
+                assertEquals(2, service.testConnectionCalls)
+                assertEquals(DatabaseReachability.Connected, viewModel.databaseReachability.value)
+            } finally {
+                viewModel.close()
+            }
+        }
+
+    @Test
+    fun successfulSchemaLoadAndQueriesMarkActiveConnectionConnectedAndDiscardStaleFailedProbes() =
+        runTest(dispatcher) {
+            val gate = CompletableDeferred<Unit>()
+            val started = CompletableDeferred<Unit>()
+            val service =
+                FakeSafeDbService(
+                    testConnectionGate = gate,
+                    testConnectionStarted = started,
+                    testConnectionOutcome = Result.failure(IllegalStateException("stale failure")),
+                )
+            val viewModel = AppViewModel(service, dispatcher)
+            try {
+                advanceUntilIdle()
+                val connection = testConnection()
+                viewModel.refreshDatabaseReachability(connection)
+                runCurrent()
+                assertTrue(started.isCompleted)
+                assertEquals(DatabaseReachability.Checking, viewModel.databaseReachability.value)
+                assertEquals(1, service.testConnectionCalls)
+
+                // Successful schema load marks Connected immediately without an extra probe.
+                viewModel.schema.load(connection.id)
+                runCurrent()
+                assertEquals(DatabaseReachability.Connected, viewModel.databaseReachability.value)
+                assertEquals(1, service.testConnectionCalls)
+
+                // Completing the stale in-flight failed probe must not overwrite Connected.
+                gate.complete(Unit)
+                runCurrent()
+                assertEquals(DatabaseReachability.Connected, viewModel.databaseReachability.value)
+                assertEquals(1, service.testConnectionCalls)
+
+                // After a later scheduled poll fails, SQL run and Builder run each restore
+                // Connected.
+                service.testConnectionGate = null
+                advanceTimeBy(ReachabilityPollInterval)
+                runCurrent()
+                assertEquals(2, service.testConnectionCalls)
+                assertEquals(
+                    DatabaseReachability.Disconnected,
+                    viewModel.databaseReachability.value,
+                )
+
+                val sqlText = "SELECT name FROM public.users"
+                viewModel.sqlEditor.onTextChanged(
+                    androidx.compose.ui.text.input.TextFieldValue(sqlText),
+                )
+                viewModel.sqlEditor.run(connection.id, sampleSpec(), sourceText = sqlText)
+                runCurrent()
+                assertEquals(DatabaseReachability.Connected, viewModel.databaseReachability.value)
+                assertEquals(2, service.testConnectionCalls)
+
+                // Fail the next scheduled poll again, then verify Builder query.run restores
+                // Connected.
+                advanceTimeBy(ReachabilityPollInterval)
+                runCurrent()
+                assertEquals(3, service.testConnectionCalls)
+                assertEquals(
+                    DatabaseReachability.Disconnected,
+                    viewModel.databaseReachability.value,
+                )
+
+                viewModel.query.addTable(sampleTable())
+                viewModel.query.run(connection.id)
+                runCurrent()
+                assertEquals(DatabaseReachability.Connected, viewModel.databaseReachability.value)
+                assertEquals(3, service.testConnectionCalls)
+            } finally {
+                viewModel.close()
+            }
+        }
 }

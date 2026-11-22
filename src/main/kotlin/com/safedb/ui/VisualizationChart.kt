@@ -939,34 +939,52 @@ private fun PlotChart(
                             .sortedBy { it.second }
                     val widest = categoryMarks.maxOf { categoryLabelWidths[it.xKey] ?: 0f }
                     val selected =
-                        categoryLabelIndices(ordered.map { it.second }, min(widest + gapPx, 160f))
+                        categoryLabelIndices(
+                            ordered.map { it.second },
+                            min(widest + gapPx, 160f),
+                            minX = plot.left,
+                        )
+                    val selectedCenters = selected.map { ordered[it].second }
+                    val nominals = selectedCenters.mapIndexed { position, x ->
+                        val previousGap =
+                            if (position == 0) plot.width else x - selectedCenters[position - 1]
+                        val nextGap =
+                            if (position == selectedCenters.lastIndex) plot.width
+                            else selectedCenters[position + 1] - x
+                        (min(min(previousGap, nextGap), plot.width) - gapPx).coerceAtLeast(0f)
+                    }
+                    val estimatedLefts = selected.mapIndexed { position, index ->
+                        val (mark, x) = ordered[index]
+                        val width = min(categoryLabelWidths[mark.xKey] ?: 0f, nominals[position])
+                        clampX(x - width / 2f, width, plot.left)
+                    }
+                    var previousRight = plot.left
                     selected.forEachIndexed { position, index ->
                         val (mark, x) = ordered[index]
-                        val previousGap =
-                            if (position == 0) plot.width
-                            else x - ordered[selected[position - 1]].second
-                        val nextGap =
-                            if (position == selected.lastIndex) plot.width
-                            else ordered[selected[position + 1]].second - x
-                        val available =
-                            (min(min(previousGap, nextGap), plot.width) - gapPx).coerceAtLeast(0f)
-                        val label =
-                            fitted(
-                                mark.xLabel,
-                                categoryLabelMaxWidth(x, plot.left, canvasWidth, available),
+                        val leftLimit = if (position == 0) plot.left else previousRight + gapPx
+                        val rightLimit =
+                            if (position == selected.lastIndex) canvasWidth
+                            else estimatedLefts[position + 1] - gapPx
+                        val maxWidth =
+                            categoryLabelSpanMaxWidth(
+                                center = x,
+                                minX = plot.left,
+                                canvasWidth = canvasWidth,
+                                available = nominals[position],
+                                leftLimit = leftLimit,
+                                rightLimit = rightLimit,
+                                isFirst = position == 0,
+                                isLast = position == selected.lastIndex,
                             )
-                        drawText(
-                            label,
-                            topLeft =
-                                Offset(
-                                    clampX(
-                                        x - label.size.width / 2f,
-                                        label.size.width.toFloat(),
-                                        plot.left,
-                                    ),
-                                    plot.bottom + gapPx,
-                                ),
-                        )
+                        val label = fitted(mark.xLabel, maxWidth)
+                        val drawX =
+                            clampX(
+                                x - label.size.width / 2f,
+                                label.size.width.toFloat(),
+                                plot.left,
+                            )
+                        previousRight = drawX + label.size.width
+                        drawText(label, topLeft = Offset(drawX, plot.bottom + gapPx))
                     }
                 }
             }
@@ -1064,15 +1082,45 @@ internal fun valueTickMaxWidth(horizontalBars: Boolean, plot: Rect, gapPx: Float
 // Walks centers in axis order and labels one only when it sits at least requiredGap after the
 // previous labeled center, so uneven scatter spacing cannot overlap labels or skip isolated
 // points. Centers must be sorted ascending.
-internal fun categoryLabelIndices(sortedCenters: List<Float>, requiredGap: Float): List<Int> {
+internal fun categoryLabelIndices(
+    sortedCenters: List<Float>,
+    requiredGap: Float,
+    minX: Float = Float.NEGATIVE_INFINITY,
+): List<Int> {
     val selected = mutableListOf<Int>()
+    var lastEffectiveCenter = Float.NEGATIVE_INFINITY
     sortedCenters.forEachIndexed { index, center ->
-        if (selected.isEmpty() || center - sortedCenters[selected.last()] >= requiredGap) {
+        val effectiveCenter = max(center, minX + requiredGap / 2f)
+        if (selected.isEmpty() || center - lastEffectiveCenter >= requiredGap) {
             selected += index
+            lastEffectiveCenter = effectiveCenter
         }
     }
     return selected
 }
+
+internal fun categoryLabelSpanMaxWidth(
+    center: Float,
+    minX: Float,
+    canvasWidth: Float,
+    available: Float,
+    leftLimit: Float,
+    rightLimit: Float,
+    isFirst: Boolean,
+    isLast: Boolean,
+): Float =
+    when {
+        isFirst && isLast -> (canvasWidth - minX).coerceAtLeast(0f)
+        isFirst ->
+            minOf(rightLimit - minX, 2f * (rightLimit - center), canvasWidth - minX)
+                .coerceAtLeast(0f)
+        isLast ->
+            minOf(canvasWidth - leftLimit, 2f * (center - leftLimit), canvasWidth - minX)
+                .coerceAtLeast(0f)
+        else ->
+            minOf(available, 2f * (center - leftLimit), 2f * (rightLimit - center))
+                .coerceAtLeast(0f)
+    }
 
 internal fun categoryLabelStep(labelExtent: Float, band: Float): Int =
     ceil(labelExtent / band.coerceAtLeast(1e-3f)).toInt().coerceAtLeast(1)

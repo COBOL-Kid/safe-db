@@ -101,9 +101,8 @@ fun ExploreWindowContent(
         ExploreDrillDialog(
             result = result,
             onExport = {
-                chooseExportFile("explore-details", "csv", parent = appWindow)?.let {
-                    viewModel.saveDrillResultCsv(result, it)
-                }
+                chooseExportFile("${session.connectionLabel}-details", "csv", parent = appWindow)
+                    ?.let { viewModel.saveDrillResultCsv(result, it) }
             },
             onDismiss = { drillResult = null },
             exporting = viewModel.exporting,
@@ -332,7 +331,10 @@ fun ExploreWindowContent(
                                             !viewModel.isLoading(ExploreMode.Visualization),
                                     onExportHtml = {
                                         chooseExportFile(
-                                                "${session.connectionLabel}-chart",
+                                                visualizationExportStem(
+                                                    viewModel.visualizationPreview.title,
+                                                    session.connectionLabel,
+                                                ),
                                                 "html",
                                                 parent = appWindow,
                                             )
@@ -340,7 +342,11 @@ fun ExploreWindowContent(
                                     },
                                     onExportCsv = {
                                         chooseExportFile(
-                                                "${session.connectionLabel}-chart-data",
+                                                visualizationExportStem(
+                                                    viewModel.visualizationPreview.title,
+                                                    session.connectionLabel,
+                                                    dataExport = true,
+                                                ),
                                                 "csv",
                                                 parent = appWindow,
                                             )
@@ -348,7 +354,10 @@ fun ExploreWindowContent(
                                     },
                                     onExportPng = {
                                         chooseExportFile(
-                                                "${session.connectionLabel}-chart",
+                                                visualizationExportStem(
+                                                    viewModel.visualizationPreview.title,
+                                                    session.connectionLabel,
+                                                ),
                                                 "png",
                                                 parent = appWindow,
                                             )
@@ -604,17 +613,33 @@ private fun VisualizationExportBar(
     }
 }
 
-private fun chooseExportFile(
+internal fun visualizationExportStem(
+    chartTitle: String,
     connectionLabel: String,
+    dataExport: Boolean = false,
+): String {
+    val base =
+        sanitizeFileNameSegment(chartTitle, "").take(64).trimEnd('-').ifEmpty {
+            sanitizeFileNameSegment("$connectionLabel-chart", "chart")
+        }
+    return if (dataExport) "$base-data" else base
+}
+
+internal fun exploreExportFileName(stem: String, extension: String): String {
+    val safeName = sanitizeFileNameSegment(stem, "explore")
+    return "explore-$safeName.$extension"
+}
+
+private fun chooseExportFile(
+    stem: String,
     extension: String,
     parent: java.awt.Component? = null,
 ): java.nio.file.Path? {
-    val safeName = sanitizeFileNameSegment(connectionLabel, "explore")
     val file =
         chooseAppFile(
             open = false,
             title = "Export Explore ${extension.uppercase()}",
-            suggestedFileName = "explore-$safeName.$extension",
+            suggestedFileName = exploreExportFileName(stem, extension),
             extensionFilter =
                 FileNameExtensionFilter(
                     "${extension.uppercase()} files (*.$extension)",

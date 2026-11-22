@@ -26,6 +26,7 @@ internal class QueryRunController(
     private val service: SafeDbService,
     private val scope: CoroutineScope,
     private val onRunFinished: () -> Unit = {},
+    private val onConnectionReachable: (String) -> Unit = {},
 ) {
     private val runGeneration = AtomicLong(0L)
     private var activeRun: ActiveRun? = null
@@ -110,6 +111,7 @@ internal class QueryRunController(
                     riskEvaluationConnectionId = request.connectionId
                     riskEvaluationSpec = request.spec
                     succeeded = true
+                    onConnectionReachable(request.connectionId)
                 }
             } catch (failure: QueryFailureException) {
                 if (generation != runGeneration.get()) return@launch

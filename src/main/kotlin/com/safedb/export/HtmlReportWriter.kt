@@ -426,7 +426,7 @@ internal fun buildChartSection(
                 val labelText = if (config.showLabels) barValueLabelText(mark, config) else null
                 val fitsLabel =
                     labelText != null &&
-                        estimatedLabelWidth(labelText) <= region.bounds.width - 6f &&
+                        estimatedBarLabelWidth(labelText) <= region.bounds.width - 4f &&
                         region.bounds.height >= 16f
                 HtmlChartShape(
                     kind = "rect",
@@ -707,6 +707,8 @@ private fun markTooltip(mark: VisualizationMark, multiSeries: Boolean): String =
 }
 
 private fun estimatedLabelWidth(label: String): Float = label.length * 7f + 4f
+
+private fun estimatedBarLabelWidth(label: String): Float = label.length * 6.2f
 
 private fun truncatedTickLabel(label: String): String =
     if (label.length > 24) label.take(23) + "…" else label
