@@ -19,6 +19,7 @@ import com.safedb.explore.WorksheetPreview
 import com.safedb.explore.applyExplore
 import com.safedb.explore.applyVisualization
 import com.safedb.explore.applyWorksheet
+import com.safedb.explore.displayColumnLabels
 import com.safedb.explore.exploreSpecHash
 import com.safedb.explore.pivotCellKey
 import com.safedb.explore.pivotCellLineageKey
@@ -55,6 +56,7 @@ class ExploreViewModel(
     private val computeDispatcher: CoroutineDispatcher = Dispatchers.Default.limitedParallelism(1),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     initialRecipe: ExploreRecipe? = null,
+    val sampleRunId: Long = 0L,
 ) {
     private val defaultConfig = ExploreConfig.defaultFor(session.sample, session.baseSpec.tables)
 
@@ -369,15 +371,20 @@ class ExploreViewModel(
         )
     }
 
+    fun hasNewerSample(latestSampleRunId: Long?): Boolean =
+        latestSampleRunId != null && latestSampleRunId > 0L && latestSampleRunId != sampleRunId
+
     // A null spec means the origin screen has nothing runnable right now, which matches no executed
     // query.
     fun isStale(
         currentSpec: QuerySpec?,
         currentConnectionId: String? = session.connectionId,
+        latestSampleRunId: Long? = null,
     ): Boolean =
         currentConnectionId != session.connectionId ||
             currentSpec == null ||
-            exploreSpecHash(currentSpec) != session.baseSpecHash
+            exploreSpecHash(currentSpec) != session.baseSpecHash ||
+            hasNewerSample(latestSampleRunId)
 
     fun savePreviewCsv(path: Path) {
         val formattedRows = preview.layout.formattedRows
@@ -494,6 +501,18 @@ class ExploreViewModel(
                 path = path,
             )
         }
+    }
+
+    fun saveDrillResultCsv(result: QueryResult, path: Path) {
+        val labels = displayColumnLabels(result.columns, session.baseSpec.tables)
+        val labeled =
+            result.copy(
+                columns =
+                    result.columns.map { column ->
+                        column.copy(name = labels[column.name] ?: column.name)
+                    },
+            )
+        saveResultCsv(labeled, path)
     }
 
     fun saveResultCsv(result: QueryResult, path: Path) {

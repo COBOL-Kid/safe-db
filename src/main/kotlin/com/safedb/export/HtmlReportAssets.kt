@@ -69,6 +69,9 @@ internal val REPORT_CSS =
     svg .shape { transition: opacity 0.1s; }
     svg .shape.drill { cursor: pointer; }
     svg .shape:hover { opacity: 0.75; }
+    svg.chart text.bar-label { pointer-events: none; font-weight: 500; }
+    svg.chart text.bar-label-light { fill: #ffffff; }
+    svg.chart text.bar-label-dark { fill: #1c1f26; }
     .fill-s0 { fill: var(--s0); } .fill-s1 { fill: var(--s1); } .fill-s2 { fill: var(--s2); } .fill-s3 { fill: var(--s3); }
     .fill-s4 { fill: var(--s4); } .fill-s5 { fill: var(--s5); } .fill-s6 { fill: var(--s6); } .fill-s7 { fill: var(--s7); }
     .stroke-s0 { stroke: var(--s0); } .stroke-s1 { stroke: var(--s1); } .stroke-s2 { stroke: var(--s2); } .stroke-s3 { stroke: var(--s3); }
@@ -417,6 +420,11 @@ internal val REPORT_JS =
           node.addEventListener('click', () => openDrill(shape.d));
         }
         svg.appendChild(node);
+        if (shape.label && shape.lx !== undefined && shape.ly !== undefined) {
+          const labelNode = svgEl('text', { x: shape.lx, y: shape.ly, 'text-anchor': 'middle', 'dominant-baseline': 'central' }, 'bar-label bar-label-' + (shape.labelTone || 'light'));
+          labelNode.textContent = shape.label;
+          svg.appendChild(labelNode);
+        }
       });
       section.appendChild(svg);
       section.appendChild(el('p', 'hint', 'Hover a mark for details; click it to see its source rows.'));

@@ -169,6 +169,7 @@ class AppViewModel(
         spec: QuerySpec,
         sample: QueryResult,
         origin: ExploreOrigin = ExploreOrigin.Builder,
+        sampleRunId: Long = 0L,
     ) {
         _explore.value?.close()
         _exploreOrigin.value = origin
@@ -177,6 +178,7 @@ class AppViewModel(
                 createExploreSession(connection, spec, sample),
                 computationScope = scope,
                 ioDispatcher = ioDispatcher,
+                sampleRunId = sampleRunId,
             )
     }
 
@@ -185,6 +187,7 @@ class AppViewModel(
         spec: QuerySpec,
         sample: QueryResult,
         recipe: ExploreRecipe,
+        sampleRunId: Long = 0L,
     ) {
         _explore.value?.close()
         // Recipes replay through the builder pipeline, so the session refreshes from the builder.
@@ -195,6 +198,7 @@ class AppViewModel(
                 computationScope = scope,
                 ioDispatcher = ioDispatcher,
                 initialRecipe = recipe,
+                sampleRunId = sampleRunId,
             )
     }
 
@@ -223,6 +227,7 @@ class AppViewModel(
         return ExploreOriginContext(
             currentSpec = currentSpec,
             sampleRefreshEnabled = sampleRefreshEnabled,
+            latestSampleRunId = originSample?.runId,
         )
     }
 
@@ -239,7 +244,12 @@ class AppViewModel(
                 ExploreOrigin.Builder -> query.currentSample(activeConnectionId)
                 ExploreOrigin.Sql -> sqlEditor.currentSample(activeConnectionId, sqlSpec)
             } ?: return
-        refreshExploreSample(connection, latestSample.spec, latestSample.result)
+        refreshExploreSample(
+            connection,
+            latestSample.spec,
+            latestSample.result,
+            sampleRunId = latestSample.runId,
+        )
     }
 
     internal fun runRecipeFromExplore(
@@ -313,13 +323,24 @@ class AppViewModel(
             activeConnection != null && sample != null && !sample.stale -> {
                 if (pending.specHash != exploreSpecHash(sample.spec)) return
                 _pendingRecipeRun.value = null
-                openExploreRecipe(activeConnection, sample.spec, sample.result, pending.recipe)
+                openExploreRecipe(
+                    activeConnection,
+                    sample.spec,
+                    sample.result,
+                    pending.recipe,
+                    sampleRunId = sample.runId,
+                )
             }
             !query.running && query.error != null -> _pendingRecipeRun.value = null
         }
     }
 
-    fun refreshExploreSample(connection: ConnectionDef, spec: QuerySpec, sample: QueryResult) {
+    fun refreshExploreSample(
+        connection: ConnectionDef,
+        spec: QuerySpec,
+        sample: QueryResult,
+        sampleRunId: Long = 0L,
+    ) {
         val current = _explore.value ?: return
         if (current.session.connectionId != connection.id) return
         current.close()
@@ -329,6 +350,7 @@ class AppViewModel(
                     initialWorkspace = current.workspace,
                     computationScope = scope,
                     ioDispatcher = ioDispatcher,
+                    sampleRunId = sampleRunId,
                 )
                 .also { it.inheritRecipeTrackingFrom(current) }
     }
@@ -358,6 +380,7 @@ enum class ExploreOrigin {
 internal data class ExploreOriginContext(
     val currentSpec: QuerySpec?,
     val sampleRefreshEnabled: Boolean,
+    val latestSampleRunId: Long? = null,
 )
 
 data class PendingRecipeRun(

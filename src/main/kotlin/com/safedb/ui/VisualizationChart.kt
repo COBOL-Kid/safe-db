@@ -28,8 +28,10 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.onPointerEvent
@@ -47,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import com.safedb.explore.BarArrangement
 import com.safedb.explore.BarOrientation
 import com.safedb.explore.ChartType
+import com.safedb.explore.NumberFormatKind
 import com.safedb.explore.VisualizationConfig
 import com.safedb.explore.VisualizationMark
 import com.safedb.explore.VisualizationPreview
@@ -55,8 +58,12 @@ import com.safedb.ui.theme.SafeDbTheme
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.ceil
+import kotlin.math.floor
+import kotlin.math.log10
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.pow
+import kotlin.math.roundToInt
 
 private const val LegendEntryLimit = 12
 
@@ -73,7 +80,10 @@ internal data class VisualizationGeometry(
     // xKey -> center along the category axis: x for vertical bars/line/scatter, y for horizontal
     // bars.
     val categoryCenters: Map<String, Float> = emptyMap(),
+    val valueTicks: List<Double> = emptyList(),
 )
+
+internal data class NiceValueAxis(val min: Double, val max: Double, val ticks: List<Double>)
 
 internal data class PlotInsets(
     val left: Float = 72f,
@@ -82,12 +92,44 @@ internal data class PlotInsets(
     val bottom: Float = 58f,
 )
 
-// Exposed so the chart can build tick strings (and measure them) before the plot rect exists.
-internal fun visualizationValueRange(
+internal fun niceValueAxis(
+    rawMin: Double,
+    rawMax: Double,
+    targetIntervals: Int = 4,
+): NiceValueAxis {
+    if (!rawMin.isFinite() || !rawMax.isFinite()) {
+        return NiceValueAxis(0.0, 1.0, listOf(0.0, 0.25, 0.5, 0.75, 1.0))
+    }
+    val hi = if (rawMax <= rawMin) rawMin + 1.0 else rawMax
+    val roughStep = (hi - rawMin) / targetIntervals.coerceAtLeast(1)
+    val magnitude = 10.0.pow(floor(log10(roughStep)))
+    val fraction = roughStep / magnitude
+    val niceFraction =
+        when {
+            fraction <= 1.0 -> 1.0
+            fraction <= 2.0 -> 2.0
+            fraction <= 2.5 -> 2.5
+            fraction <= 5.0 -> 5.0
+            else -> 10.0
+        }
+    val step = niceFraction * magnitude
+    val eps = 1e-9
+    val minTick = floor(rawMin / step + eps) * step
+    val maxTick = ceil(hi / step - eps) * step
+    val count = ((maxTick - minTick) / step).roundToInt().coerceAtLeast(1)
+    val ticks =
+        List(count + 1) { index ->
+            val value = minTick + index * step
+            if (abs(value) < step * eps) 0.0 else value
+        }
+    return NiceValueAxis(ticks.first(), ticks.last(), ticks)
+}
+
+internal fun visualizationValueAxis(
     preview: VisualizationPreview,
     config: VisualizationConfig,
-): ClosedFloatingPointRange<Double> {
-    if (preview.marks.isEmpty()) return 0.0..1.0
+): NiceValueAxis {
+    if (preview.marks.isEmpty()) return niceValueAxis(0.0, 1.0)
     val stacked =
         preview.chartType == ChartType.Bar && config.barArrangement == BarArrangement.Stacked
     val grouped = preview.marks.groupBy { it.xKey }
@@ -103,8 +145,15 @@ internal fun visualizationValueRange(
         } else {
             preview.marks.maxOf { max(0.0, it.y) }
         }
-    return rawMin..(if (rawMax == rawMin) rawMax + 1.0 else rawMax)
+    return niceValueAxis(rawMin, rawMax)
 }
+
+// Exposed so the chart can build tick strings (and measure them) before the plot rect exists.
+internal fun visualizationValueRange(
+    preview: VisualizationPreview,
+    config: VisualizationConfig,
+): ClosedFloatingPointRange<Double> =
+    visualizationValueAxis(preview, config).let { it.min..it.max }
 
 private fun stackedValueSpans(
     marks: List<VisualizationMark>,
@@ -136,9 +185,9 @@ internal fun visualizationGeometry(
     }
     val type = preview.chartType
     val stacked = type == ChartType.Bar && config.barArrangement == BarArrangement.Stacked
-    val range = visualizationValueRange(preview, config)
-    val rawMin = range.start
-    val yMax = range.endInclusive
+    val axis = visualizationValueAxis(preview, config)
+    val rawMin = axis.min
+    val yMax = axis.max
     fun yPosition(value: Double): Float =
         (plot.bottom - ((value - rawMin) / (yMax - rawMin) * plot.height)).toFloat()
     fun xPosition(value: Double): Float =
@@ -229,12 +278,10 @@ internal fun visualizationGeometry(
         }
         ChartType.Line -> {
             val categories = preview.marks.distinctBy { it.xKey }
-            val band = if (categories.size <= 1) 0f else plot.width / (categories.size - 1)
+            val band = plot.width / categories.size.coerceAtLeast(1)
             val categoryIndex = categories.mapIndexed { index, mark -> mark.xKey to index }.toMap()
             preview.marks.forEach { mark ->
-                val x =
-                    if (categories.size <= 1) plot.center.x
-                    else plot.left + categoryIndex.getValue(mark.xKey) * band
+                val x = plot.left + (categoryIndex.getValue(mark.xKey) + 0.5f) * band
                 val point = Offset(x, yPosition(mark.y))
                 points[mark.id] = point
                 categoryCenters[mark.xKey] = x
@@ -280,7 +327,7 @@ internal fun visualizationGeometry(
         ChartType.Auto,
         null -> Unit
     }
-    return VisualizationGeometry(regions, points, plot, rawMin, yMax, categoryCenters)
+    return VisualizationGeometry(regions, points, plot, rawMin, yMax, categoryCenters, axis.ticks)
 }
 
 @Composable
@@ -483,17 +530,10 @@ private fun PlotChart(
             minGutter,
             maxGutter,
         ) {
-            val range = visualizationValueRange(preview, config)
+            val valueAxis = visualizationValueAxis(preview, config)
             val ticks =
-                List(5) { tick ->
-                    textMeasurer
-                        .measure(
-                            compactNumber(
-                                range.start + (range.endInclusive - range.start) * tick / 4f,
-                            ),
-                            labelStyle,
-                        )
-                        .size
+                valueAxis.ticks.map { value ->
+                    textMeasurer.measure(compactNumber(value), labelStyle).size
                 }
             val tickWidth = ticks.maxOf { it.width }.toFloat()
             val lineHeight = ticks.maxOf { it.height }.toFloat()
@@ -569,9 +609,13 @@ private fun PlotChart(
                 clampLabelX(x, labelWidth, minX, canvasWidth)
 
             clipRect {
-                repeat(5) { tick ->
-                    val fraction = tick / 4f
-                    val value = geometry.yMin + (geometry.yMax - geometry.yMin) * fraction
+                val valueSpan = (geometry.yMax - geometry.yMin).takeIf { it > 0.0 } ?: 1.0
+                val ticks =
+                    geometry.valueTicks.ifEmpty {
+                        List(5) { tick -> geometry.yMin + valueSpan * tick / 4f }
+                    }
+                ticks.forEach { value ->
+                    val fraction = ((value - geometry.yMin) / valueSpan).toFloat().coerceIn(0f, 1f)
                     val label =
                         fitted(compactNumber(value), valueTickMaxWidth(horizontalBars, plot, gapPx))
                     if (horizontalBars) {
@@ -639,10 +683,15 @@ private fun PlotChart(
                                 )
                             if (config.showLabels) {
                                 val available = region.bounds.width - 4f
-                                val label = textMeasurer.measure(mark.formattedY, labelStyle)
+                                val labelText = barValueLabelText(mark, config)
+                                val label =
+                                    textMeasurer.measure(
+                                        labelText,
+                                        DataMono.copy(color = contrastingBarLabelColor(color)),
+                                    )
                                 if (
                                     inBarLabelOrNull(
-                                        mark.formattedY,
+                                        labelText,
                                         label.size.width.toFloat(),
                                         available,
                                     ) != null && label.size.height <= region.bounds.height - 2f
@@ -814,15 +863,36 @@ private fun PlotChart(
     }
 }
 
-internal fun compactNumber(value: Double): String =
-    when {
-        abs(value) >= 1_000_000_000_000 -> "%.1fT".format(Locale.ROOT, value / 1_000_000_000_000)
-        abs(value) >= 1_000_000_000 -> "%.1fB".format(Locale.ROOT, value / 1_000_000_000)
-        abs(value) >= 1_000_000 -> "%.1fM".format(Locale.ROOT, value / 1_000_000)
-        abs(value) >= 1_000 -> "%.1fK".format(Locale.ROOT, value / 1_000)
-        abs(value) >= 10 -> "%.0f".format(Locale.ROOT, value)
-        else -> "%.2f".format(Locale.ROOT, value).trimEnd('0').trimEnd('.')
+internal fun contrastingBarLabelColor(barColor: Color): Color {
+    val lum = barColor.luminance()
+    val whiteContrast = (1.0f + 0.05f) / (lum + 0.05f)
+    val darkContrast = (lum + 0.05f) / (0.007f + 0.05f)
+    return if (whiteContrast >= darkContrast) Color.White else Color(0xFF0F172A)
+}
+
+internal fun barValueLabelText(mark: VisualizationMark, config: VisualizationConfig): String {
+    val measure = config.values.firstOrNull { it.alias == mark.measureAlias }
+    return if (measure != null && measure.numberFormat.kind == NumberFormatKind.Auto) {
+        compactNumber(mark.y)
+    } else {
+        mark.formattedY
     }
+}
+
+internal fun compactNumber(value: Double): String {
+    val normalized = if (value == 0.0) 0.0 else value
+    return when {
+        abs(normalized) >= 1_000_000_000_000 -> compactUnit(normalized / 1_000_000_000_000, "T")
+        abs(normalized) >= 1_000_000_000 -> compactUnit(normalized / 1_000_000_000, "B")
+        abs(normalized) >= 1_000_000 -> compactUnit(normalized / 1_000_000, "M")
+        abs(normalized) >= 1_000 -> compactUnit(normalized / 1_000, "K")
+        abs(normalized) >= 10 -> "%.0f".format(Locale.ROOT, normalized)
+        else -> "%.2f".format(Locale.ROOT, normalized).trimEnd('0').trimEnd('.')
+    }
+}
+
+private fun compactUnit(scaled: Double, suffix: String): String =
+    "%.1f".format(Locale.ROOT, scaled).removeSuffix(".0") + suffix
 
 internal fun plotRect(width: Float, height: Float, insets: PlotInsets): Rect {
     val minPlotWidth = 20f

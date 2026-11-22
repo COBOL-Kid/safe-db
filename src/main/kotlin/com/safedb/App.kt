@@ -153,6 +153,13 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
                 state = exploreWindowState,
             ) {
                 LaunchedEffect(window) { window.minimumSize = Dimension(920, 560) }
+                LaunchedEffect(window, explore) {
+                    if (window.extendedState and java.awt.Frame.ICONIFIED != 0) {
+                        window.extendedState = window.extendedState and java.awt.Frame.ICONIFIED.inv()
+                    }
+                    window.toFront()
+                    window.requestFocus()
+                }
                 DisposableEffect(viewModel, window) {
                     val exploreWindow = window
                     exploreWindowRef.value = exploreWindow
@@ -177,6 +184,7 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
                                 viewModel = explore,
                                 currentSpec = originContext.currentSpec,
                                 activeConnectionId = activeConnectionId,
+                                latestSampleRunId = originContext.latestSampleRunId,
                                 onClose = viewModel::closeExplore,
                                 origin = exploreOrigin,
                                 onRefreshSample =

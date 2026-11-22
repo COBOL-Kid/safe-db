@@ -544,6 +544,104 @@ class HtmlReportWriterTest {
         assertTrue(REPORT_JS.contains("(r.kind || 'detail')"))
     }
 
+    @Test
+    fun visualizationChartEmitsBarLabelsOnlyWhenShowLabelsEnabledAndUsesNiceTicks() {
+        val sample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__status", "varchar"),
+                        ResultColumn("t0__amount", "decimal"),
+                    ),
+                rows =
+                    listOf(
+                        listOf(ResultCell.text("Services"), ResultCell.float(3_624_326.7)),
+                        listOf(ResultCell.text("Subscription"), ResultCell.float(1_620_951.78)),
+                    ),
+                rowCount = 2,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val baseConfig =
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("t0__status", "Status"),
+                values = listOf(VisualizationMeasure("sum", MeasureFn.Sum, "t0__amount")),
+                barOrientation = BarOrientation.Horizontal,
+                showLabels = false,
+            )
+
+        val hiddenPreview = applyVisualization(sample, baseConfig, session().baseSpec.tables)
+        val hiddenChart = buildChartSection(hiddenPreview, baseConfig)
+        assertTrue(hiddenChart.shapes.all { it.label == null })
+        assertEquals(listOf("0", "1M", "2M", "3M", "4M"), hiddenChart.valueTicks.map { it.label })
+
+        val shownConfig = baseConfig.copy(showLabels = true)
+        val shownPreview = applyVisualization(sample, shownConfig, session().baseSpec.tables)
+        val shownChart = buildChartSection(shownPreview, shownConfig)
+        assertEquals(listOf("3.6M", "1.6M"), shownChart.shapes.map { it.label })
+        assertTrue(shownChart.shapes.all { it.lx != null && it.ly != null && it.labelTone == "light" })
+        assertTrue(REPORT_JS.contains("bar-label"))
+    }
+
+    @Test
+    fun visualizationTableDeduplicatesSeriesAndKeepsFormattedNumericValuesSortable() {
+        val sample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__status", "varchar"),
+                        ResultColumn("t0__region", "varchar"),
+                        ResultColumn("t0__amount", "decimal"),
+                    ),
+                rows =
+                    listOf(
+                        listOf(
+                            ResultCell.text("Services"),
+                            ResultCell.text("Europe"),
+                            ResultCell.float(3_624_326.7),
+                        ),
+                        listOf(
+                            ResultCell.text("Subscription"),
+                            ResultCell.text("Asia"),
+                            ResultCell.float(1_620_951.78),
+                        ),
+                    ),
+                rowCount = 2,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val session = session().copy(sample = sample)
+        val singleConfig =
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("t0__status", "Status"),
+                values =
+                    listOf(
+                        VisualizationMeasure("sum", MeasureFn.Sum, "t0__amount", "Sum amount"),
+                    ),
+            )
+        val singlePreview = applyVisualization(sample, singleConfig, session.baseSpec.tables)
+        val singleTable = assertNotNull(buildVisualizationReport(session, singlePreview, singleConfig).table)
+
+        assertEquals(
+            listOf("Status", "Measure", "Value", "Source rows"),
+            singleTable.columns.map { it.label },
+        )
+        assertTrue(singleTable.columns[2].numeric)
+        assertEquals(3_624_326.7, singleTable.rows.first().cells[2].n)
+        assertTrue(singleTable.rows.first().cells[2].t.contains("3,624,326.7") || singleTable.rows.first().cells[2].t.contains("3.624.326,7"))
+
+        val multiConfig = singleConfig.copy(series = VisualizationField("t0__region", "Region"))
+        val multiPreview = applyVisualization(sample, multiConfig, session.baseSpec.tables)
+        val multiTable = assertNotNull(buildVisualizationReport(session, multiPreview, multiConfig).table)
+
+        assertEquals(
+            listOf("Status", "Series", "Measure", "Value", "Source rows"),
+            multiTable.columns.map { it.label },
+        )
+    }
+
     private fun pivotConfig() =
         ExploreConfig(
             rowDimensions = listOf(PivotDimension(column = "t0__status")),

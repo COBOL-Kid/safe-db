@@ -10,6 +10,9 @@ import com.safedb.model.isTemporal
 import java.math.BigDecimal
 import java.math.MathContext
 import java.math.RoundingMode
+import java.text.DecimalFormat
+import java.text.DecimalFormatSymbols
+import java.util.Locale
 import kotlin.math.ceil
 import kotlin.math.sqrt
 
@@ -49,11 +52,11 @@ private class VisualizationPlanner(
                 ChartType.Auto -> emptyList()
             }
         if (marks.isEmpty()) return blocked("No plottable values were found.", chartType)
-        val ordered = orderMarks(marks, chartType)
-        val series =
-            ordered
-                .distinctBy { it.seriesKey }
-                .map { VisualizationSeries(it.seriesKey, it.seriesLabel) }
+        val canonicalSeries = canonicalSeriesOrder(marks)
+        val seriesRank = canonicalSeries.mapIndexed { index, series -> series.key to index }.toMap()
+        val ordered = orderMarks(marks, chartType, seriesRank)
+        val presentSeriesKeys = ordered.mapTo(mutableSetOf()) { it.seriesKey }
+        val series = canonicalSeries.filter { it.key in presentSeriesKeys }
         val title = config.title.ifBlank { defaultTitle(chartType) }
         return VisualizationPreview(
             chartType = chartType,
@@ -150,7 +153,7 @@ private class VisualizationPlanner(
                         xLabel = xBucket.label,
                         xValue = xBucket.ordinal,
                         y = value.toDouble(),
-                        formattedY = formatExploreNumber(value, measure.numberFormat),
+                        formattedY = formatVisualizationNumber(value, measure.numberFormat),
                         seriesKey = seriesKey,
                         seriesLabel = seriesLabel,
                         measureAlias = measure.alias,
@@ -185,7 +188,7 @@ private class VisualizationPlanner(
                 xLabel = xValue.stripTrailingZeros().toPlainString(),
                 xValue = xValue.toDouble(),
                 y = yValue.toDouble(),
-                formattedY = formatExploreNumber(yValue, yMeasure.numberFormat),
+                formattedY = formatVisualizationNumber(yValue, yMeasure.numberFormat),
                 seriesKey = seriesBucket?.key ?: yMeasure.alias,
                 seriesLabel = seriesBucket?.label ?: yMeasure.label,
                 measureAlias = yMeasure.alias,
@@ -227,7 +230,8 @@ private class VisualizationPlanner(
                 xLabel = label,
                 xValue = lower.toDouble(),
                 y = grouped.size.toDouble(),
-                formattedY = grouped.size.toString(),
+                formattedY =
+                    formatVisualizationNumber(grouped.size.toBigDecimal(), PivotNumberFormat()),
                 seriesKey = "count",
                 seriesLabel = "Count",
                 measureAlias = "count",
@@ -246,7 +250,7 @@ private class VisualizationPlanner(
                 xKey = "",
                 xLabel = measure.label,
                 y = value.toDouble(),
-                formattedY = formatExploreNumber(value, measure.numberFormat),
+                formattedY = formatVisualizationNumber(value, measure.numberFormat),
                 seriesKey = measure.alias,
                 seriesLabel = measure.label,
                 measureAlias = measure.alias,
@@ -302,9 +306,20 @@ private class VisualizationPlanner(
         return current
     }
 
+    private fun canonicalSeriesOrder(marks: List<VisualizationMark>): List<VisualizationSeries> {
+        val distinct =
+            marks.distinctBy { it.seriesKey }.map { VisualizationSeries(it.seriesKey, it.seriesLabel) }
+        return if (config.series != null) {
+            distinct.sortedBy { it.label.lowercase(Locale.ROOT) }
+        } else {
+            distinct
+        }
+    }
+
     private fun orderMarks(
         marks: List<VisualizationMark>,
         type: ChartType,
+        seriesRank: Map<String, Int>,
     ): List<VisualizationMark> {
         if (type == ChartType.Scatter || type == ChartType.Kpi) return marks
         val groups = marks.groupBy { it.xKey }.values.toList()
@@ -327,7 +342,9 @@ private class VisualizationPlanner(
         if (type == ChartType.Bar && groups.size > limited.size) {
             warnings += "Showing ${limited.size} of ${groups.size} categories"
         }
-        return limited.flatten()
+        return limited.flatMap { group ->
+            group.sortedBy { mark -> seriesRank[mark.seriesKey] ?: Int.MAX_VALUE }
+        }
     }
 
     private fun bucket(cell: ResultCell, field: VisualizationField): ExploreBucket {
@@ -362,6 +379,9 @@ private class VisualizationPlanner(
     }
 
     private fun exportResult(type: ChartType, marks: List<VisualizationMark>): QueryResult {
+        val includeSeries = config.series != null
+        val measuresByAlias = config.values.associateBy { it.alias }
+        val allAuto = config.values.all { it.numberFormat.kind == NumberFormatKind.Auto }
         val columns =
             if (type == ChartType.Scatter) {
                 listOf(
@@ -372,13 +392,22 @@ private class VisualizationPlanner(
                     ResultColumn("Source rows", "integer"),
                 )
             } else {
-                listOf(
-                    ResultColumn(config.x?.label ?: "Category", "text"),
-                    ResultColumn("Series", "text"),
-                    ResultColumn("Measure", "text"),
-                    ResultColumn("Value", "text"),
-                    ResultColumn("Source rows", "integer"),
-                )
+                buildList {
+                    add(ResultColumn(config.x?.label ?: "Category", "text"))
+                    if (includeSeries) add(ResultColumn("Series", "text"))
+                    add(ResultColumn("Measure", "text"))
+                    add(
+                        ResultColumn(
+                            "Value",
+                            when {
+                                type == ChartType.Histogram -> "integer"
+                                allAuto -> "decimal"
+                                else -> "text"
+                            },
+                        ),
+                    )
+                    add(ResultColumn("Source rows", "integer"))
+                }
             }
         val rows = marks.map { mark ->
             if (type == ChartType.Scatter) {
@@ -390,13 +419,21 @@ private class VisualizationPlanner(
                     ResultCell.IntegerCell(mark.sourceRowIndices.size.toLong()),
                 )
             } else {
-                listOf(
-                    ResultCell.text(mark.xLabel),
-                    ResultCell.text(mark.seriesLabel),
-                    ResultCell.text(mark.measureLabel),
-                    ResultCell.text(mark.formattedY),
-                    ResultCell.IntegerCell(mark.sourceRowIndices.size.toLong()),
-                )
+                val measure = measuresByAlias[mark.measureAlias]
+                val isAuto = measure == null || measure.numberFormat.kind == NumberFormatKind.Auto
+                val valueCell =
+                    when {
+                        type == ChartType.Histogram -> ResultCell.IntegerCell(mark.y.toLong())
+                        isAuto -> ResultCell.FloatCell(mark.y)
+                        else -> ResultCell.text(mark.formattedY)
+                    }
+                buildList {
+                    add(ResultCell.text(mark.xLabel))
+                    if (includeSeries) add(ResultCell.text(mark.seriesLabel))
+                    add(ResultCell.text(mark.measureLabel))
+                    add(valueCell)
+                    add(ResultCell.IntegerCell(mark.sourceRowIndices.size.toLong()))
+                }
             }
         }
         return QueryResult(columns, rows, rows.size, sample.truncated, warnings.toList())
@@ -416,3 +453,11 @@ private class VisualizationPlanner(
 private data class ChartRecord(val index: Int, val row: List<ResultCell>)
 
 private fun plain(value: BigDecimal): String = value.stripTrailingZeros().toPlainString()
+
+private fun formatVisualizationNumber(value: BigDecimal, format: PivotNumberFormat): String {
+    if (format.kind != NumberFormatKind.Auto) return formatExploreNumber(value, format)
+    val symbols = DecimalFormatSymbols.getInstance(Locale.getDefault())
+    return DecimalFormat("#,##0.####", symbols)
+        .apply { roundingMode = RoundingMode.HALF_EVEN }
+        .format(value)
+}

@@ -28,6 +28,7 @@ internal class QueryRunController(
     private val onRunFinished: () -> Unit = {},
 ) {
     private val runGeneration = AtomicInteger(0)
+    private var nextRunId = 0L
     private var activeRun: ActiveRun? = null
     private var observedActiveConnection = false
     private var activeConnectionId: String? = null
@@ -42,6 +43,7 @@ internal class QueryRunController(
 
     private var resultConnectionId by mutableStateOf<String?>(null)
     private var resultSpec by mutableStateOf<QuerySpec?>(null)
+    private var resultRunId by mutableStateOf(0L)
 
     var running by mutableStateOf(false)
         private set
@@ -84,6 +86,7 @@ internal class QueryRunController(
         results = null
         resultConnectionId = null
         resultSpec = null
+        resultRunId = 0L
         riskEvaluation = null
         riskEvaluationConnectionId = null
         riskEvaluationSpec = null
@@ -107,6 +110,7 @@ internal class QueryRunController(
                     riskEvaluationSpec = request.spec
                     resultConnectionId = request.connectionId
                     resultSpec = executedSpec
+                    resultRunId = ++nextRunId
                     succeeded = true
                 }
             } catch (failure: QueryFailureException) {
@@ -174,7 +178,13 @@ internal class QueryRunController(
         val result = results ?: return null
         val executedSpec = resultSpec ?: return null
         if (currentSpec == executedSpec) {
-            return BuilderQuerySample(connectionId, executedSpec, result, stale = false)
+            return BuilderQuerySample(
+                connectionId,
+                executedSpec,
+                result,
+                stale = false,
+                runId = resultRunId,
+            )
         }
         if (
             allowStaleLimit &&
@@ -182,7 +192,13 @@ internal class QueryRunController(
                 currentSpec.copy(limit = executedSpec.limit, uncapped = executedSpec.uncapped) ==
                     executedSpec
         ) {
-            return BuilderQuerySample(connectionId, executedSpec, result, stale = true)
+            return BuilderQuerySample(
+                connectionId,
+                executedSpec,
+                result,
+                stale = true,
+                runId = resultRunId,
+            )
         }
         return null
     }
@@ -196,6 +212,7 @@ internal class QueryRunController(
         results = null
         resultConnectionId = null
         resultSpec = null
+        resultRunId = 0L
         pendingRiskGateState = false
         riskEvaluation = null
         riskEvaluationConnectionId = null
@@ -294,6 +311,7 @@ internal class QueryRunController(
         results = null
         resultConnectionId = null
         resultSpec = null
+        resultRunId = 0L
         error = null
         discardedRunNotice = null
         riskEvaluation = null

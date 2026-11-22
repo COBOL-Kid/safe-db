@@ -81,6 +81,7 @@ data class BuilderQuerySample(
     val spec: QuerySpec,
     val result: QueryResult,
     val stale: Boolean = false,
+    val runId: Long = 0L,
 )
 
 typealias NewFilterSpec = FilterSpec

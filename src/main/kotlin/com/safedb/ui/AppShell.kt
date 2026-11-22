@@ -218,7 +218,12 @@ internal fun AppShellContent(
                         onOpenExplore = {
                             val sample = viewModel.query.currentSample(activeConnection?.id)
                             if (activeConnection != null && sample != null) {
-                                viewModel.openExplore(activeConnection, sample.spec, sample.result)
+                                viewModel.openExplore(
+                                    activeConnection,
+                                    sample.spec,
+                                    sample.result,
+                                    sampleRunId = sample.runId,
+                                )
                             }
                         },
                         onOpenSettings = appState::openSettings,
@@ -238,6 +243,7 @@ internal fun AppShellContent(
                                         sample.spec,
                                         sample.result,
                                         recipe,
+                                        sampleRunId = sample.runId,
                                     )
                                 }
                             }
@@ -268,6 +274,7 @@ internal fun AppShellContent(
                                     sample.spec,
                                     sample.result,
                                     ExploreOrigin.Sql,
+                                    sampleRunId = sample.runId,
                                 )
                             }
                         },

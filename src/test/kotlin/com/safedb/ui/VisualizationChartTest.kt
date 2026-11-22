@@ -1,20 +1,32 @@
 package com.safedb.ui
 
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import com.safedb.explore.BarArrangement
 import com.safedb.explore.BarOrientation
 import com.safedb.explore.ChartType
+import com.safedb.explore.MeasureFn
+import com.safedb.explore.NumberFormatKind
+import com.safedb.explore.PivotNumberFormat
 import com.safedb.explore.VisualizationConfig
 import com.safedb.explore.VisualizationField
 import com.safedb.explore.VisualizationMark
 import com.safedb.explore.VisualizationMeasure
 import com.safedb.explore.VisualizationPreview
 import com.safedb.model.QueryResult
+import com.safedb.model.ResultCell
 import com.safedb.model.ResultColumn
+import com.safedb.model.ThemePalette
+import com.safedb.ui.theme.SafeDbTheme
+import com.safedb.ui.theme.paletteSpecFor
 import java.util.Locale
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -299,10 +311,13 @@ class VisualizationChartTest {
         val previous = Locale.getDefault()
         try {
             Locale.setDefault(Locale.GERMANY)
-            assertEquals("5.0T", compactNumber(5e12))
+            assertEquals("5T", compactNumber(5e12))
             assertEquals("-2.5B", compactNumber(-2.5e9))
+            assertEquals("1M", compactNumber(1e6))
             assertEquals("1.5M", compactNumber(1.5e6))
+            assertEquals("200K", compactNumber(200_000.0))
             assertEquals("12", compactNumber(12.0))
+            assertEquals("0", compactNumber(-0.0))
         } finally {
             Locale.setDefault(previous)
         }
@@ -396,6 +411,164 @@ class VisualizationChartTest {
         assertEquals(null, scatter.x)
         assertTrue(scatter.values.isEmpty())
         assertEquals(null, scatter.size)
+    }
+
+    @Test
+    fun niceValueAxisProducesCleanIntervalsAcrossReportRanges() {
+        val reportA = niceValueAxis(0.0, 3_624_326.7)
+        assertEquals(listOf(0.0, 1_000_000.0, 2_000_000.0, 3_000_000.0, 4_000_000.0), reportA.ticks)
+
+        val reportB = niceValueAxis(0.0, 327_777.59)
+        assertEquals(listOf(0.0, 100_000.0, 200_000.0, 300_000.0, 400_000.0), reportB.ticks)
+
+        val reportC = niceValueAxis(0.0, 533_532.96)
+        assertEquals(listOf(0.0, 200_000.0, 400_000.0, 600_000.0), reportC.ticks)
+
+        val flat = niceValueAxis(5.0, 5.0)
+        assertTrue(flat.max > flat.min)
+        assertTrue(flat.ticks.size >= 2)
+    }
+
+    @Test
+    fun contrastingBarLabelColorMeetsWcagAaAcrossAllThemePalettes() {
+        for (palette in ThemePalette.entries) {
+            for (isDark in listOf(false, true)) {
+                val series = paletteSpecFor(palette, isDark).series
+                series.forEach { barColor ->
+                    val labelColor = contrastingBarLabelColor(barColor)
+                    val l1 = barColor.luminance()
+                    val l2 = labelColor.luminance()
+                    val contrast = (max(l1, l2) + 0.05f) / (min(l1, l2) + 0.05f)
+                    assertTrue(
+                        contrast >= 4.5f,
+                        "Expected >= 4.5 contrast for $palette (dark=$isDark) bar=$barColor label=$labelColor, got $contrast",
+                    )
+                }
+            }
+        }
+    }
+
+    @Test
+    fun barValueLabelTextUsesCompactForAutoAndFormattedForExplicitFormat() {
+        val autoMeasure =
+            VisualizationMeasure(
+                alias = "sum_total",
+                fn = MeasureFn.Sum,
+                sourceColumn = "total",
+                numberFormat = PivotNumberFormat(NumberFormatKind.Auto),
+            )
+        val currencyMeasure =
+            autoMeasure.copy(
+                alias = "curr_total",
+                numberFormat = PivotNumberFormat(NumberFormatKind.Currency, decimals = 0),
+            )
+        val autoMark =
+            mark("1", "a", "A", "one", 3_624_326.7, 1.0)
+                .copy(measureAlias = "sum_total", formattedY = "3,624,326.7")
+        val currencyMark =
+            mark("2", "a", "A", "one", 3_624_326.7, 1.0)
+                .copy(measureAlias = "curr_total", formattedY = "$3,624,327")
+
+        assertEquals(
+            "3.6M",
+            barValueLabelText(autoMark, VisualizationConfig(values = listOf(autoMeasure))),
+        )
+        assertEquals(
+            "$3,624,327",
+            barValueLabelText(currencyMark, VisualizationConfig(values = listOf(currencyMeasure))),
+        )
+    }
+
+    @Test
+    fun lineChartCentersPointsInBandsSoFirstLabelStaysInsidePlot() {
+        val preview = preview(ChartType.Line)
+        val geometry =
+            visualizationGeometry(
+                preview,
+                VisualizationConfig(chartType = ChartType.Line),
+                900f,
+                500f,
+            )
+        val firstX = geometry.points.getValue("a-1").x
+        val lastX = geometry.points.getValue("b-1").x
+        val band = geometry.plot.width / 2f
+
+        assertEquals(geometry.plot.left + band * 0.5f, firstX)
+        assertEquals(geometry.plot.left + band * 1.5f, lastX)
+    }
+
+    @Test
+    fun visualizationSidebarAddValueAddsSecondMeasureAndTemplatesOpensDialog() {
+        val sample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__category", "varchar"),
+                        ResultColumn("t0__amount", "decimal"),
+                        ResultColumn("t0__qty", "integer"),
+                    ),
+                rows =
+                    listOf(
+                        listOf(
+                            ResultCell.text("Services"),
+                            ResultCell.float(100.0),
+                            ResultCell.integer(2),
+                        ),
+                    ),
+                rowCount = 1,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val fields = buildExploreFieldOptions(sample, emptyList())
+        var config =
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("t0__category", "category"),
+                values =
+                    listOf(
+                        VisualizationMeasure(
+                            "sum_amount",
+                            MeasureFn.Sum,
+                            "t0__amount",
+                            "Sum amount",
+                        ),
+                    ),
+            )
+
+        withComposeScene(width = 480, height = 900, content = {
+            SafeDbTheme(isDark = false) {
+                VisualizationConfigPanel(
+                    config = config,
+                    sample = sample,
+                    tables = emptyList(),
+                    fields = fields,
+                    memberOptionsFor = { emptyList() },
+                    onConfigChange = { config = it },
+                    onApplyTemplate = { config = it },
+                    onReset = {},
+                    onHide = {},
+                )
+            }
+        }) { scene ->
+            val addValueNode = scene.requireContaining("Add value")
+            scene.click(addValueNode.boundsInRoot.center)
+            scene.settle()
+
+            // Value picker opens with "Count rows", not "Replace X field".
+            val countRows = scene.requireContaining("Count rows")
+            scene.click(countRows.boundsInRoot.center)
+            scene.settle()
+
+            assertEquals("t0__category", config.x?.column)
+            assertEquals(2, config.values.size)
+            assertEquals(MeasureFn.Count, config.values[1].fn)
+
+            val templatesButton = scene.requireExact("Templates")
+            scene.click(templatesButton.boundsInRoot.center)
+            scene.settle()
+
+            assertNotNull(scene.findContaining("Visualization templates"))
+        }
     }
 
     private fun preview(type: ChartType) =

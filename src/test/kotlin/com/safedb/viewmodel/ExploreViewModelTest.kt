@@ -172,6 +172,16 @@ class ExploreViewModelTest {
         assertTrue(viewModel.isStale(baseSpec, "c2"))
         assertTrue(viewModel.isStale(baseSpec.copy(limit = 250)))
         assertTrue(viewModel.isStale(null))
+
+        val runVm =
+            ExploreViewModel(
+                createExploreSession(connection(), baseSpec, sampleResult()),
+                sampleRunId = 3L,
+            )
+        assertFalse(runVm.isStale(baseSpec, "c1", latestSampleRunId = 3L))
+        assertFalse(runVm.hasNewerSample(3L))
+        assertTrue(runVm.hasNewerSample(4L))
+        assertTrue(runVm.isStale(baseSpec, "c1", latestSampleRunId = 4L))
     }
 
     @Test
@@ -569,8 +579,16 @@ class ExploreViewModelTest {
 
         val csv = createTempFile(suffix = ".csv")
         viewModel.saveVisualizationCsv(csv)
-        assertTrue(csv.readText().contains("Status,Series,Measure,Value,Source rows"))
+        assertTrue(csv.readText().contains("Status,Measure,Value,Source rows"))
         assertTrue(csv.readText().contains("pending"))
+
+        viewModel.updateVisualization {
+            it.copy(series = VisualizationField("t0__id", "Order"))
+        }
+        val seriesCsv = createTempFile(suffix = ".csv")
+        viewModel.saveVisualizationCsv(seriesCsv)
+        assertTrue(seriesCsv.readText().contains("Status,Series,Measure,Value,Source rows"))
+        viewModel.updateVisualization { it.copy(series = null) }
 
         val html = createTempFile(suffix = ".html")
         viewModel.saveVisualizationHtml(html)
@@ -611,6 +629,54 @@ class ExploreViewModelTest {
         val image = Image.makeFromEncoded(bytes)
         assertEquals(1600, image.width)
         assertEquals(900, image.height)
+    }
+
+    @Test
+    fun drillCsvExportUsesDisplayColumnLabelsWithoutAliasMangling() {
+        val joinedSpec =
+            sampleSpec()
+                .copy(
+                    tables =
+                        listOf(
+                            TableRef("sales", "regions", "r"),
+                            TableRef("sales", "accounts", "a"),
+                            TableRef("sales", "order_items", "oi"),
+                        ),
+                )
+        val joinedSample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("r__name", "text"),
+                        ResultColumn("a__name", "text"),
+                        ResultColumn("oi__line_total", "numeric"),
+                    ),
+                rows =
+                    listOf(
+                        listOf(
+                            ResultCell.text("Europe"),
+                            ResultCell.text("Acme"),
+                            ResultCell.float(455.5),
+                        ),
+                    ),
+                rowCount = 1,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val viewModel =
+            ExploreViewModel(createExploreSession(connection(), joinedSpec, joinedSample))
+        val drill = viewModel.sourceRowsFor(
+            viewModel.preview.layout.rowEntries.first().pathKey,
+            viewModel.preview.layout.columnLeaves.single().pathKey,
+            viewModel.config.measures.single().alias,
+        )
+        val csv = createTempFile(suffix = ".csv")
+
+        viewModel.saveDrillResultCsv(drill, csv)
+
+        val lines = csv.readText().trim().lines()
+        assertEquals("regions.name,accounts.name,line_total", lines.first())
+        assertTrue(lines[1].startsWith("Europe,Acme,455.5"))
     }
 
     @Test

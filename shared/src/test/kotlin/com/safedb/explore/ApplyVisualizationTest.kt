@@ -3,6 +3,7 @@ package com.safedb.explore
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
 import com.safedb.model.ResultColumn
+import java.util.Locale
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -249,6 +250,90 @@ class ApplyVisualizationTest {
                 ),
             )
         assertEquals("No rows to plot.", missingColumn.blockingMessage)
+    }
+
+    @Test
+    fun autoFormatsNumbersWithGroupingAndOmitsDuplicateSeriesColumn() {
+        val large =
+            sample()
+                .copy(
+                    rows =
+                        listOf(
+                            row("pending", "West", "2026-01-01", 3_624_326, 1),
+                            row("shipped", "East", "2026-02-02", 1_620_951, 2),
+                        ),
+                    rowCount = 2,
+                )
+        val previous = Locale.getDefault()
+        Locale.setDefault(Locale.US)
+        try {
+            val preview =
+                applyVisualization(
+                    large,
+                    VisualizationConfig(
+                        chartType = ChartType.Bar,
+                        x = VisualizationField("status"),
+                        values =
+                            listOf(
+                                VisualizationMeasure(
+                                    "revenue",
+                                    MeasureFn.Sum,
+                                    "amount",
+                                    "Sum amount",
+                                ),
+                            ),
+                    ),
+                )
+
+            assertEquals(listOf("3,624,326", "1,620,951"), preview.marks.map { it.formattedY })
+            val export = preview.exportResult!!
+            assertEquals(
+                listOf("status", "Measure", "Value", "Source rows"),
+                export.columns.map { it.name },
+            )
+            assertEquals(ResultCell.FloatCell(3_624_326.0), export.rows.first()[2])
+        } finally {
+            Locale.setDefault(previous)
+        }
+    }
+
+    @Test
+    fun groupedBarsSortSeriesConsistentlyAcrossCategoriesAndKeepSeriesInExport() {
+        val scrambled =
+            sample()
+                .copy(
+                    rows =
+                        listOf(
+                            row("Europe", "SMB", "2026-01-01", 10, 1),
+                            row("Europe", "Enterprise", "2026-01-01", 30, 1),
+                            row("Asia", "Enterprise", "2026-01-02", 40, 1),
+                            row("Asia", "Mid-Market", "2026-01-02", 20, 1),
+                            row("Asia", "SMB", "2026-01-02", 50, 1),
+                            row("Europe", "Mid-Market", "2026-01-01", 25, 1),
+                        ),
+                    rowCount = 6,
+                )
+        val preview =
+            applyVisualization(
+                scrambled,
+                VisualizationConfig(
+                    chartType = ChartType.Bar,
+                    x = VisualizationField("status"),
+                    values = listOf(VisualizationMeasure("revenue", MeasureFn.Sum, "amount")),
+                    series = VisualizationField("region"),
+                    sort = VisualizationSort(VisualizationSortTarget.Category, SortDir.Asc),
+                ),
+            )
+
+        assertEquals(listOf("Enterprise", "Mid-Market", "SMB"), preview.series.map { it.label })
+        assertEquals(
+            listOf("Enterprise", "Mid-Market", "SMB", "Enterprise", "Mid-Market", "SMB"),
+            preview.marks.map { it.seriesLabel },
+        )
+        assertEquals(
+            listOf("status", "Series", "Measure", "Value", "Source rows"),
+            preview.exportResult!!.columns.map { it.name },
+        )
     }
 
     private fun sample() =

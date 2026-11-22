@@ -777,12 +777,51 @@ class AppViewModelTest {
                 viewModel.sqlEditor.run("c1", sqlSpec, viewModel.sqlEditor.text.text)
                 advanceUntilIdle()
                 val sqlSample = viewModel.sqlEditor.currentSample("c1", sqlSpec)!!
-                viewModel.openExplore(connection, sqlSpec, sqlSample.result, ExploreOrigin.Sql)
+                viewModel.openExplore(
+                    connection,
+                    sqlSpec,
+                    sqlSample.result,
+                    ExploreOrigin.Sql,
+                    sampleRunId = sqlSample.runId,
+                )
 
                 val sqlContext =
                     viewModel.exploreOriginContext("c1", sqlSpec, connections, ExploreOrigin.Sql)
                 assertTrue(sqlContext.sampleRefreshEnabled)
                 assertEquals(sqlSpec, sqlContext.currentSpec)
+                assertFalse(
+                    viewModel.explore.value!!.isStale(
+                        sqlContext.currentSpec,
+                        "c1",
+                        sqlContext.latestSampleRunId,
+                    ),
+                )
+
+                // Re-running the exact same SQL must still mark Explore stale via runId.
+                viewModel.sqlEditor.run("c1", sqlSpec, viewModel.sqlEditor.text.text)
+                advanceUntilIdle()
+                val rerunContext =
+                    viewModel.exploreOriginContext("c1", sqlSpec, connections, ExploreOrigin.Sql)
+                assertTrue(
+                    viewModel.explore.value!!.hasNewerSample(rerunContext.latestSampleRunId),
+                )
+                assertTrue(
+                    viewModel.explore.value!!.isStale(
+                        rerunContext.currentSpec,
+                        "c1",
+                        rerunContext.latestSampleRunId,
+                    ),
+                )
+                viewModel.refreshActiveExploreSample("c1", sqlSpec, connections)
+                val refreshedContext =
+                    viewModel.exploreOriginContext("c1", sqlSpec, connections, ExploreOrigin.Sql)
+                assertFalse(
+                    viewModel.explore.value!!.isStale(
+                        refreshedContext.currentSpec,
+                        "c1",
+                        refreshedContext.latestSampleRunId,
+                    ),
+                )
 
                 val updatedSqlSpec = sampleSpec().copy(limit = 30)
                 viewModel.sqlEditor.run("c1", updatedSqlSpec, viewModel.sqlEditor.text.text)

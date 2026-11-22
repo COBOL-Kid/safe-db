@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import com.safedb.explore.ExploreMode
 import com.safedb.explore.ExploreRecipe
 import com.safedb.explore.PivotFilter
+import com.safedb.explore.exploreSpecHash
 import com.safedb.model.ConnectionDef
 import com.safedb.model.QueryResult
 import com.safedb.model.QuerySpec
@@ -61,6 +62,7 @@ import com.safedb.viewmodel.ExploreViewModel
 import com.safedb.viewmodel.RecipesViewModel
 import java.io.File
 import javax.swing.JFileChooser
+import javax.swing.filechooser.FileNameExtensionFilter
 
 @Composable
 fun ExploreWindowContent(
@@ -74,6 +76,7 @@ fun ExploreWindowContent(
     connections: List<ConnectionDef> = emptyList(),
     onRunRecipe: (ExploreRecipe, ConnectionDef) -> Unit = { _, _ -> },
     activeConnectionId: String? = viewModel.session.connectionId,
+    latestSampleRunId: Long? = null,
     modifier: Modifier = Modifier,
 ) {
     val session = viewModel.session
@@ -85,8 +88,12 @@ fun ExploreWindowContent(
         remember(session.sample.columns, session.baseSpec.tables) {
             buildExploreFieldOptions(session.sample, session.baseSpec.tables)
         }
-    val stale = viewModel.isStale(currentSpec, activeConnectionId)
+    val stale = viewModel.isStale(currentSpec, activeConnectionId, latestSampleRunId)
     val connectionStale = activeConnectionId != session.connectionId
+    val newerSampleAvailable =
+        viewModel.hasNewerSample(latestSampleRunId) &&
+            currentSpec != null &&
+            exploreSpecHash(currentSpec) == session.baseSpecHash
     var drillResult by remember { mutableStateOf<QueryResult?>(null) }
     var pivotRailVisible by remember { mutableStateOf(true) }
     var worksheetRailVisible by remember { mutableStateOf(true) }
@@ -98,11 +105,12 @@ fun ExploreWindowContent(
             result = result,
             onExport = {
                 chooseExportFile("explore-details", "csv", parent = appWindow)?.let {
-                    viewModel.saveResultCsv(result, it)
+                    viewModel.saveDrillResultCsv(result, it)
                 }
             },
             onDismiss = { drillResult = null },
             exporting = viewModel.exporting,
+            tables = session.baseSpec.tables,
         )
     }
 
@@ -157,6 +165,7 @@ fun ExploreWindowContent(
                 origin = origin,
                 sampleRefreshEnabled = sampleRefreshEnabled,
                 connectionStale = connectionStale,
+                newerSampleAvailable = newerSampleAvailable,
                 onRefreshSample = onRefreshSample,
             )
             ExplorePreviewErrorBanner(viewModel.previewError(activeMode))
@@ -457,6 +466,7 @@ private fun ExploreStaleSampleWarning(
     origin: ExploreOrigin,
     sampleRefreshEnabled: Boolean,
     connectionStale: Boolean,
+    newerSampleAvailable: Boolean,
     onRefreshSample: (() -> Unit)?,
 ) {
     if (!stale) return
@@ -475,6 +485,8 @@ private fun ExploreStaleSampleWarning(
                     connectionStale ->
                         "The active connection changed. Reopen Explore from the query you " +
                             "want to inspect; Refresh cannot update this sample."
+                    newerSampleAvailable && sampleRefreshEnabled ->
+                        "Newer $surface results are available. Refresh the Explore sample to load them."
                     sampleRefreshEnabled ->
                         "The $surface query changed. Refresh the Explore sample from the latest $surface results."
                     else ->
@@ -597,13 +609,19 @@ private fun chooseExportFile(
             "explore"
         }
     val chooser =
-        createAppFileChooser().apply {
-            selectedFile = File("explore-$safeName.$extension")
-            dialogTitle = "Export Explore ${extension.uppercase()}"
-        }
+        createAppFileChooser(
+                suggestedFileName = "explore-$safeName.$extension",
+                extensionFilter =
+                    FileNameExtensionFilter(
+                        "${extension.uppercase()} files (*.$extension)",
+                        extension,
+                    ),
+            )
+            .apply { dialogTitle = "Export Explore ${extension.uppercase()}" }
     val result = chooser.showSaveDialog(parent)
     if (result != JFileChooser.APPROVE_OPTION) return null
     val file = chooser.selectedFile
+    rememberChooserDirectory(file)
     return if (file.extension.equals(extension, ignoreCase = true)) file.toPath()
     else File("${file.path}.$extension").toPath()
 }
