@@ -9,7 +9,7 @@ val VisualizationSeriesPalette =
     listOf(
         Color(0xFF0B5ED7),
         Color(0xFF087E8B),
-        Color(0xFFB76A00),
+        Color(0xFFA85F00),
         Color(0xFF6941C6),
         Color(0xFFB4233C),
         Color(0xFF1976A3),

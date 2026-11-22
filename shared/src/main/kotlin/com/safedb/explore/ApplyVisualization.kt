@@ -308,7 +308,9 @@ private class VisualizationPlanner(
 
     private fun canonicalSeriesOrder(marks: List<VisualizationMark>): List<VisualizationSeries> {
         val distinct =
-            marks.distinctBy { it.seriesKey }.map { VisualizationSeries(it.seriesKey, it.seriesLabel) }
+            marks
+                .distinctBy { it.seriesKey }
+                .map { VisualizationSeries(it.seriesKey, it.seriesLabel) }
         return if (config.series != null) {
             distinct.sortedBy { it.label.lowercase(Locale.ROOT) }
         } else {
@@ -457,7 +459,7 @@ private fun plain(value: BigDecimal): String = value.stripTrailingZeros().toPlai
 private fun formatVisualizationNumber(value: BigDecimal, format: PivotNumberFormat): String {
     if (format.kind != NumberFormatKind.Auto) return formatExploreNumber(value, format)
     val symbols = DecimalFormatSymbols.getInstance(Locale.getDefault())
-    return DecimalFormat("#,##0.####", symbols)
+    return DecimalFormat("#,##0.########", symbols)
         .apply { roundingMode = RoundingMode.HALF_EVEN }
         .format(value)
 }
