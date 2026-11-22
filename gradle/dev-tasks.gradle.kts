@@ -73,3 +73,14 @@ tasks.register<JavaExec>("renderThemeGallery") {
     classpath = render.runtimeClasspath
     mainClass.set("com.safedb.tools.RenderThemeGalleryKt")
 }
+
+tasks.register<JavaExec>("runAgentGui") {
+    group = "safe-db dev"
+    description = "Run the desktop app on Linux/Xvfb for agent GUI testing (dev-only)."
+    classpath = render.runtimeClasspath
+    mainClass.set("com.safedb.tools.AgentGuiKt")
+    workingDir = projectDir
+    // Deterministic 1:1 pixels so screenshot coordinates == click coordinates.
+    jvmArgs("-Dsun.java2d.uiScale=1")
+    environment("SAFEDB_KEYCHAIN_BACKEND", "disabled")
+}

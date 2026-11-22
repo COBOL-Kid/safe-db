@@ -8,6 +8,7 @@ Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less bui
 | --- | --- |
 | `./gradlew help` | Validate root Gradle configuration after build logic changes. |
 | `./gradlew run` | Start the graphical desktop app on macOS or Windows. |
+| `./gradlew runAgentGui` / `scripts/agent_gui.sh up` | Run the real GUI on Linux/WSL under Xvfb for agent-driven manual testing (dev-only). See [agent-gui.md](agent-gui.md). |
 | `./gradlew check` | Fast gate: desktop, shared, and mcp unit tests, `compileRenderKotlin`, discovery, Docker harness orchestration, and Kover ratchets. |
 | `./gradlew ktfmtCheck` | Kotlin format check (`ktfmtFormat` to rewrite). Included in `check`. |
 | `./gradlew qodanaScan` | JVM Community Qodana pass (`qodana.yaml`). Local static analysis; not labeled CI. |
