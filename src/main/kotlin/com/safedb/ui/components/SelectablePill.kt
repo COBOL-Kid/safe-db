@@ -8,6 +8,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.text.style.TextOverflow
@@ -20,6 +21,7 @@ fun SelectablePill(
     label: String,
     selected: Boolean,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     Surface(
@@ -33,7 +35,11 @@ fun SelectablePill(
                 if (selected) SafeDbTheme.colors.actionPrimary
                 else MaterialTheme.colorScheme.outlineVariant,
             ),
-        modifier = modifier.clickable(onClick = onClick).pointerHoverIcon(PointerIcon.Hand),
+        modifier =
+            modifier
+                .alpha(if (enabled) 1f else 0.45f)
+                .clickable(enabled = enabled, onClick = onClick)
+                .then(if (enabled) Modifier.pointerHoverIcon(PointerIcon.Hand) else Modifier),
     ) {
         Text(
             label,

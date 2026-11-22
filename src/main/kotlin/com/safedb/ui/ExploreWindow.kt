@@ -281,6 +281,7 @@ fun ExploreWindowContent(
                                     tables = session.baseSpec.tables,
                                     fields = fields,
                                     memberOptionsFor = viewModel::memberOptions,
+                                    resolvedChartType = viewModel.visualizationPreview.chartType,
                                     onConfigChange = { next ->
                                         viewModel.updateVisualization { next }
                                     },

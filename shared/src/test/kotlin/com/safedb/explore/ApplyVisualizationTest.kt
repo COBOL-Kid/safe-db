@@ -432,6 +432,190 @@ class ApplyVisualizationTest {
         assertTrue(export.rows.all { it[2] is ResultCell.TextCell })
     }
 
+    @Test
+    fun dualAxisPropagatesOnGroupedBarAndLineAndFallsBackOnStackedOrAllSecondary() {
+        val baseConfig =
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("status"),
+                values =
+                    listOf(
+                        VisualizationMeasure("revenue", MeasureFn.Sum, "amount", "Revenue"),
+                        VisualizationMeasure(
+                            "score",
+                            MeasureFn.Sum,
+                            "score",
+                            "Score",
+                            axis = ValueAxis.Secondary,
+                        ),
+                    ),
+            )
+        val groupedBar = applyVisualization(sample(), baseConfig)
+        assertTrue(groupedBar.hasSecondaryAxis)
+        assertEquals(
+            mapOf("revenue" to ValueAxis.Primary, "score" to ValueAxis.Secondary),
+            groupedBar.series.associate { it.key to it.axis },
+        )
+
+        val line = applyVisualization(sample(), baseConfig.copy(chartType = ChartType.Line))
+        assertTrue(line.hasSecondaryAxis)
+
+        val stackedBar =
+            applyVisualization(sample(), baseConfig.copy(barArrangement = BarArrangement.Stacked))
+        assertFalse(stackedBar.hasSecondaryAxis)
+        assertTrue(stackedBar.marks.all { it.axis == ValueAxis.Primary })
+
+        val allSecondary =
+            applyVisualization(
+                sample(),
+                baseConfig.copy(
+                    values = baseConfig.values.map { it.copy(axis = ValueAxis.Secondary) },
+                ),
+            )
+        assertFalse(allSecondary.hasSecondaryAxis)
+        assertTrue(allSecondary.marks.all { it.axis == ValueAxis.Primary })
+
+        val singleMeasure =
+            applyVisualization(
+                sample(),
+                baseConfig.copy(values = listOf(baseConfig.values[1])),
+            )
+        assertFalse(singleMeasure.hasSecondaryAxis)
+    }
+
+    @Test
+    fun dualAxisSortsByPrimaryAxisAndWarnsOnDivergentSingleAxisScales() {
+        val skewed =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("category", "varchar"),
+                        ResultColumn("revenue", "decimal"),
+                        ResultColumn("items", "integer"),
+                    ),
+                rows =
+                    listOf(
+                        listOf(
+                            ResultCell.text("SmallRev"),
+                            ResultCell.IntegerCell(100),
+                            ResultCell.IntegerCell(1_000_000),
+                        ),
+                        listOf(
+                            ResultCell.text("BigRev"),
+                            ResultCell.IntegerCell(3_600_000),
+                            ResultCell.IntegerCell(1),
+                        ),
+                    ),
+                rowCount = 2,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val singleAxisConfig =
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("category"),
+                values =
+                    listOf(
+                        VisualizationMeasure("rev", MeasureFn.Sum, "revenue", "Revenue"),
+                        VisualizationMeasure("items", MeasureFn.Sum, "items", "Items"),
+                    ),
+                sort = VisualizationSort(VisualizationSortTarget.Value, SortDir.Desc),
+            )
+
+        val singleAxisPreview = applyVisualization(skewed, singleAxisConfig)
+        // SmallRev has smaller primary revenue (100) than BigRev (3.6M), so BigRev is first on
+        // dual axis; on single axis they sum to 1,000,100 vs 3,600,001, and with 3.6M vs 1 on
+        // distinct peaks it warns.
+        val skewedReportD =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("category", "varchar"),
+                        ResultColumn("revenue", "decimal"),
+                    ),
+                rows =
+                    listOf(
+                        listOf(ResultCell.text("SmallRev"), ResultCell.IntegerCell(100)),
+                        listOf(ResultCell.text("BigRev"), ResultCell.IntegerCell(3_600_000)),
+                    ),
+                rowCount = 2,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val reportDConfig =
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("category"),
+                values =
+                    listOf(
+                        VisualizationMeasure("rev", MeasureFn.Sum, "revenue", "Revenue"),
+                        VisualizationMeasure(
+                            "cat",
+                            MeasureFn.CountDistinct,
+                            "category",
+                            "Distinct category",
+                        ),
+                    ),
+                sort = VisualizationSort(VisualizationSortTarget.Value, SortDir.Desc),
+            )
+        val singleReportD = applyVisualization(skewedReportD, reportDConfig)
+        assertTrue(
+            singleReportD.warnings.any { it.contains("secondary axis") },
+            "Expected scale-divergence warning: ${singleReportD.warnings}",
+        )
+
+        val dualReportD =
+            applyVisualization(
+                skewedReportD,
+                reportDConfig.copy(
+                    values =
+                        listOf(
+                            reportDConfig.values[0],
+                            reportDConfig.values[1].copy(axis = ValueAxis.Secondary),
+                        ),
+                ),
+            )
+        assertTrue(dualReportD.warnings.none { it.contains("secondary axis") })
+
+        // Verify value sort ignores secondary axis when dual-axis is active:
+        // SmallRev has Revenue=100 (primary), Items=1_000_000 (secondary);
+        // BigRev has Revenue=3_600_000 (primary), Items=1 (secondary).
+        // Even with Items=10_000_000 on SmallRev, BigRev stays first when sorting Desc by Value.
+        val sortSample =
+            QueryResult(
+                columns = skewed.columns,
+                rows =
+                    listOf(
+                        listOf(
+                            ResultCell.text("SmallRev"),
+                            ResultCell.IntegerCell(100),
+                            ResultCell.IntegerCell(10_000_000),
+                        ),
+                        listOf(
+                            ResultCell.text("BigRev"),
+                            ResultCell.IntegerCell(3_600_000),
+                            ResultCell.IntegerCell(1),
+                        ),
+                    ),
+                rowCount = 2,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val dualSorted =
+            applyVisualization(
+                sortSample,
+                singleAxisConfig.copy(
+                    values =
+                        listOf(
+                            singleAxisConfig.values[0],
+                            singleAxisConfig.values[1].copy(axis = ValueAxis.Secondary),
+                        ),
+                ),
+            )
+        assertEquals(listOf("BigRev", "SmallRev"), dualSorted.categories)
+        assertFalse(singleAxisPreview.hasSecondaryAxis)
+    }
+
     private fun sample() =
         QueryResult(
             columns =

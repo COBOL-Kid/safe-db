@@ -50,9 +50,11 @@ import com.safedb.explore.BarArrangement
 import com.safedb.explore.BarOrientation
 import com.safedb.explore.ChartType
 import com.safedb.explore.NumberFormatKind
+import com.safedb.explore.ValueAxis
 import com.safedb.explore.VisualizationConfig
 import com.safedb.explore.VisualizationMark
 import com.safedb.explore.VisualizationPreview
+import com.safedb.explore.VisualizationSeries
 import com.safedb.ui.theme.DataMono
 import com.safedb.ui.theme.SafeDbTheme
 import java.util.Locale
@@ -81,6 +83,9 @@ internal data class VisualizationGeometry(
     // bars.
     val categoryCenters: Map<String, Float> = emptyMap(),
     val valueTicks: List<Double> = DefaultValueAxis.ticks,
+    val secondaryYMin: Double? = null,
+    val secondaryYMax: Double? = null,
+    val secondaryValueTicks: List<Double> = emptyList(),
 )
 
 internal data class NiceValueAxis(val min: Double, val max: Double, val ticks: List<Double>)
@@ -137,16 +142,37 @@ internal fun visualizationValueAxis(
     if (preview.marks.isEmpty()) return DefaultValueAxis
     val stacked =
         preview.chartType == ChartType.Bar && config.barArrangement == BarArrangement.Stacked
+    val marks =
+        if (!stacked && preview.hasSecondaryAxis) {
+            preview.marks.filter { it.axis == ValueAxis.Primary }.ifEmpty { preview.marks }
+        } else {
+            preview.marks
+        }
     val rawMin: Double
     val rawMax: Double
     if (stacked) {
-        val grouped = preview.marks.groupBy { it.xKey }
-        rawMin = grouped.minOf { (_, marks) -> marks.sumOf { min(0.0, it.y) } }
-        rawMax = grouped.maxOf { (_, marks) -> marks.sumOf { max(0.0, it.y) } }
+        val grouped = marks.groupBy { it.xKey }
+        rawMin = grouped.minOf { (_, groupedMarks) -> groupedMarks.sumOf { min(0.0, it.y) } }
+        rawMax = grouped.maxOf { (_, groupedMarks) -> groupedMarks.sumOf { max(0.0, it.y) } }
     } else {
-        rawMin = preview.marks.minOf { min(0.0, it.y) }
-        rawMax = preview.marks.maxOf { max(0.0, it.y) }
+        rawMin = marks.minOf { min(0.0, it.y) }
+        rawMax = marks.maxOf { max(0.0, it.y) }
     }
+    return niceValueAxis(rawMin, rawMax)
+}
+
+internal fun visualizationSecondaryValueAxis(
+    preview: VisualizationPreview,
+    config: VisualizationConfig,
+): NiceValueAxis? {
+    if (preview.marks.isEmpty()) return null
+    val stacked =
+        preview.chartType == ChartType.Bar && config.barArrangement == BarArrangement.Stacked
+    if (stacked || !preview.hasSecondaryAxis) return null
+    val marks = preview.marks.filter { it.axis == ValueAxis.Secondary }
+    if (marks.isEmpty()) return null
+    val rawMin = marks.minOf { min(0.0, it.y) }
+    val rawMax = marks.maxOf { max(0.0, it.y) }
     return niceValueAxis(rawMin, rawMax)
 }
 
@@ -181,12 +207,21 @@ internal fun visualizationGeometry(
     val type = preview.chartType
     val stacked = type == ChartType.Bar && config.barArrangement == BarArrangement.Stacked
     val axis = visualizationValueAxis(preview, config)
+    val secondaryAxis = visualizationSecondaryValueAxis(preview, config)
     val rawMin = axis.min
     val yMax = axis.max
-    fun yPosition(value: Double): Float =
-        (plot.bottom - ((value - rawMin) / (yMax - rawMin) * plot.height)).toFloat()
-    fun xPosition(value: Double): Float =
-        (plot.left + ((value - rawMin) / (yMax - rawMin) * plot.width)).toFloat()
+    fun yPositionFor(value: Double, target: NiceValueAxis): Float {
+        val span = (target.max - target.min).takeIf { it > 0.0 } ?: 1.0
+        return (plot.bottom - ((value - target.min) / span * plot.height)).toFloat()
+    }
+    fun xPositionFor(value: Double, target: NiceValueAxis): Float {
+        val span = (target.max - target.min).takeIf { it > 0.0 } ?: 1.0
+        return (plot.left + ((value - target.min) / span * plot.width)).toFloat()
+    }
+    fun yPosition(value: Double): Float = yPositionFor(value, axis)
+    fun xPosition(value: Double): Float = xPositionFor(value, axis)
+    fun markAxis(mark: VisualizationMark): NiceValueAxis =
+        if (mark.axis == ValueAxis.Secondary && secondaryAxis != null) secondaryAxis else axis
 
     val regions = mutableListOf<VisualizationHitRegion>()
     val points = linkedMapOf<String, Offset>()
@@ -227,8 +262,9 @@ internal fun visualizationGeometry(
                                     categoryIndex * horizontalBand +
                                     horizontalBand * 0.15f +
                                     seriesIndex * barHeight
-                            val zero = xPosition(0.0)
-                            val value = xPosition(mark.y)
+                            val targetAxis = markAxis(mark)
+                            val zero = xPositionFor(0.0, targetAxis)
+                            val value = xPositionFor(mark.y, targetAxis)
                             val rect =
                                 Rect(
                                     min(zero, value),
@@ -261,8 +297,9 @@ internal fun visualizationGeometry(
                     marks.forEachIndexed { seriesIndex, mark ->
                         val left =
                             plot.left + categoryIndex * band + band * 0.14f + seriesIndex * barWidth
-                        val zero = yPosition(0.0)
-                        val value = yPosition(mark.y)
+                        val targetAxis = markAxis(mark)
+                        val zero = yPositionFor(0.0, targetAxis)
+                        val value = yPositionFor(mark.y, targetAxis)
                         val rect =
                             Rect(left, min(zero, value), left + barWidth * 0.86f, max(zero, value))
                         regions += VisualizationHitRegion(mark.id, rect)
@@ -277,7 +314,7 @@ internal fun visualizationGeometry(
             val categoryIndex = categories.mapIndexed { index, mark -> mark.xKey to index }.toMap()
             preview.marks.forEach { mark ->
                 val x = plot.left + (categoryIndex.getValue(mark.xKey) + 0.5f) * band
-                val point = Offset(x, yPosition(mark.y))
+                val point = Offset(x, yPositionFor(mark.y, markAxis(mark)))
                 points[mark.id] = point
                 categoryCenters[mark.xKey] = x
                 regions +=
@@ -322,7 +359,18 @@ internal fun visualizationGeometry(
         ChartType.Auto,
         null -> Unit
     }
-    return VisualizationGeometry(regions, points, plot, rawMin, yMax, categoryCenters, axis.ticks)
+    return VisualizationGeometry(
+        regions = regions,
+        points = points,
+        plot = plot,
+        yMin = rawMin,
+        yMax = yMax,
+        categoryCenters = categoryCenters,
+        valueTicks = axis.ticks,
+        secondaryYMin = secondaryAxis?.min,
+        secondaryYMax = secondaryAxis?.max,
+        secondaryValueTicks = secondaryAxis?.ticks.orEmpty(),
+    )
 }
 
 @Composable
@@ -363,7 +411,14 @@ internal fun VisualizationChart(
                 )
             }
             if (preview.series.size > 1) {
-                VisualizationLegend(preview, Modifier.padding(top = 8.dp))
+                val horizontalBars =
+                    preview.chartType == ChartType.Bar &&
+                        config.barOrientation == BarOrientation.Horizontal
+                VisualizationLegend(
+                    preview = preview,
+                    horizontalBars = horizontalBars,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
             }
             val message = preview.blockingMessage
             if (message != null) {
@@ -395,11 +450,32 @@ internal fun VisualizationChart(
     }
 }
 
+internal fun legendSeriesLabel(
+    series: VisualizationSeries,
+    hasSecondaryAxis: Boolean,
+    horizontalBars: Boolean,
+): String {
+    if (!hasSecondaryAxis) return series.label
+    val side =
+        when {
+            horizontalBars && series.axis == ValueAxis.Secondary -> "top"
+            horizontalBars -> "bottom"
+            series.axis == ValueAxis.Secondary -> "right"
+            else -> "left"
+        }
+    return "${series.label} ($side)"
+}
+
 @Composable
-private fun VisualizationLegend(preview: VisualizationPreview, modifier: Modifier = Modifier) {
+private fun VisualizationLegend(
+    preview: VisualizationPreview,
+    horizontalBars: Boolean,
+    modifier: Modifier = Modifier,
+) {
     val seriesPalette = SafeDbTheme.colors.series
     // Cap the rows so a high-cardinality series field cannot squeeze the plot to nothing.
     val shown = preview.series.take(LegendEntryLimit)
+    val labelMaxWidth = if (preview.hasSecondaryAxis) 200.dp else 160.dp
     FlowRow(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -413,11 +489,11 @@ private fun VisualizationLegend(preview: VisualizationPreview, modifier: Modifie
                             .background(seriesPalette[index % seriesPalette.size], CircleShape),
                 )
                 Text(
-                    series.label,
+                    legendSeriesLabel(series, preview.hasSecondaryAxis, horizontalBars),
                     style = MaterialTheme.typography.labelSmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(start = 5.dp).widthIn(max = 160.dp),
+                    modifier = Modifier.padding(start = 5.dp).widthIn(max = labelMaxWidth),
                 )
             }
         }
@@ -526,14 +602,26 @@ private fun PlotChart(
             maxGutter,
         ) {
             val valueAxis = visualizationValueAxis(preview, config)
+            val secondaryAxis = visualizationSecondaryValueAxis(preview, config)
             val ticks =
                 valueAxis.ticks.map { value ->
                     textMeasurer.measure(compactNumber(value), labelStyle).size
                 }
+            val secondaryTicks =
+                secondaryAxis
+                    ?.ticks
+                    ?.map { value -> textMeasurer.measure(compactNumber(value), labelStyle).size }
+                    .orEmpty()
             val tickWidth = ticks.maxOf { it.width }.toFloat()
+            val secondaryTickWidth = secondaryTicks.maxOfOrNull { it.width }?.toFloat() ?: 0f
             val lineHeight = ticks.maxOf { it.height }.toFloat()
             val bottom = lineHeight + gapPx * 2f
-            val top = lineHeight / 2f + gapPx
+            val top =
+                if (horizontalBars && secondaryAxis != null) {
+                    lineHeight + gapPx * 2f
+                } else {
+                    lineHeight / 2f + gapPx
+                }
             // Scatter marks keep sample order, so the right edge belongs to the max X value.
             val lastCategory =
                 if (preview.chartType == ChartType.Scatter)
@@ -542,19 +630,28 @@ private fun PlotChart(
             val lastCategoryWidth = lastCategory?.let { categoryLabelWidths[it.xKey] ?: 0f } ?: 0f
             if (horizontalBars) {
                 val category = categoryLabelWidths.values.maxOrNull() ?: 0f
+                val edgeTickWidth = max(tickWidth, secondaryTickWidth)
                 PlotInsets(
                     left =
-                        max(category + gapPx * 2f, tickWidth / 2f + gapPx)
+                        max(category + gapPx * 2f, edgeTickWidth / 2f + gapPx)
                             .coerceIn(minGutter, maxGutter),
                     top = top,
-                    right = max(28f, tickWidth / 2f + gapPx),
+                    right = max(28f, edgeTickWidth / 2f + gapPx),
                     bottom = bottom,
                 )
             } else {
+                val defaultRight = max(28f, lastCategoryWidth / 2f + gapPx).coerceAtMost(maxGutter)
+                val right =
+                    if (secondaryAxis != null) {
+                        max(defaultRight, secondaryTickWidth + gapPx * 2f)
+                            .coerceIn(minGutter, maxGutter)
+                    } else {
+                        defaultRight
+                    }
                 PlotInsets(
                     left = (tickWidth + gapPx * 2f).coerceIn(minGutter, maxGutter),
                     top = top,
-                    right = max(28f, lastCategoryWidth / 2f + gapPx).coerceAtMost(maxGutter),
+                    right = right,
                     bottom = bottom,
                 )
             }
@@ -655,6 +752,66 @@ private fun PlotChart(
                     Offset(plot.right, plot.bottom),
                     strokeWidth = 1.5f,
                 )
+                val secondaryMin = geometry.secondaryYMin
+                val secondaryMax = geometry.secondaryYMax
+                if (
+                    secondaryMin != null &&
+                        secondaryMax != null &&
+                        geometry.secondaryValueTicks.isNotEmpty()
+                ) {
+                    val secondarySpan = (secondaryMax - secondaryMin).takeIf { it > 0.0 } ?: 1.0
+                    if (horizontalBars) {
+                        drawLine(
+                            axisColor,
+                            Offset(plot.left, plot.top),
+                            Offset(plot.right, plot.top),
+                            strokeWidth = 1.5f,
+                        )
+                        geometry.secondaryValueTicks.forEach { value ->
+                            val fraction =
+                                ((value - secondaryMin) / secondarySpan).toFloat().coerceIn(0f, 1f)
+                            val x = plot.left + plot.width * fraction
+                            val label =
+                                fitted(
+                                    compactNumber(value),
+                                    valueTickMaxWidth(horizontalBars, plot, gapPx),
+                                )
+                            drawText(
+                                label,
+                                topLeft =
+                                    Offset(
+                                        clampX(
+                                            x - label.size.width / 2f,
+                                            label.size.width.toFloat(),
+                                        ),
+                                        max(0f, plot.top - gapPx - label.size.height),
+                                    ),
+                            )
+                        }
+                    } else {
+                        drawLine(
+                            axisColor,
+                            Offset(plot.right, plot.top),
+                            Offset(plot.right, plot.bottom),
+                            strokeWidth = 1.5f,
+                        )
+                        val maxRightWidth = max(canvasWidth - plot.right - gapPx, 0f)
+                        geometry.secondaryValueTicks.forEach { value ->
+                            val fraction =
+                                ((value - secondaryMin) / secondarySpan).toFloat().coerceIn(0f, 1f)
+                            val y = plot.bottom - plot.height * fraction
+                            val label = fitted(compactNumber(value), maxRightWidth)
+                            drawText(
+                                label,
+                                topLeft =
+                                    Offset(
+                                        plot.right + gapPx,
+                                        y - label.size.height / 2f,
+                                    ),
+                            )
+                        }
+                    }
+                }
 
                 when (preview.chartType) {
                     ChartType.Bar,

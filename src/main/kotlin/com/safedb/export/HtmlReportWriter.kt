@@ -18,13 +18,16 @@ import com.safedb.ui.PlotInsets
 import com.safedb.ui.barValueLabelText
 import com.safedb.ui.categoryLabelIndices
 import com.safedb.ui.compactNumber
+import com.safedb.ui.legendSeriesLabel
 import com.safedb.ui.visualizationGeometry
+import com.safedb.ui.visualizationSecondaryValueAxis
 import java.io.OutputStream
 import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlinx.serialization.Serializable
@@ -151,6 +154,7 @@ internal data class HtmlChartSection(
     val horizontal: Boolean,
     val shapes: List<HtmlChartShape>,
     val valueTicks: List<HtmlAxisTick>,
+    val secondaryValueTicks: List<HtmlAxisTick> = emptyList(),
     val categoryTicks: List<HtmlAxisTick>,
     val legend: List<String>,
     val legendMore: Int,
@@ -386,11 +390,25 @@ internal fun buildChartSection(
         chartType == ChartType.Bar && config.barOrientation == BarOrientation.Horizontal
     val maxCategoryExtent =
         preview.marks.distinctBy { it.xKey }.maxOfOrNull { estimatedLabelWidth(it.xLabel) } ?: 0f
+    val secondaryAxis = visualizationSecondaryValueAxis(preview, config)
+    val maxSecondaryTickWidth =
+        secondaryAxis?.ticks?.maxOfOrNull { estimatedLabelWidth(compactNumber(it)) } ?: 0f
+    val defaultInsets = PlotInsets()
     val insets =
         if (horizontal) {
-            PlotInsets(left = (maxCategoryExtent + 12f).coerceIn(44f, 180f))
+            PlotInsets(
+                left = (maxCategoryExtent + 12f).coerceIn(44f, 180f),
+                top = if (secondaryAxis != null) 34f else defaultInsets.top,
+                right =
+                    if (secondaryAxis != null) max(28f, maxSecondaryTickWidth / 2f + 10f)
+                    else defaultInsets.right,
+            )
         } else {
-            PlotInsets()
+            PlotInsets(
+                right =
+                    if (secondaryAxis != null) (maxSecondaryTickWidth + 16f).coerceIn(44f, 180f)
+                    else defaultInsets.right,
+            )
         }
     val geometry = visualizationGeometry(preview, config, width.toFloat(), height.toFloat(), insets)
     val plot = geometry.plot
@@ -510,6 +528,24 @@ internal fun buildChartSection(
         categoryLabelIndices(centered.map { it.first }, requiredGap).map { index ->
             HtmlAxisTick(pos = centered[index].first.rounded(), label = centered[index].second)
         }
+    val secondaryAxisMin = geometry.secondaryYMin
+    val secondaryAxisMax = geometry.secondaryYMax
+    val secondaryValueTicks =
+        if (secondaryAxisMin != null && secondaryAxisMax != null) {
+            val secondarySpan = (secondaryAxisMax - secondaryAxisMin).takeIf { it > 0.0 } ?: 1.0
+            geometry.secondaryValueTicks.map { value ->
+                val fraction =
+                    ((value - secondaryAxisMin) / secondarySpan).toFloat().coerceIn(0f, 1f)
+                HtmlAxisTick(
+                    pos =
+                        if (horizontal) (plot.left + plot.width * fraction).rounded()
+                        else (plot.bottom - plot.height * fraction).rounded(),
+                    label = compactNumber(value),
+                )
+            }
+        } else {
+            emptyList()
+        }
     val shownLegend = if (multiSeries) preview.series.take(12) else emptyList()
     return HtmlChartSection(
         title = preview.title,
@@ -525,8 +561,9 @@ internal fun buildChartSection(
         horizontal = horizontal,
         shapes = shapes,
         valueTicks = valueTicks,
+        secondaryValueTicks = secondaryValueTicks,
         categoryTicks = categoryTicks,
-        legend = shownLegend.map { it.label },
+        legend = shownLegend.map { legendSeriesLabel(it, preview.hasSecondaryAxis, horizontal) },
         legendMore = if (multiSeries) preview.series.size - shownLegend.size else 0,
         kpis = emptyList(),
     )

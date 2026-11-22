@@ -57,6 +57,7 @@ import com.safedb.explore.PivotFilter
 import com.safedb.explore.PivotGrouping
 import com.safedb.explore.PivotMeasure
 import com.safedb.explore.SortDir
+import com.safedb.explore.ValueAxis
 import com.safedb.explore.VisualizationConfig
 import com.safedb.explore.VisualizationField
 import com.safedb.explore.VisualizationMeasure
@@ -95,12 +96,24 @@ internal fun VisualizationConfigPanel(
     onReset: () -> Unit,
     onHide: () -> Unit,
     modifier: Modifier = Modifier,
+    resolvedChartType: ChartType? = null,
 ) {
     var templatesOpen by remember { mutableStateOf(false) }
     var optionsExpanded by remember { mutableStateOf(false) }
     var editingFilter by remember { mutableStateOf<PivotFilter?>(null) }
     var transitionMessage by remember { mutableStateOf<String?>(null) }
     val suggested = remember(sample, tables) { suggestedVisualizationTemplates(sample, tables, 5) }
+    val effectiveType = resolvedChartType ?: config.chartType.takeUnless { it == ChartType.Auto }
+    val dualAxisEligible = config.supportsSecondaryAxis(effectiveType)
+    val primaryCount = config.values.count { it.axis == ValueAxis.Primary }
+    val horizontalBars =
+        effectiveType == ChartType.Bar && config.barOrientation == BarOrientation.Horizontal
+    val stackedDualAxisNote =
+        config.series == null &&
+            config.values.size > 1 &&
+            effectiveType == ChartType.Bar &&
+            config.barArrangement == BarArrangement.Stacked &&
+            config.values.any { it.axis == ValueAxis.Secondary }
 
     editingFilter?.let { filter ->
         FilterSettingsDialog(
@@ -238,6 +251,9 @@ internal fun VisualizationConfigPanel(
                             value = value,
                             field = fields.firstOrNull { it.column == value.sourceColumn },
                             allowAggregation = config.chartType != ChartType.Scatter,
+                            showAxisToggle = dualAxisEligible,
+                            canAssignSecondary = primaryCount > 1,
+                            horizontalBars = horizontalBars,
                             onChange = { updated ->
                                 onConfigChange(
                                     config.copy(
@@ -249,8 +265,19 @@ internal fun VisualizationConfigPanel(
                                 )
                             },
                             onRemove = {
-                                onConfigChange(config.copy(values = config.values - value))
+                                onConfigChange(
+                                    config.copy(
+                                        values = normalizeMeasureAxes(config.values - value),
+                                    ),
+                                )
                             },
+                        )
+                    }
+                    if (stackedDualAxisNote) {
+                        Text(
+                            "Stacked bars share one axis.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     VisualizationValuePicker(
@@ -299,7 +326,7 @@ internal fun VisualizationConfigPanel(
                             onConfigChange(
                                 config.copy(
                                     series = VisualizationField(it.column, it.label),
-                                    values = config.values.take(1),
+                                    values = normalizeMeasureAxes(config.values.take(1)),
                                 ),
                             )
                         },
@@ -575,6 +602,9 @@ private fun VisualizationValueChip(
     value: VisualizationMeasure,
     field: ExploreFieldOption?,
     allowAggregation: Boolean,
+    showAxisToggle: Boolean = false,
+    canAssignSecondary: Boolean = true,
+    horizontalBars: Boolean = false,
     onChange: (VisualizationMeasure) -> Unit,
     onRemove: () -> Unit,
 ) {
@@ -583,35 +613,63 @@ private fun VisualizationValueChip(
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
     ) {
-        Row(
-            modifier =
-                Modifier.fillMaxWidth()
-                    .padding(start = 10.dp, top = 7.dp, bottom = 7.dp, end = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    value.label,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.Medium,
-                )
-                Text(
-                    field?.supportingText() ?: "All rows",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (allowAggregation && field != null) {
-                AggregationPicker(value, field) { fn ->
-                    onChange(value.copy(fn = fn, label = "${fn.shortLabel} ${field.label}"))
+        Column {
+            Row(
+                modifier =
+                    Modifier.fillMaxWidth()
+                        .padding(start = 10.dp, top = 7.dp, bottom = 7.dp, end = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        value.label,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        field?.supportingText() ?: "All rows",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (allowAggregation && field != null) {
+                    AggregationPicker(value, field) { fn ->
+                        onChange(value.copy(fn = fn, label = "${fn.shortLabel} ${field.label}"))
+                    }
+                }
+                IconButton(onClick = onRemove, modifier = Modifier.size(28.dp)) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = "Remove ${value.label}",
+                        modifier = Modifier.size(16.dp),
+                    )
                 }
             }
-            IconButton(onClick = onRemove, modifier = Modifier.size(28.dp)) {
-                Icon(
-                    Icons.Default.Close,
-                    contentDescription = "Remove ${value.label}",
-                    modifier = Modifier.size(16.dp),
-                )
+            if (showAxisToggle) {
+                val primaryLabel = if (horizontalBars) "Bottom axis" else "Left axis"
+                val secondaryLabel = if (horizontalBars) "Top axis" else "Right axis"
+                Row(
+                    modifier = Modifier.padding(start = 10.dp, end = 10.dp, bottom = 7.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    SelectablePill(
+                        label = primaryLabel,
+                        selected = value.axis == ValueAxis.Primary,
+                    ) {
+                        if (value.axis != ValueAxis.Primary) {
+                            onChange(value.copy(axis = ValueAxis.Primary))
+                        }
+                    }
+                    SelectablePill(
+                        label = secondaryLabel,
+                        selected = value.axis == ValueAxis.Secondary,
+                        enabled = value.axis == ValueAxis.Secondary || canAssignSecondary,
+                    ) {
+                        if (value.axis != ValueAxis.Secondary) {
+                            onChange(value.copy(axis = ValueAxis.Secondary))
+                        }
+                    }
+                }
             }
         }
     }
@@ -943,7 +1001,7 @@ internal fun VisualizationConfig.forChartType(
             copy(
                 chartType = type,
                 x = null,
-                values = values.take(1).map { it.copy(aggregate = true) },
+                values = values.take(1).map { it.copy(aggregate = true, axis = ValueAxis.Primary) },
                 series = null,
                 size = null,
             )
@@ -959,6 +1017,7 @@ internal fun VisualizationConfig.forChartType(
                             it.copy(
                                 aggregate = false,
                                 label = it.sourceColumn?.let(::displayColumnLabel) ?: it.label,
+                                axis = ValueAxis.Primary,
                             )
                         },
                 series = series,
@@ -970,6 +1029,21 @@ internal fun VisualizationConfig.forChartType(
         ChartType.Auto -> copy(chartType = type)
     }
 }
+
+internal fun normalizeMeasureAxes(
+    values: List<VisualizationMeasure>,
+): List<VisualizationMeasure> =
+    when {
+        values.size <= 1 ->
+            values.map {
+                if (it.axis == ValueAxis.Primary) it else it.copy(axis = ValueAxis.Primary)
+            }
+        values.none { it.axis == ValueAxis.Primary } ->
+            values.mapIndexed { index, measure ->
+                if (index == 0) measure.copy(axis = ValueAxis.Primary) else measure
+            }
+        else -> values
+    }
 
 private fun xCompatible(type: ChartType, field: ExploreFieldOption): Boolean =
     when (type) {

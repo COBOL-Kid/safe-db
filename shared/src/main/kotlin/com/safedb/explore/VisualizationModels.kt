@@ -23,6 +23,12 @@ data class VisualizationConfig(
 ) {
     fun isConfigured(): Boolean = x != null || values.isNotEmpty()
 
+    fun supportsSecondaryAxis(resolvedType: ChartType?): Boolean =
+        series == null &&
+            values.size > 1 &&
+            (resolvedType == ChartType.Line ||
+                (resolvedType == ChartType.Bar && barArrangement == BarArrangement.Grouped))
+
     fun validate(): VisualizationConfig {
         require(schemaVersion == VISUALIZATION_SCHEMA_VERSION) {
             "Unsupported visualization version $schemaVersion"
@@ -50,6 +56,12 @@ data class VisualizationField(
 )
 
 @Serializable
+enum class ValueAxis {
+    Primary,
+    Secondary,
+}
+
+@Serializable
 data class VisualizationMeasure(
     val alias: String,
     val fn: MeasureFn,
@@ -57,6 +69,7 @@ data class VisualizationMeasure(
     val label: String = visualizationMeasureLabel(fn, sourceColumn),
     val aggregate: Boolean = true,
     val numberFormat: PivotNumberFormat = PivotNumberFormat(),
+    val axis: ValueAxis = ValueAxis.Primary,
 ) {
     companion object {
         fun countRows(alias: String = "count"): VisualizationMeasure =
@@ -118,6 +131,9 @@ data class VisualizationPreview(
 ) {
     val ready: Boolean
         get() = blockingMessage == null && marks.isNotEmpty()
+
+    val hasSecondaryAxis: Boolean
+        get() = series.any { it.axis == ValueAxis.Secondary }
 }
 
 data class VisualizationMark(
@@ -131,8 +147,13 @@ data class VisualizationMark(
     val seriesLabel: String,
     val measureAlias: String,
     val measureLabel: String,
+    val axis: ValueAxis = ValueAxis.Primary,
     val size: Double? = null,
     val sourceRowIndices: List<Int>,
 )
 
-data class VisualizationSeries(val key: String, val label: String)
+data class VisualizationSeries(
+    val key: String,
+    val label: String,
+    val axis: ValueAxis = ValueAxis.Primary,
+)

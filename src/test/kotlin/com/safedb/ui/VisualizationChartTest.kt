@@ -1,5 +1,8 @@
 package com.safedb.ui
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.luminance
 import com.safedb.explore.BarArrangement
@@ -8,11 +11,13 @@ import com.safedb.explore.ChartType
 import com.safedb.explore.MeasureFn
 import com.safedb.explore.NumberFormatKind
 import com.safedb.explore.PivotNumberFormat
+import com.safedb.explore.ValueAxis
 import com.safedb.explore.VisualizationConfig
 import com.safedb.explore.VisualizationField
 import com.safedb.explore.VisualizationMark
 import com.safedb.explore.VisualizationMeasure
 import com.safedb.explore.VisualizationPreview
+import com.safedb.explore.VisualizationSeries
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
 import com.safedb.model.ResultColumn
@@ -585,6 +590,185 @@ class VisualizationChartTest {
         }
     }
 
+    @Test
+    fun dualAxisGeometryScalesPrimaryAndSecondaryIndependentlyAcrossBarAndLine() {
+        val preview =
+            VisualizationPreview(
+                chartType = ChartType.Bar,
+                title = "Revenue vs Distinct",
+                marks =
+                    listOf(
+                        mark("a-rev", "a", "Services", "rev", 3_624_326.7, 1.0, ValueAxis.Primary),
+                        mark("a-cat", "a", "Services", "cat", 1.0, 1.0, ValueAxis.Secondary),
+                    ),
+                series =
+                    listOf(
+                        VisualizationSeries("rev", "Sum line_total", ValueAxis.Primary),
+                        VisualizationSeries("cat", "Distinct category", ValueAxis.Secondary),
+                    ),
+            )
+        val verticalConfig = VisualizationConfig(chartType = ChartType.Bar)
+        val vertical = visualizationGeometry(preview, verticalConfig, 900f, 500f)
+        val revBar = vertical.regions.first { it.markId == "a-rev" }.bounds
+        val catBar = vertical.regions.first { it.markId == "a-cat" }.bounds
+        assertEquals(4_000_000.0, vertical.yMax)
+        assertEquals(1.0, vertical.secondaryYMax)
+        assertTrue(revBar.height > vertical.plot.height * 0.85f)
+        assertEquals(vertical.plot.height, catBar.height, 1e-3f)
+
+        val horizontalConfig = verticalConfig.copy(barOrientation = BarOrientation.Horizontal)
+        val horizontal = visualizationGeometry(preview, horizontalConfig, 900f, 500f)
+        val horizCatBar = horizontal.regions.first { it.markId == "a-cat" }.bounds
+        assertEquals(horizontal.plot.width, horizCatBar.width, 1e-3f)
+
+        val linePreview = preview.copy(chartType = ChartType.Line)
+        val line =
+            visualizationGeometry(
+                linePreview,
+                VisualizationConfig(chartType = ChartType.Line),
+                900f,
+                500f,
+            )
+        assertEquals(line.plot.top, line.points.getValue("a-cat").y, 1e-3f)
+        assertTrue(line.points.getValue("a-rev").y > line.plot.top)
+
+        // Negative values on secondary anchor to secondary's own zero line.
+        val signedPreview =
+            VisualizationPreview(
+                chartType = ChartType.Bar,
+                title = "Signed",
+                marks =
+                    listOf(
+                        mark("a-pos", "a", "A", "pos", 1_000_000.0, 1.0, ValueAxis.Primary),
+                        mark("a-neg", "a", "A", "neg", -10.0, 1.0, ValueAxis.Secondary),
+                    ),
+                series =
+                    listOf(
+                        VisualizationSeries("pos", "Pos", ValueAxis.Primary),
+                        VisualizationSeries("neg", "Neg", ValueAxis.Secondary),
+                    ),
+            )
+        val signed = visualizationGeometry(signedPreview, verticalConfig, 800f, 500f)
+        assertEquals(0.0, signed.yMin)
+        assertEquals(-10.0, signed.secondaryYMin)
+        assertEquals(0.0, signed.secondaryYMax)
+        val negBounds = signed.regions.first { it.markId == "a-neg" }.bounds
+        assertEquals(signed.plot.top, negBounds.top, 1e-3f)
+        assertEquals(signed.plot.bottom, negBounds.bottom, 1e-3f)
+    }
+
+    @Test
+    fun legendSeriesLabelNormalizeAndSidebarAxisToggleWorkTogether() {
+        val primary = VisualizationSeries("a", "Sum revenue", ValueAxis.Primary)
+        val secondary = VisualizationSeries("b", "Count", ValueAxis.Secondary)
+        assertEquals("Sum revenue", legendSeriesLabel(primary, hasSecondaryAxis = false, false))
+        assertEquals(
+            "Sum revenue (left)",
+            legendSeriesLabel(primary, hasSecondaryAxis = true, false),
+        )
+        assertEquals("Count (right)", legendSeriesLabel(secondary, hasSecondaryAxis = true, false))
+        assertEquals(
+            "Sum revenue (bottom)",
+            legendSeriesLabel(primary, hasSecondaryAxis = true, true),
+        )
+        assertEquals("Count (top)", legendSeriesLabel(secondary, hasSecondaryAxis = true, true))
+
+        val single = listOf(VisualizationMeasure("b", MeasureFn.Count, axis = ValueAxis.Secondary))
+        assertEquals(ValueAxis.Primary, normalizeMeasureAxes(single).single().axis)
+        val allSecondary =
+            listOf(
+                VisualizationMeasure("a", MeasureFn.Count, axis = ValueAxis.Secondary),
+                VisualizationMeasure("b", MeasureFn.Count, axis = ValueAxis.Secondary),
+            )
+        assertEquals(
+            listOf(ValueAxis.Primary, ValueAxis.Secondary),
+            normalizeMeasureAxes(allSecondary).map { it.axis },
+        )
+
+        val sample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__category", "varchar"),
+                        ResultColumn("t0__amount", "decimal"),
+                    ),
+                rows = listOf(listOf(ResultCell.text("Services"), ResultCell.float(100.0))),
+                rowCount = 1,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val fields = buildExploreFieldOptions(sample, emptyList())
+        var config by
+            mutableStateOf(
+                VisualizationConfig(
+                    chartType = ChartType.Bar,
+                    x = VisualizationField("t0__category", "category"),
+                    values =
+                        listOf(
+                            VisualizationMeasure(
+                                "sum_amount",
+                                MeasureFn.Sum,
+                                "t0__amount",
+                                "Sum amount",
+                            ),
+                            VisualizationMeasure("count", MeasureFn.Count, label = "Count"),
+                        ),
+                ),
+            )
+        withComposeScene(
+            width = 480,
+            height = 900,
+            content = {
+                SafeDbTheme(isDark = false) {
+                    VisualizationConfigPanel(
+                        config = config,
+                        sample = sample,
+                        tables = emptyList(),
+                        fields = fields,
+                        memberOptionsFor = { emptyList() },
+                        resolvedChartType = ChartType.Bar,
+                        onConfigChange = { config = it },
+                        onApplyTemplate = { config = it },
+                        onReset = {},
+                        onHide = {},
+                    )
+                }
+            },
+        ) { scene ->
+            // Toggle second measure to Right axis.
+            val rightPills = scene.nodesLabeled("Right axis")
+            assertEquals(2, rightPills.size)
+            scene.click(rightPills[1].boundsInRoot.center)
+            scene.settle()
+            assertEquals(ValueAxis.Secondary, config.values[1].axis)
+
+            // First measure is the only Primary left, so clicking its Right axis pill is a no-op.
+            scene.click(scene.nodesLabeled("Right axis")[0].boundsInRoot.center)
+            scene.settle()
+            assertEquals(ValueAxis.Primary, config.values[0].axis)
+
+            // Switching to Stacked shows the shared-axis note while preserving the stored axis.
+            config = config.copy(barArrangement = BarArrangement.Stacked)
+            scene.settle()
+            assertNotNull(scene.findContaining("Stacked bars share one axis."))
+            assertEquals(ValueAxis.Secondary, config.values[1].axis)
+
+            // Switching to Horizontal shows Bottom/Top axis labels.
+            config =
+                config.copy(
+                    barArrangement = BarArrangement.Grouped,
+                    barOrientation = BarOrientation.Horizontal,
+                )
+            scene.settle()
+            assertEquals(2, scene.nodesLabeled("Top axis").size)
+            assertEquals(2, scene.nodesLabeled("Bottom axis").size)
+
+            // Switching to KPI via forChartType resets axis to Primary.
+            val kpiConfig = config.forChartType(ChartType.Kpi, fields)
+            assertEquals(ValueAxis.Primary, kpiConfig.values.single().axis)
+        }
+    }
+
     private fun preview(type: ChartType) =
         VisualizationPreview(
             chartType = type,
@@ -598,7 +782,15 @@ class VisualizationChartTest {
                 ),
         )
 
-    private fun mark(id: String, key: String, label: String, series: String, y: Double, x: Double) =
+    private fun mark(
+        id: String,
+        key: String,
+        label: String,
+        series: String,
+        y: Double,
+        x: Double,
+        axis: ValueAxis = ValueAxis.Primary,
+    ) =
         VisualizationMark(
             id = id,
             xKey = key,
@@ -610,6 +802,7 @@ class VisualizationChartTest {
             seriesLabel = series,
             measureAlias = "value",
             measureLabel = "Value",
+            axis = axis,
             sourceRowIndices = listOf(0),
         )
 }

@@ -11,6 +11,7 @@ import java.math.BigDecimal
 import java.math.MathContext
 import java.math.RoundingMode
 import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.sqrt
 
@@ -130,6 +131,10 @@ private class VisualizationPlanner(
         type: ChartType,
     ): List<VisualizationMark> {
         val x = config.x ?: return emptyList()
+        val dualAxisAllowed = config.supportsSecondaryAxis(type)
+        val hasPrimary = config.values.any { it.axis == ValueAxis.Primary }
+        val hasSecondary = config.values.any { it.axis == ValueAxis.Secondary }
+        val effectiveDualAxis = dualAxisAllowed && hasPrimary && hasSecondary
         val groups = linkedMapOf<Pair<ExploreBucket, ExploreBucket>, MutableList<ChartRecord>>()
         records.forEach { record ->
             val xBucket = bucket(record.cell(x.column), x)
@@ -157,6 +162,7 @@ private class VisualizationPlanner(
                         seriesLabel = seriesLabel,
                         measureAlias = measure.alias,
                         measureLabel = measure.label,
+                        axis = if (effectiveDualAxis) measure.axis else ValueAxis.Primary,
                         sourceRowIndices = grouped.map { it.index },
                     )
             }
@@ -168,7 +174,20 @@ private class VisualizationPlanner(
         ) {
             warnings += "Line charts are clearest with a date or datetime X field"
         }
-        return applyValueFilters(marks)
+        val filtered = applyValueFilters(marks)
+        if (dualAxisAllowed && !effectiveDualAxis && filtered.isNotEmpty()) {
+            val nonZeroPeaks =
+                filtered
+                    .groupBy { it.measureAlias }
+                    .values
+                    .map { measureMarks -> measureMarks.maxOf { abs(it.y) } }
+                    .filter { it > 0.0 }
+            if (nonZeroPeaks.size >= 2 && nonZeroPeaks.max() / nonZeroPeaks.min() >= 20.0) {
+                warnings +=
+                    "Values use very different scales. Assign a value to the secondary axis to compare them."
+            }
+        }
+        return filtered
     }
 
     private fun scatterMarks(records: List<ChartRecord>): List<VisualizationMark> {
@@ -309,7 +328,7 @@ private class VisualizationPlanner(
         val distinct =
             marks
                 .distinctBy { it.seriesKey }
-                .map { VisualizationSeries(it.seriesKey, it.seriesLabel) }
+                .map { VisualizationSeries(it.seriesKey, it.seriesLabel, it.axis) }
         return if (config.series != null) {
             distinct.sortedBy { it.label.lowercase(Locale.ROOT) }
         } else {
@@ -337,7 +356,11 @@ private class VisualizationPlanner(
                     }
                 VisualizationSortTarget.Category ->
                     groups.sortedBy { it.first().xLabel.lowercase() }
-                VisualizationSortTarget.Value -> groups.sortedBy { group -> group.sumOf { it.y } }
+                VisualizationSortTarget.Value ->
+                    groups.sortedBy { group ->
+                        val primary = group.filter { it.axis == ValueAxis.Primary }
+                        (primary.ifEmpty { group }).sumOf { it.y }
+                    }
             }.let { if (config.sort.dir == SortDir.Desc) it.reversed() else it }
         val limited = if (type == ChartType.Bar) sorted.take(config.topN) else sorted
         if (type == ChartType.Bar && groups.size > limited.size) {

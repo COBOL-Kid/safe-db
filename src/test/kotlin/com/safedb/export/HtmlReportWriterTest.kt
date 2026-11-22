@@ -7,6 +7,7 @@ import com.safedb.explore.ExploreSession
 import com.safedb.explore.MeasureFn
 import com.safedb.explore.PivotDimension
 import com.safedb.explore.PivotMeasure
+import com.safedb.explore.ValueAxis
 import com.safedb.explore.VisualizationConfig
 import com.safedb.explore.VisualizationField
 import com.safedb.explore.VisualizationMeasure
@@ -760,6 +761,79 @@ class HtmlReportWriterTest {
             listOf("Status", "Series", "Measure", "Value", "Source rows"),
             multiTable.columns.map { it.label },
         )
+    }
+
+    @Test
+    fun dualAxisHtmlReportEmitsSecondaryAxisTicksExpandedPlotAndLegendLabels() {
+        val sample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__category", "varchar"),
+                        ResultColumn("t0__amount", "decimal"),
+                    ),
+                rows =
+                    listOf(
+                        listOf(ResultCell.text("Services"), ResultCell.float(3_624_326.7)),
+                        listOf(ResultCell.text("Subscription"), ResultCell.float(1_620_951.78)),
+                    ),
+                rowCount = 2,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val session = session().copy(sample = sample)
+        val verticalConfig =
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("t0__category", "Category"),
+                values =
+                    listOf(
+                        VisualizationMeasure("sum", MeasureFn.Sum, "t0__amount", "Sum line_total"),
+                        VisualizationMeasure(
+                            "distinct",
+                            MeasureFn.CountDistinct,
+                            "t0__category",
+                            "Distinct category",
+                            axis = ValueAxis.Secondary,
+                        ),
+                    ),
+            )
+        val verticalPreview = applyVisualization(sample, verticalConfig, session.baseSpec.tables)
+        val verticalChart =
+            assertNotNull(buildVisualizationReport(session, verticalPreview, verticalConfig).chart)
+        assertTrue(verticalChart.secondaryValueTicks.isNotEmpty())
+        assertTrue(verticalChart.plot[2] < CHART_EXPORT_WIDTH - 28.0)
+        assertEquals(
+            listOf("Sum line_total (left)", "Distinct category (right)"),
+            verticalChart.legend,
+        )
+        assertEquals(4, verticalChart.shapes.size)
+        assertTrue(verticalChart.shapes.all { (it.h ?: 0.0) > 100.0 })
+
+        val horizontalConfig = verticalConfig.copy(barOrientation = BarOrientation.Horizontal)
+        val horizontalPreview =
+            applyVisualization(sample, horizontalConfig, session.baseSpec.tables)
+        val horizontalChart =
+            assertNotNull(
+                buildVisualizationReport(session, horizontalPreview, horizontalConfig).chart,
+            )
+        assertTrue(horizontalChart.secondaryValueTicks.isNotEmpty())
+        assertTrue(horizontalChart.plot[1] >= 34.0)
+        assertEquals(
+            listOf("Sum line_total (bottom)", "Distinct category (top)"),
+            horizontalChart.legend,
+        )
+
+        val lineConfig = verticalConfig.copy(chartType = ChartType.Line)
+        val linePreview = applyVisualization(sample, lineConfig, session.baseSpec.tables)
+        val lineChart =
+            assertNotNull(buildVisualizationReport(session, linePreview, lineConfig).chart)
+        assertTrue(lineChart.secondaryValueTicks.isNotEmpty())
+        assertEquals(
+            listOf("Sum line_total (left)", "Distinct category (right)"),
+            lineChart.legend,
+        )
+        assertTrue(REPORT_JS.contains("chart.secondaryValueTicks"))
     }
 
     private fun pivotConfig() =

@@ -419,6 +419,23 @@ internal val REPORT_JS =
       });
       svg.appendChild(svgEl('line', { x1: p[0], y1: p[1], x2: p[0], y2: p[3] }, 'axis'));
       svg.appendChild(svgEl('line', { x1: p[0], y1: p[3], x2: p[2], y2: p[3] }, 'axis'));
+      if (chart.secondaryValueTicks && chart.secondaryValueTicks.length) {
+        if (chart.horizontal) {
+          svg.appendChild(svgEl('line', { x1: p[0], y1: p[1], x2: p[2], y2: p[1] }, 'axis'));
+          chart.secondaryValueTicks.forEach((tick) => {
+            const text = svgEl('text', { x: tick.pos, y: p[1] - 8, 'text-anchor': 'middle' });
+            text.textContent = tick.label;
+            svg.appendChild(text);
+          });
+        } else {
+          svg.appendChild(svgEl('line', { x1: p[2], y1: p[1], x2: p[2], y2: p[3] }, 'axis'));
+          chart.secondaryValueTicks.forEach((tick) => {
+            const text = svgEl('text', { x: p[2] + 8, y: tick.pos + 4, 'text-anchor': 'start' });
+            text.textContent = tick.label;
+            svg.appendChild(text);
+          });
+        }
+      }
 
       chart.shapes.forEach((shape) => {
         // series is omitted from the JSON when it is the default 0.
