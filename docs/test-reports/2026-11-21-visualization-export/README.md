@@ -75,27 +75,62 @@ No CSV was exported for this report.
 
 ![Exported monthly revenue PNG](exports/monthly-revenue.png)
 
-## Reports still pending
+## Report C: Revenue by region and segment
 
-The following were queued and are not in this commit. They can be added in a follow-up.
-
-### C: Revenue by region and segment
+The planned SQL used `r.name AS region`, but the app's editor gate says "Column aliases aren't supported" and leaves Run disabled. The query that actually ran:
 
 ```sql
-SELECT r.name AS region, a.segment, oi.line_total
+SELECT r.name, a.segment, oi.line_total
 FROM sales.order_items oi
 JOIN sales.orders o ON oi.order_id = o.id
 JOIN sales.accounts a ON o.account_id = a.id
 JOIN sales.regions r ON a.region_id = r.id
 ```
 
-### D: Two values on one chart
+Explore settings: Compare categories template, X = `name` (regions), series = `segment`, `Sum(line_total)`, grouped vertical bars, automatic title "Sum line_total by name". Because aliases are blocked, the region column appears only as `name` in Explore and in the HTML chart-data table.
 
-Still to be built in Explore (for example average order value alongside sum of `line_total`, or two measures on a shared category axis).
+All 12 region/segment totals in the HTML table match direct SQL aggregation. The HTML report was sampled at 21:34 and generated at 21:36 (America/Chicago) on 21 November 2026, based on all 8,001 rows.
 
-### E: Drill-down source-rows export
+| Region | Segment | Explore / export value | SQL `sum(line_total)` | Source rows |
+| --- | --- | ---: | ---: | ---: |
+| Asia Pacific | Enterprise | 514,374.14 | 514,374.14 | 665 |
+| Asia Pacific | Mid-Market | 452,581.03 | 452,581.03 | 630 |
+| Asia Pacific | SMB | 491,419.68 | 491,419.68 | 693 |
+| Europe | Enterprise | 492,622.41 | 492,622.41 | 738 |
+| Europe | Mid-Market | 406,430.58 | 406,430.58 | 654 |
+| Europe | SMB | 455,337.98 | 455,337.98 | 652 |
+| Latin America | Enterprise | 426,263.9 | 426,263.90 | 640 |
+| Latin America | Mid-Market | 408,247.63 | 408,247.63 | 601 |
+| Latin America | SMB | 533,532.96 | 533,532.96 | 679 |
+| North America | Enterprise | 511,826.37 | 511,826.37 | 715 |
+| North America | Mid-Market | 403,670.9 | 403,670.90 | 598 |
+| North America | SMB | 483,831.5 | 483,831.50 | 736 |
 
-Open a mark's source rows and use Export rows. Not yet captured.
+Highest group: Latin America SMB at 533,532.96. Lowest: North America Mid-Market at 403,670.90. Axis ticks are 133.4K, 266.8K, 400.1K, and 533.5K.
+
+- App: [screenshots/22-revenue-by-region-segment.webp](screenshots/22-revenue-by-region-segment.webp)
+- Chart PNG: [exports/revenue-by-region-segment.png](exports/revenue-by-region-segment.png)
+- HTML report: [exports/revenue-by-region-segment.html](exports/revenue-by-region-segment.html)
+
+![Revenue by region and segment in Explore](screenshots/22-revenue-by-region-segment.webp)
+
+![Exported revenue by region and segment PNG](exports/revenue-by-region-segment.png)
+
+## Report E: Drill-down source-rows export
+
+Clicking the Europe / SMB bar opened Source rows (652 rows). Export rows produced [exports/drill-rows.csv](exports/drill-rows.csv).
+
+The CSV header is `r__name,a__segment,oi__line_total`. All 652 rows are Europe / SMB. The row count and the sum of `oi__line_total` (455,337.98) match direct SQL for that group.
+
+## Reports not completed
+
+### D: Two values on one chart (blocked)
+
+In the app, "+ Add value" kept opening "Replace X field" instead of adding a second measure, so no two-value chart could be built. See findings.
+
+### F: Histogram
+
+Not attempted.
 
 ## Findings
 
@@ -103,7 +138,7 @@ These are candidate app issues from this pass. They were not fixed.
 
 - Bar value labels are dark gray on dark blue, and are nearly unreadable in both the app and the PNG. See [screenshots/20-revenue-by-category.webp](screenshots/20-revenue-by-category.webp) and [exports/revenue-by-category-v2.png](exports/revenue-by-category-v2.png).
 - Value labels show raw unformatted numbers (`3624326.7`) while the axis uses K/M compact formatting.
-- Axis ticks land on odd steps. Report A uses 906.1K, 1.8M, 2.7M, 3.6M. Report B uses 81.9K, 163.9K, 245.8K, 327.8K.
+- Axis ticks land on odd steps. Report A uses 906.1K, 1.8M, 2.7M, 3.6M. Report B uses 81.9K, 163.9K, 245.8K, 327.8K. Report C uses 133.4K, 266.8K, 400.1K, 533.5K.
 - The HTML report omits value labels even when they are enabled in Explore. Compare the PNG with [screenshots/html-report-render.png](screenshots/html-report-render.png).
 - The HTML chart-data table repeats `Sum line_total` in both the Series and Measure columns, and its values are unformatted (`3624326.7`).
 - Explore kept showing a stale "8000 sampled rows" caption after the SQL was re-run on the corrected 8,001-row seed.
@@ -113,9 +148,15 @@ These are candidate app issues from this pass. They were not fixed.
 - Connection cards do not connect directly; you have to use SQL > Choose connection.
 - Small hit targets.
 - The Explore window can hide behind the main window.
-- The CSV export holds aggregated chart data only, not source rows.
+- The Export chart data CSV holds aggregated chart data only. Source rows are available through Export rows on a drill-down, as in Report E.
 - The HTML report needs JavaScript to render the chart.
 - The taskbar title shows `com-safedb-MainKt`. This is likely Linux-only.
+- Column aliases are blocked in SQL. This is a notable limitation, because columns such as `r.name` then show up only as `name` in Explore and `r__name` in the CSV, which makes them ambiguous.
+- The drill-rows CSV headers use `alias__column` mangling (`r__name`, `a__segment`, `oi__line_total`).
+- "+ Add value" opens "Replace X field" instead of adding a second measure. This blocked Report D.
+- The save dialog defaulted to the home directory and suggested an odd filename (`start-safedb-111.sh.csv`), apparently derived from a file that was selected in the list.
+- The file list in the save dialog easily steals focus from the File Name field.
+- The Visual templates link and the sidebar suggestion cards are easy to mis-click.
 
 ## Harness-only notes
 
