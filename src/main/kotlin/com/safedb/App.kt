@@ -202,7 +202,6 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
                                     } else {
                                         null
                                     },
-                                sampleRefreshEnabled = originContext.sampleRefreshEnabled,
                                 recipesViewModel = viewModel.recipes,
                                 connections = connections,
                                 onRunRecipe = { recipe, connection ->

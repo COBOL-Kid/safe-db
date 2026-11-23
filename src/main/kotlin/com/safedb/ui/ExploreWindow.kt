@@ -70,7 +70,6 @@ fun ExploreWindowContent(
     onClose: () -> Unit,
     origin: ExploreOrigin = ExploreOrigin.Builder,
     onRefreshSample: (() -> Unit)? = null,
-    sampleRefreshEnabled: Boolean = false,
     recipesViewModel: RecipesViewModel,
     connections: List<ConnectionDef> = emptyList(),
     onRunRecipe: (ExploreRecipe, ConnectionDef) -> Unit = { _, _ -> },
@@ -159,7 +158,6 @@ fun ExploreWindowContent(
             ExploreStaleSampleWarning(
                 staleness = staleness,
                 origin = origin,
-                sampleRefreshEnabled = sampleRefreshEnabled,
                 onRefreshSample = onRefreshSample,
             )
             ExplorePreviewErrorBanner(viewModel.previewError(activeMode))
@@ -465,14 +463,13 @@ private fun ExploreModeSelector(
     }
 }
 
-@Composable
-private fun ExploreStaleSampleWarning(
+internal data class ExploreStaleSampleBanner(val text: String, val showRefreshAction: Boolean)
+
+internal fun exploreStaleSampleBanner(
     staleness: SampleStaleness,
     origin: ExploreOrigin,
-    sampleRefreshEnabled: Boolean,
-    onRefreshSample: (() -> Unit)?,
-) {
-    if (staleness == SampleStaleness.Fresh) return
+    refreshAvailable: Boolean,
+): ExploreStaleSampleBanner {
     // Refresh pulls from whichever surface opened this window, so the instructions have to name it
     // — telling a SQL-origin user to re-run in Builder never produces a sample and leaves Refresh
     // off.
@@ -481,32 +478,63 @@ private fun ExploreStaleSampleWarning(
             ExploreOrigin.Builder -> "Builder"
             ExploreOrigin.Sql -> "SQL"
         }
+    return when (staleness) {
+        SampleStaleness.Fresh -> ExploreStaleSampleBanner(text = "", showRefreshAction = false)
+        SampleStaleness.ConnectionChanged ->
+            ExploreStaleSampleBanner(
+                text =
+                    "The active connection changed. Reopen Explore from the query you " +
+                        "want to inspect; Refresh cannot update this sample.",
+                showRefreshAction = false,
+            )
+        SampleStaleness.NewerSample if refreshAvailable ->
+            ExploreStaleSampleBanner(
+                text =
+                    "Newer $surface results are available. Refresh the Explore sample to load them.",
+                showRefreshAction = true,
+            )
+        SampleStaleness.NewerSample ->
+            ExploreStaleSampleBanner(
+                text =
+                    "Newer $surface results are available. Reopen Explore from $surface to inspect them.",
+                showRefreshAction = false,
+            )
+        SampleStaleness.SpecChanged if refreshAvailable ->
+            ExploreStaleSampleBanner(
+                text =
+                    "The $surface query changed. Refresh the Explore sample from the latest $surface results.",
+                showRefreshAction = true,
+            )
+        SampleStaleness.SpecChanged ->
+            ExploreStaleSampleBanner(
+                text =
+                    "The $surface query changed. Re-run the query in $surface, then refresh or reopen Explore.",
+                showRefreshAction = false,
+            )
+    }
+}
+
+@Composable
+private fun ExploreStaleSampleWarning(
+    staleness: SampleStaleness,
+    origin: ExploreOrigin,
+    onRefreshSample: (() -> Unit)?,
+) {
+    if (staleness == SampleStaleness.Fresh) return
+    val banner =
+        exploreStaleSampleBanner(
+            staleness = staleness,
+            origin = origin,
+            refreshAvailable = onRefreshSample != null,
+        )
     Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
         MessageBanner(
-            text =
-                when (staleness) {
-                    SampleStaleness.Fresh -> ""
-                    SampleStaleness.ConnectionChanged ->
-                        "The active connection changed. Reopen Explore from the query you " +
-                            "want to inspect; Refresh cannot update this sample."
-                    SampleStaleness.NewerSample ->
-                        if (sampleRefreshEnabled) {
-                            "Newer $surface results are available. Refresh the Explore sample to load them."
-                        } else {
-                            "Newer $surface results are available. Reopen Explore from $surface to inspect them."
-                        }
-                    SampleStaleness.SpecChanged ->
-                        if (sampleRefreshEnabled) {
-                            "The $surface query changed. Refresh the Explore sample from the latest $surface results."
-                        } else {
-                            "The $surface query changed. Re-run the query in $surface, then refresh or reopen Explore."
-                        }
-                },
+            text = banner.text,
             kind = BannerKind.WARNING,
             action =
                 if (
                     staleness != SampleStaleness.ConnectionChanged &&
-                        sampleRefreshEnabled &&
+                        banner.showRefreshAction &&
                         onRefreshSample != null
                 ) {
                     { PrimaryButton(onClick = onRefreshSample) { Text("Refresh sample") } }
