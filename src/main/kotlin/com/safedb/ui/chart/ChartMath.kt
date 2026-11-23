@@ -237,6 +237,108 @@ private fun stackedValueSpans(
     }
 }
 
+private object BarPlacer {
+    const val HorizontalStackedTopInset = 0.15f
+    const val HorizontalStackedHeight = 0.7f
+    const val HorizontalGroupedTopInset = 0.15f
+    const val HorizontalGroupedSlotHeight = 0.7f
+    const val HorizontalGroupedBarHeight = 0.82f
+    const val VerticalStackedSideInset = 0.16f
+    const val VerticalGroupedLeftInset = 0.14f
+    const val VerticalGroupedWidthFactor = 0.72f
+    const val VerticalGroupedBarWidth = 0.86f
+
+    fun place(
+        horizontal: Boolean,
+        stacked: Boolean,
+        categories: List<VisualizationMark>,
+        marksByCategory: Map<String, List<VisualizationMark>>,
+        plot: Rect,
+        markAxis: (VisualizationMark) -> NiceValueAxis,
+        xPosition: (Double, NiceValueAxis) -> Float,
+        yPosition: (Double, NiceValueAxis) -> Float,
+        regions: MutableList<VisualizationHitRegion>,
+        points: MutableMap<String, Offset>,
+        categoryCenters: MutableMap<String, Float>,
+    ) {
+        val categoryOrigin = if (horizontal) plot.top else plot.left
+        val categoryExtent = if (horizontal) plot.height else plot.width
+        val band = categoryExtent / categories.size.coerceAtLeast(1)
+        val valuePosition = if (horizontal) xPosition else yPosition
+        categories.forEachIndexed { categoryIndex, category ->
+            val marks = marksByCategory.getValue(category.xKey)
+            categoryCenters[category.xKey] = categoryOrigin + (categoryIndex + 0.5f) * band
+            val spans =
+                if (stacked) {
+                    stackedValueSpans(marks)
+                } else {
+                    marks.map { mark -> Triple(mark, 0.0, mark.y) }
+                }
+            spans.forEachIndexed { seriesIndex, (mark, start, end) ->
+                val (crossStart, crossEnd) =
+                    crossEdges(
+                        horizontal = horizontal,
+                        stacked = stacked,
+                        categoryOrigin = categoryOrigin,
+                        band = band,
+                        categoryIndex = categoryIndex,
+                        seriesIndex = seriesIndex,
+                        markCount = marks.size,
+                    )
+                val targetAxis = markAxis(mark)
+                val valueStart = valuePosition(start, targetAxis)
+                val valueEnd = valuePosition(end, targetAxis)
+                val rect =
+                    if (horizontal) {
+                        Rect(
+                            min(valueStart, valueEnd),
+                            crossStart,
+                            max(valueStart, valueEnd),
+                            crossEnd,
+                        )
+                    } else {
+                        Rect(
+                            crossStart,
+                            min(valueStart, valueEnd),
+                            crossEnd,
+                            max(valueStart, valueEnd),
+                        )
+                    }
+                regions += VisualizationHitRegion(mark.id, rect)
+                points[mark.id] = rect.center
+            }
+        }
+    }
+
+    private fun crossEdges(
+        horizontal: Boolean,
+        stacked: Boolean,
+        categoryOrigin: Float,
+        band: Float,
+        categoryIndex: Int,
+        seriesIndex: Int,
+        markCount: Int,
+    ): Pair<Float, Float> {
+        val bandStart = categoryOrigin + categoryIndex * band
+        if (stacked && horizontal) {
+            val start = bandStart + band * HorizontalStackedTopInset
+            return start to (start + band * HorizontalStackedHeight)
+        }
+        if (stacked) {
+            val start = bandStart + band * VerticalStackedSideInset
+            val end = categoryOrigin + (categoryIndex + 1) * band - band * VerticalStackedSideInset
+            return start to end
+        }
+        val leadingInset = if (horizontal) HorizontalGroupedTopInset else VerticalGroupedLeftInset
+        val slotFraction =
+            if (horizontal) HorizontalGroupedSlotHeight else VerticalGroupedWidthFactor
+        val barFraction = if (horizontal) HorizontalGroupedBarHeight else VerticalGroupedBarWidth
+        val slot = band * slotFraction / markCount.coerceAtLeast(1)
+        val start = bandStart + band * leadingInset + seriesIndex * slot
+        return start to (start + slot * barFraction)
+    }
+}
+
 internal fun visualizationGeometry(
     preview: VisualizationPreview,
     config: VisualizationConfig,
@@ -257,7 +359,6 @@ internal fun visualizationGeometry(
     fun xPositionFor(value: Double, target: NiceValueAxis): Float =
         (plot.left + target.fraction(value) * plot.width).toFloat()
     fun yPosition(value: Double): Float = yPositionFor(value, axis)
-    fun xPosition(value: Double): Float = xPositionFor(value, axis)
     fun markAxis(mark: VisualizationMark): NiceValueAxis =
         if (mark.axis == ValueAxis.Secondary && secondaryAxis != null) secondaryAxis else axis
 
@@ -269,82 +370,22 @@ internal fun visualizationGeometry(
         ChartType.Histogram -> {
             val categories = preview.marks.distinctBy { it.xKey }
             val byCategory = preview.marks.groupBy { it.xKey }
-            val band = plot.width / categories.size.coerceAtLeast(1)
-            categories.forEachIndexed { categoryIndex, category ->
-                val marks = byCategory.getValue(category.xKey)
-                if (config.barOrientation == BarOrientation.Horizontal && type == ChartType.Bar) {
-                    val horizontalBand = plot.height / categories.size.coerceAtLeast(1)
-                    categoryCenters[category.xKey] =
-                        plot.top + (categoryIndex + 0.5f) * horizontalBand
-                    if (stacked) {
-                        stackedValueSpans(marks).forEach { (mark, start, end) ->
-                            val left = xPosition(start)
-                            val right = xPosition(end)
-                            val top =
-                                plot.top + categoryIndex * horizontalBand + horizontalBand * 0.15f
-                            val rect =
-                                Rect(
-                                    min(left, right),
-                                    top,
-                                    max(left, right),
-                                    top + horizontalBand * 0.7f,
-                                )
-                            regions += VisualizationHitRegion(mark.id, rect)
-                            points[mark.id] = rect.center
-                        }
-                    } else {
-                        marks.forEachIndexed { seriesIndex, mark ->
-                            val barHeight = horizontalBand * 0.7f / marks.size.coerceAtLeast(1)
-                            val top =
-                                plot.top +
-                                    categoryIndex * horizontalBand +
-                                    horizontalBand * 0.15f +
-                                    seriesIndex * barHeight
-                            val targetAxis = markAxis(mark)
-                            val zero = xPositionFor(0.0, targetAxis)
-                            val value = xPositionFor(mark.y, targetAxis)
-                            val rect =
-                                Rect(
-                                    min(zero, value),
-                                    top,
-                                    max(zero, value),
-                                    top + barHeight * 0.82f,
-                                )
-                            regions += VisualizationHitRegion(mark.id, rect)
-                            points[mark.id] = rect.center
-                        }
-                    }
-                } else if (stacked) {
-                    categoryCenters[category.xKey] = plot.left + (categoryIndex + 0.5f) * band
-                    stackedValueSpans(marks).forEach { (mark, start, end) ->
-                        val y0 = yPosition(start)
-                        val y1 = yPosition(end)
-                        val rect =
-                            Rect(
-                                plot.left + categoryIndex * band + band * 0.16f,
-                                min(y0, y1),
-                                plot.left + (categoryIndex + 1) * band - band * 0.16f,
-                                max(y0, y1),
-                            )
-                        regions += VisualizationHitRegion(mark.id, rect)
-                        points[mark.id] = rect.center
-                    }
-                } else {
-                    categoryCenters[category.xKey] = plot.left + (categoryIndex + 0.5f) * band
-                    val barWidth = band * 0.72f / marks.size.coerceAtLeast(1)
-                    marks.forEachIndexed { seriesIndex, mark ->
-                        val left =
-                            plot.left + categoryIndex * band + band * 0.14f + seriesIndex * barWidth
-                        val targetAxis = markAxis(mark)
-                        val zero = yPositionFor(0.0, targetAxis)
-                        val value = yPositionFor(mark.y, targetAxis)
-                        val rect =
-                            Rect(left, min(zero, value), left + barWidth * 0.86f, max(zero, value))
-                        regions += VisualizationHitRegion(mark.id, rect)
-                        points[mark.id] = rect.center
-                    }
-                }
-            }
+            // Histograms stay vertical; only bar charts honor a horizontal orientation.
+            val horizontal =
+                config.barOrientation == BarOrientation.Horizontal && type == ChartType.Bar
+            BarPlacer.place(
+                horizontal = horizontal,
+                stacked = stacked,
+                categories = categories,
+                marksByCategory = byCategory,
+                plot = plot,
+                markAxis = { markAxis(it) },
+                xPosition = { value, target -> xPositionFor(value, target) },
+                yPosition = { value, target -> yPositionFor(value, target) },
+                regions = regions,
+                points = points,
+                categoryCenters = categoryCenters,
+            )
         }
         ChartType.Line -> {
             val categories = preview.marks.distinctBy { it.xKey }

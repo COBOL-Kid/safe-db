@@ -545,6 +545,72 @@ class ChartMathTest {
     }
 
     @Test
+    fun barPlacementKeepsDistinctInsetsForGroupedAndStackedOrientations() {
+        val preview =
+            VisualizationPreview(
+                chartType = ChartType.Bar,
+                title = "Revenue vs Distinct",
+                marks =
+                    listOf(
+                        mark("a-rev", "a", "Services", "rev", 3_624_326.7, 1.0, ValueAxis.Primary),
+                        mark("a-cat", "a", "Services", "cat", 1.0, 1.0, ValueAxis.Secondary),
+                    ),
+                series =
+                    listOf(
+                        VisualizationSeries("rev", "Sum line_total", ValueAxis.Primary),
+                        VisualizationSeries("cat", "Distinct category", ValueAxis.Secondary),
+                    ),
+            )
+        val markCount = preview.marks.count { it.xKey == "a" }
+        val categoryCount = preview.marks.map { it.xKey }.distinct().size
+        val grouped = VisualizationConfig(chartType = ChartType.Bar)
+        val vertical = visualizationGeometry(preview, grouped, 900f, 500f)
+        val verticalBand = vertical.plot.width / categoryCount
+        val verticalBar = vertical.regions.first { it.markId == "a-rev" }.bounds
+        assertEquals(vertical.plot.left + verticalBand * 0.14f, verticalBar.left, 1e-3f)
+        assertEquals((verticalBand * 0.72f / markCount) * 0.86f, verticalBar.width, 1e-3f)
+
+        val horizontal =
+            visualizationGeometry(
+                preview,
+                grouped.copy(barOrientation = BarOrientation.Horizontal),
+                900f,
+                500f,
+            )
+        val horizontalBand = horizontal.plot.height / categoryCount
+        val horizontalBar = horizontal.regions.first { it.markId == "a-rev" }.bounds
+        assertEquals(horizontal.plot.top + horizontalBand * 0.15f, horizontalBar.top, 1e-3f)
+        assertEquals((horizontalBand * 0.7f / markCount) * 0.82f, horizontalBar.height, 1e-3f)
+
+        val stacked = grouped.copy(barArrangement = BarArrangement.Stacked)
+        val verticalStacked = visualizationGeometry(preview, stacked, 900f, 500f)
+        val stackedBand = verticalStacked.plot.width / categoryCount
+        val stackedBar = verticalStacked.regions.first { it.markId == "a-rev" }.bounds
+        assertEquals(verticalStacked.plot.left + stackedBand * 0.16f, stackedBar.left, 1e-3f)
+        assertEquals(
+            verticalStacked.plot.left + stackedBand - stackedBand * 0.16f,
+            stackedBar.right,
+            1e-3f,
+        )
+
+        val horizontalStacked =
+            visualizationGeometry(
+                preview,
+                stacked.copy(barOrientation = BarOrientation.Horizontal),
+                900f,
+                500f,
+            )
+        val horizontalStackedBand = horizontalStacked.plot.height / categoryCount
+        val horizontalStackedBar = horizontalStacked.regions.first { it.markId == "a-rev" }.bounds
+        assertEquals(
+            horizontalStacked.plot.top + horizontalStackedBand * 0.15f,
+            horizontalStackedBar.top,
+            1e-3f,
+        )
+        assertEquals(horizontalStackedBand * 0.7f, horizontalStackedBar.height, 1e-3f)
+    }
+
+    @Test
     fun legendSeriesLabelIncludesAxisSideOnlyWhenDualAxisIsActive() {
         val primary = VisualizationSeries("a", "Sum revenue", ValueAxis.Primary)
         val secondary = VisualizationSeries("b", "Count", ValueAxis.Secondary)
