@@ -287,4 +287,21 @@ stop_pidfile "$OPENBOX_PID_FILE" openbox true
 assert_missing "$OPENBOX_PID_FILE"
 assert_no_kill "non-numeric pid"
 
+# Kill boundary: a not-yet-exec'd pid is still starting. Already-running still drops a mismatch.
+reset_kill_log
+start_sleep
+starting_pid="$LAST_SLEEP_PID"
+printf '%s\n' "$starting_pid" >"$XVFB_PID_FILE"
+launch_state="$(launch_pid_state "$XVFB_PID_FILE" Xvfb)"
+[[ "$launch_state" == "starting" ]] || fail "startup wait reported '$launch_state', expected starting"
+assert_exists "$XVFB_PID_FILE"
+builtin kill -0 "$starting_pid" || fail "not-yet-exec'd sleep died"
+assert_no_kill "startup wait"
+if is_pid_running "$XVFB_PID_FILE" Xvfb; then
+  fail "not-yet-exec'd sleep reported as already our Xvfb"
+fi
+assert_missing "$XVFB_PID_FILE"
+assert_no_kill "already-running mismatch"
+builtin kill -0 "$starting_pid" || fail "already-running check killed sleep"
+
 echo "agent_gui reset tests passed"

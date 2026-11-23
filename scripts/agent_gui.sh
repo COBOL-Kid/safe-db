@@ -80,6 +80,44 @@ is_pid_running() {
   return 1
 }
 
+# Live non-zombie process. Does not signal. A missing or zombie pid has exited.
+pid_process_alive() {
+  local pid="$1"
+  local stat state
+  [[ "$pid" =~ ^[1-9][0-9]+$ ]] || return 1
+  [[ -d "/proc/$pid" ]] || return 1
+  if [[ -r "/proc/$pid/stat" ]]; then
+    stat="$(<"/proc/$pid/stat")"
+    state="${stat##*) }"
+    state="${state%% *}"
+    [[ "$state" == "Z" ]] && return 1
+  fi
+  return 0
+}
+
+# Post-launch wait state. Prints running, starting, or dead.
+# starting means the recorded pid is still alive but has not exec'd the token yet.
+# Does not delete the pid file and does not signal.
+launch_pid_state() {
+  local pid_file="$1"
+  local token="${2:-}"
+  local pid
+  if [[ -z "$token" || ! -f "$pid_file" ]]; then
+    printf '%s\n' dead
+    return 0
+  fi
+  pid="$(<"$pid_file")"
+  if pid_identity_ok "$pid" "$token"; then
+    printf '%s\n' running
+    return 0
+  fi
+  if pid_process_alive "$pid"; then
+    printf '%s\n' starting
+    return 0
+  fi
+  printf '%s\n' dead
+}
+
 check_prereqs() {
   local need_vnc="${1:-false}"
   local required=(Xvfb xdotool import openbox setsid)
@@ -185,7 +223,7 @@ cmd_up() {
     echo $! >"$XVFB_PID_FILE"
     local i=0
     until xdotool getdisplaygeometry >/dev/null 2>&1; do
-      if ! is_pid_running "$XVFB_PID_FILE" Xvfb; then
+      if [[ "$(launch_pid_state "$XVFB_PID_FILE" Xvfb)" == "dead" ]]; then
         echo "Xvfb exited unexpectedly. Log ($XVFB_LOG):" >&2
         cat "$XVFB_LOG" >&2 || true
         exit 1
@@ -227,7 +265,7 @@ cmd_up() {
     if [[ -n "$win_id" ]]; then
       break
     fi
-    if ! is_pid_running "$APP_PID_FILE" runAgentGui; then
+    if [[ "$(launch_pid_state "$APP_PID_FILE" runAgentGui)" == "dead" ]]; then
       echo "Safe-DB failed to start. Last 40 lines of $APP_LOG:" >&2
       tail -n 40 "$APP_LOG" >&2 || true
       exit 1
