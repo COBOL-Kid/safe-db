@@ -26,6 +26,7 @@ import com.safedb.model.QuerySpec
 import com.safedb.model.ResultCell
 import com.safedb.model.ResultColumn
 import com.safedb.model.TableRef
+import com.safedb.ui.chart.BarLabelFontSizePx
 import com.safedb.ui.chart.contrastingBarLabelColor
 import com.safedb.ui.chart.toCssHex
 import java.io.ByteArrayOutputStream
@@ -638,8 +639,9 @@ class HtmlReportWriterTest {
         val chart = buildChartSection(preview, config)
         val labeled = chart.shapes.filter { it.label != null }
         assertEquals(2, labeled.size)
-        // Vertical bar labels sit near the top of the bar (top + 10.0), and Tiny bar is omitted.
-        assertTrue(labeled.all { shape -> shape.ly == shape.y!! + 10.0 })
+        // Vertical bar labels sit near the top of the bar (top + 7.0), and Tiny bar is omitted.
+        assertTrue(labeled.all { shape -> shape.ly == shape.y!! + 7.0 })
+        assertTrue(REPORT_CSS.contains("font-size: ${BarLabelFontSizePx}px"))
         assertEquals(listOf(0, 1), labeled.map { it.series })
         assertNull(chart.shapes.last().label)
     }
@@ -882,7 +884,8 @@ class HtmlReportWriterTest {
                 buildVisualizationReport(session, horizontalPreview, horizontalConfig).chart,
             )
         assertTrue(horizontalChart.secondaryValueTicks.isNotEmpty())
-        assertTrue(horizontalChart.plot[1] >= 34.0)
+        // lineHeight 12 + gap 6 * 2
+        assertEquals(24.0, horizontalChart.plot[1])
         assertEquals(
             listOf("Sum line_total (bottom)", "Distinct category (top)"),
             horizontalChart.legend,

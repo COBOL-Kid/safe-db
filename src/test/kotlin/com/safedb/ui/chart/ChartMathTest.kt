@@ -1,5 +1,6 @@
 package com.safedb.ui.chart
 
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
@@ -23,6 +24,7 @@ import kotlin.math.min
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ChartMathTest {
@@ -734,6 +736,212 @@ class ChartMathTest {
         histPlaced.zipWithNext().forEach { (left, right) ->
             assertTrue(left.drawX + left.measured + gapPx <= right.drawX)
         }
+    }
+
+    @Test
+    fun chartPlotInsetsForCoversHorizontalVerticalSecondaryAndClearance() {
+        val horizontal =
+            chartPlotInsetsFor(
+                horizontal = true,
+                hasSecondaryAxis = false,
+                categoryExtent = 20f,
+                valueTickWidth = 80f,
+                secondaryTickWidth = 0f,
+                lastCategoryWidth = 0f,
+                lineHeight = 12f,
+                gapPx = 6f,
+                minGutter = 44f,
+                maxGutter = 180f,
+                clearance = PlotClearance(),
+            )
+        assertEquals(46f, horizontal.left)
+        assertEquals(46f, horizontal.right)
+        assertEquals(12f, horizontal.top)
+        assertEquals(24f, horizontal.bottom)
+
+        val clampedLeft =
+            chartPlotInsetsFor(
+                horizontal = true,
+                hasSecondaryAxis = false,
+                categoryExtent = 200f,
+                valueTickWidth = 80f,
+                secondaryTickWidth = 0f,
+                lastCategoryWidth = 0f,
+                lineHeight = 12f,
+                gapPx = 6f,
+                minGutter = 44f,
+                maxGutter = 180f,
+                clearance = PlotClearance(),
+            )
+        assertEquals(180f, clampedLeft.left)
+
+        val wideRight =
+            chartPlotInsetsFor(
+                horizontal = true,
+                hasSecondaryAxis = false,
+                categoryExtent = 20f,
+                valueTickWidth = 100f,
+                secondaryTickWidth = 0f,
+                lastCategoryWidth = 0f,
+                lineHeight = 12f,
+                gapPx = 6f,
+                minGutter = 44f,
+                maxGutter = 180f,
+                clearance = PlotClearance(),
+            )
+        assertEquals(56f, wideRight.right)
+
+        val veryWideRight =
+            chartPlotInsetsFor(
+                horizontal = true,
+                hasSecondaryAxis = false,
+                categoryExtent = 20f,
+                valueTickWidth = 1000f,
+                secondaryTickWidth = 0f,
+                lastCategoryWidth = 0f,
+                lineHeight = 12f,
+                gapPx = 6f,
+                minGutter = 44f,
+                maxGutter = 180f,
+                clearance = PlotClearance(),
+            )
+        assertEquals(506f, veryWideRight.right)
+
+        val verticalSecondary =
+            chartPlotInsetsFor(
+                horizontal = false,
+                hasSecondaryAxis = true,
+                categoryExtent = 0f,
+                valueTickWidth = 30f,
+                secondaryTickWidth = 40f,
+                lastCategoryWidth = 10f,
+                lineHeight = 12f,
+                gapPx = 6f,
+                minGutter = 44f,
+                maxGutter = 180f,
+                clearance = PlotClearance(),
+            )
+        assertEquals(44f, verticalSecondary.left)
+        assertEquals(52f, verticalSecondary.right)
+
+        val topCleared =
+            chartPlotInsetsFor(
+                horizontal = false,
+                hasSecondaryAxis = false,
+                categoryExtent = 0f,
+                valueTickWidth = 30f,
+                secondaryTickWidth = 0f,
+                lastCategoryWidth = 10f,
+                lineHeight = 12f,
+                gapPx = 6f,
+                minGutter = 44f,
+                maxGutter = 180f,
+                clearance = PlotClearance(top = 20f),
+            )
+        assertEquals(20f, topCleared.top)
+
+        val bottomCleared =
+            chartPlotInsetsFor(
+                horizontal = true,
+                hasSecondaryAxis = false,
+                categoryExtent = 20f,
+                valueTickWidth = 80f,
+                secondaryTickWidth = 0f,
+                lastCategoryWidth = 0f,
+                lineHeight = 12f,
+                gapPx = 6f,
+                minGutter = 44f,
+                maxGutter = 180f,
+                clearance = PlotClearance(bottom = 22f),
+            )
+        assertEquals(46f, bottomCleared.left)
+        assertEquals(12f, bottomCleared.top)
+        assertEquals(46f, bottomCleared.right)
+        assertEquals(24f, bottomCleared.bottom)
+
+        val raisedBottomCleared =
+            chartPlotInsetsFor(
+                horizontal = true,
+                hasSecondaryAxis = false,
+                categoryExtent = 20f,
+                valueTickWidth = 80f,
+                secondaryTickWidth = 0f,
+                lastCategoryWidth = 0f,
+                lineHeight = 6f,
+                gapPx = 6f,
+                minGutter = 44f,
+                maxGutter = 180f,
+                clearance = PlotClearance(bottom = 22f),
+            )
+        assertEquals(46f, raisedBottomCleared.left)
+        assertEquals(9f, raisedBottomCleared.top)
+        assertEquals(46f, raisedBottomCleared.right)
+        assertEquals(22f, raisedBottomCleared.bottom)
+    }
+
+    @Test
+    fun chartPlotInsetsPreviewSelectsScatterMaxXOrLastBarCategoryForRightEdge() {
+        val marks =
+            listOf(
+                mark("m1", "k1", "LongMaxXLabel", "one", 10.0, 100.0),
+                mark("m2", "k2", "Short", "one", 5.0, 10.0),
+            )
+        val measure = { text: String -> text.length * 10f }
+
+        val scatterInsets =
+            chartPlotInsets(
+                preview = VisualizationPreview(ChartType.Scatter, "Scatter", marks),
+                config = VisualizationConfig(chartType = ChartType.Scatter),
+                lineHeight = 12f,
+                gapPx = 6f,
+                measureLabelWidth = measure,
+            )
+        // "LongMaxXLabel" (13 chars * 10) / 2 + 6 = 71
+        assertEquals(71f, scatterInsets.right)
+
+        val barInsets =
+            chartPlotInsets(
+                preview = VisualizationPreview(ChartType.Bar, "Bar", marks),
+                config = VisualizationConfig(chartType = ChartType.Bar),
+                lineHeight = 12f,
+                gapPx = 6f,
+                measureLabelWidth = measure,
+            )
+        // "Short" (5 chars * 10) / 2 + 6 = 31
+        assertEquals(31f, barInsets.right)
+    }
+
+    @Test
+    fun barLabelCenterAndEstimatesEnforcePaddingAndOrientationAnchors() {
+        assertEquals(18.6f, estimatedBarLabelWidth("ABC"), 0.001f)
+        assertEquals(10f, estimatedBarLabelHeight())
+
+        // Height gate: labelHeight <= bounds.height - 2 (11f rejects 10f, 12f accepts 10f).
+        assertNull(barLabelCenter(Rect(0f, 0f, 100f, 11f), 50f, 10f, horizontalBars = false))
+        assertEquals(
+            Offset(50f, 7f),
+            barLabelCenter(Rect(0f, 0f, 100f, 12f), 50f, 10f, horizontalBars = false),
+        )
+
+        // Width gate: labelWidth <= bounds.width - 4 (97f rejected for width 100f).
+        assertNull(barLabelCenter(Rect(0f, 0f, 100f, 20f), 97f, 10f, horizontalBars = false))
+
+        // Non-finite inputs are rejected.
+        val box = Rect(0f, 0f, 100f, 20f)
+        assertNull(barLabelCenter(box, Float.NaN, 10f, horizontalBars = false))
+        assertNull(barLabelCenter(box, 10f, Float.NaN, horizontalBars = false))
+        assertNull(barLabelCenter(box, Float.POSITIVE_INFINITY, 10f, horizontalBars = false))
+        assertNull(barLabelCenter(box, 10f, Float.NEGATIVE_INFINITY, horizontalBars = false))
+
+        // Vertical anchor sits at top + 2 + height / 2; horizontal anchor is bounds.center.
+        assertEquals(
+            Offset(50f, 7f),
+            barLabelCenter(box, 50f, 10f, horizontalBars = false),
+        )
+        assertEquals(
+            box.center,
+            barLabelCenter(box, 50f, 10f, horizontalBars = true),
+        )
     }
 
     private fun preview(type: ChartType) =

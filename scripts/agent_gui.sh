@@ -44,7 +44,7 @@ Commands:
   type <text>                Type text into the focused window.
   key <combo>...             Press key or combo (e.g. ctrl+a, Return, Tab, Escape).
   logs [N]                   Show last N lines of build/agent-gui/app.log (default 50).
-  reset                      Stop everything and wipe build/agent-gui/data and shots.
+  reset                      Stop everything and wipe build/agent-gui/data and shots (overrides outside those paths are kept).
 
 Environment:
   AGENT_GUI_DISPLAY          X display (default :99)
@@ -465,10 +465,56 @@ cmd_logs() {
   tail -n "$lines" "$APP_LOG"
 }
 
+normalize_path() {
+  local input="${1:-}"
+  [[ -n "$input" ]] || return 1
+  if command -v realpath >/dev/null 2>&1; then
+    realpath -m -- "$input" 2>/dev/null && return 0
+  fi
+  [[ "$input" == /* ]] || return 1
+  case "$input" in
+    *..*) return 1 ;;
+  esac
+  printf '%s\n' "${input%/}"
+}
+
+is_within() {
+  local child="$1" parent="$2"
+  [[ "$child" == "$parent" || "$child" == "$parent"/* ]]
+}
+
+remove_agent_gui_reset_targets() {
+  local state_dir="${1:-}"
+  local shots_dir="${2:-}"
+  local data_dir="${3:-}"
+  if [[ -z "$state_dir" || -z "$shots_dir" || -z "$data_dir" || "$state_dir" == "/" || "$shots_dir" == "/" || "$data_dir" == "/" ]]; then
+    echo "Refusing to reset with an empty or root path." >&2
+    return 1
+  fi
+  local managed_data="$state_dir/data"
+  local preserve=0
+  if [[ "$data_dir" != "$managed_data" && "$data_dir" != "$shots_dir" ]]; then
+    local data_norm managed_norm shots_norm
+    if data_norm="$(normalize_path "$data_dir")" &&
+      managed_norm="$(normalize_path "$managed_data")" &&
+      shots_norm="$(normalize_path "$shots_dir")"; then
+      if ! is_within "$data_norm" "$managed_norm" && ! is_within "$data_norm" "$shots_norm"; then
+        preserve=1
+      fi
+    else
+      preserve=1
+    fi
+  fi
+  rm -rf -- "$managed_data" "$shots_dir"
+  echo "Removed $managed_data and $shots_dir."
+  if ((preserve)); then
+    echo "Not removing $data_dir (outside $managed_data and $shots_dir)."
+  fi
+}
+
 cmd_reset() {
   cmd_down
-  rm -rf "$DATA_DIR" "$SHOTS_DIR"
-  echo "Removed $DATA_DIR and $SHOTS_DIR."
+  remove_agent_gui_reset_targets "$STATE_DIR" "$SHOTS_DIR" "$DATA_DIR"
 }
 
 main() {
@@ -500,4 +546,6 @@ main() {
   esac
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

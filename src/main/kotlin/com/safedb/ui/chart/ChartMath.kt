@@ -53,6 +53,94 @@ internal data class PlotInsets(
     val bottom: Float = 58f,
 )
 
+internal data class PlotClearance(val top: Float = 0f, val bottom: Float = 0f)
+
+internal fun chartPlotInsets(
+    preview: VisualizationPreview,
+    config: VisualizationConfig,
+    lineHeight: Float,
+    gapPx: Float,
+    minGutter: Float = 44f,
+    maxGutter: Float = 180f,
+    clearance: PlotClearance = PlotClearance(),
+    measureLabelWidth: (String) -> Float,
+): PlotInsets {
+    val horizontalBars =
+        preview.chartType == ChartType.Bar && config.barOrientation == BarOrientation.Horizontal
+    val valueAxis = visualizationValueAxis(preview, config)
+    val secondaryAxis = visualizationSecondaryValueAxis(preview, config)
+    val valueTickWidth = valueAxis.ticks.maxOfOrNull { measureLabelWidth(compactNumber(it)) } ?: 0f
+    val secondaryTickWidth =
+        secondaryAxis?.ticks?.maxOfOrNull { measureLabelWidth(compactNumber(it)) } ?: 0f
+    val categories = preview.marks.distinctBy { it.xKey }
+    val categoryExtent =
+        if (horizontalBars) categories.maxOfOrNull { measureLabelWidth(it.xLabel) } ?: 0f else 0f
+    val edgeCategory =
+        if (horizontalBars) {
+            null
+        } else if (preview.chartType == ChartType.Scatter) {
+            preview.marks.maxByOrNull { it.xValue ?: Double.NEGATIVE_INFINITY }
+        } else {
+            categories.lastOrNull()
+        }
+    val lastCategoryWidth = edgeCategory?.let { measureLabelWidth(it.xLabel) } ?: 0f
+    return chartPlotInsetsFor(
+        horizontal = horizontalBars,
+        hasSecondaryAxis = secondaryAxis != null,
+        categoryExtent = categoryExtent,
+        valueTickWidth = valueTickWidth,
+        secondaryTickWidth = secondaryTickWidth,
+        lastCategoryWidth = lastCategoryWidth,
+        lineHeight = lineHeight,
+        gapPx = gapPx,
+        minGutter = minGutter,
+        maxGutter = maxGutter,
+        clearance = clearance,
+    )
+}
+
+internal fun chartPlotInsetsFor(
+    horizontal: Boolean,
+    hasSecondaryAxis: Boolean,
+    categoryExtent: Float,
+    valueTickWidth: Float,
+    secondaryTickWidth: Float,
+    lastCategoryWidth: Float,
+    lineHeight: Float,
+    gapPx: Float,
+    minGutter: Float,
+    maxGutter: Float,
+    clearance: PlotClearance,
+): PlotInsets {
+    val bottom = lineHeight + gapPx * 2f
+    val top =
+        if (horizontal && hasSecondaryAxis) lineHeight + gapPx * 2f else lineHeight / 2f + gapPx
+    if (horizontal) {
+        val edgeTickWidth = max(valueTickWidth, secondaryTickWidth)
+        return PlotInsets(
+            left =
+                max(categoryExtent + gapPx * 2f, edgeTickWidth / 2f + gapPx)
+                    .coerceIn(minGutter, maxGutter),
+            top = max(top, clearance.top),
+            right = max(28f, edgeTickWidth / 2f + gapPx),
+            bottom = max(bottom, clearance.bottom),
+        )
+    }
+    val defaultRight = max(28f, lastCategoryWidth / 2f + gapPx).coerceAtMost(maxGutter)
+    val right =
+        if (hasSecondaryAxis) {
+            max(defaultRight, secondaryTickWidth + gapPx * 2f).coerceIn(minGutter, maxGutter)
+        } else {
+            defaultRight
+        }
+    return PlotInsets(
+        left = (valueTickWidth + gapPx * 2f).coerceIn(minGutter, maxGutter),
+        top = max(top, clearance.top),
+        right = right,
+        bottom = max(bottom, clearance.bottom),
+    )
+}
+
 internal fun niceValueAxis(
     rawMin: Double,
     rawMax: Double,
@@ -517,3 +605,29 @@ internal fun clampLabelX(x: Float, labelWidth: Float, minX: Float, canvasWidth: 
 
 internal fun tooltipAlignsToStart(pointerX: Float, plotCenterX: Float): Boolean =
     pointerX > plotCenterX
+
+internal const val BarLabelFontSizePx = 10
+internal const val BarLabelEmWidthFactor = 0.62f
+internal const val BarLabelHorizontalPadding = 4f
+internal const val BarLabelVerticalPadding = 2f
+
+internal fun estimatedBarLabelWidth(label: String): Float =
+    label.length * BarLabelFontSizePx * BarLabelEmWidthFactor
+
+internal fun estimatedBarLabelHeight(): Float = BarLabelFontSizePx.toFloat()
+
+internal fun barLabelCenter(
+    bounds: Rect,
+    labelWidth: Float,
+    labelHeight: Float,
+    horizontalBars: Boolean,
+): Offset? {
+    if (!labelWidth.isFinite() || !labelHeight.isFinite()) return null
+    if (labelWidth > bounds.width - BarLabelHorizontalPadding) return null
+    if (labelHeight > bounds.height - BarLabelVerticalPadding) return null
+    return if (horizontalBars) {
+        bounds.center
+    } else {
+        Offset(bounds.center.x, bounds.top + BarLabelVerticalPadding + labelHeight / 2f)
+    }
+}

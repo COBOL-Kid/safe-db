@@ -79,7 +79,7 @@ Tips:
 | `scripts/agent_gui.sh type "<text>"` | Type text into the focused window. |
 | `scripts/agent_gui.sh key <combo>...` | Press key(s), e.g. `ctrl+a`, `Return`, `Tab`, `Escape`. |
 | `scripts/agent_gui.sh logs [N]` | Tail the last `N` lines of `build/agent-gui/app.log` (default `50`). |
-| `scripts/agent_gui.sh reset` | Stop everything and delete `build/agent-gui/data` and `build/agent-gui/shots`. |
+| `scripts/agent_gui.sh reset` | Stop everything and delete `build/agent-gui/data` and `build/agent-gui/shots` (an overridden `SAFEDB_AGENT_GUI_DATA_DIR` outside those paths is left in place). |
 
 Environment overrides: `AGENT_GUI_DISPLAY` (default `:99`), `AGENT_GUI_SCREEN` (default `1600x1000`), and `SAFEDB_AGENT_GUI_DATA_DIR` (default `build/agent-gui/data`).
 

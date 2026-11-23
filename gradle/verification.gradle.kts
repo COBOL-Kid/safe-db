@@ -56,12 +56,22 @@ val testAssertConveyorSite =
         onlyIf { !System.getProperty("os.name").startsWith("Windows", ignoreCase = true) }
     }
 
+val testAgentGuiReset =
+    tasks.register<Exec>("testAgentGuiReset") {
+        group = "verification"
+        description = "Tests agent_gui.sh reset wipe boundaries and symlink safety."
+        workingDir = projectDir
+        commandLine("bash", "scripts/test_agent_gui_reset.sh")
+        onlyIf { !System.getProperty("os.name").startsWith("Windows", ignoreCase = true) }
+    }
+
 tasks.named("check") {
     dependsOn(
         "compileRenderKotlin",
         verifyUnitTestDiscovery,
         testDockerDatabaseHarness,
         testAssertConveyorSite,
+        testAgentGuiReset,
         "koverVerify",
     )
 }

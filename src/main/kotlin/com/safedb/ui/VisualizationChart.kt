@@ -50,9 +50,10 @@ import com.safedb.explore.VisualizationMark
 import com.safedb.explore.VisualizationPreview
 import com.safedb.ui.chart.CategoryLabelEntry
 import com.safedb.ui.chart.NiceValueAxis
-import com.safedb.ui.chart.PlotInsets
+import com.safedb.ui.chart.barLabelCenter
 import com.safedb.ui.chart.barValueLabelText
 import com.safedb.ui.chart.categoryLabelStep
+import com.safedb.ui.chart.chartPlotInsets
 import com.safedb.ui.chart.clampLabelX
 import com.safedb.ui.chart.compactNumber
 import com.safedb.ui.chart.contrastingBarLabelColor
@@ -61,8 +62,6 @@ import com.safedb.ui.chart.legendSeriesLabel
 import com.safedb.ui.chart.tooltipAlignsToStart
 import com.safedb.ui.chart.valueTickMaxWidth
 import com.safedb.ui.chart.visualizationGeometry
-import com.safedb.ui.chart.visualizationSecondaryValueAxis
-import com.safedb.ui.chart.visualizationValueAxis
 import com.safedb.ui.theme.DataMono
 import com.safedb.ui.theme.SafeDbTheme
 import kotlin.math.max
@@ -278,6 +277,11 @@ private fun PlotChart(
             }
         }
 
+    val labelLineHeight =
+        remember(labelStyle, textMeasurer) {
+            textMeasurer.measure("0", labelStyle).size.height.toFloat()
+        }
+
     // Gutters are derived from measured label sizes, not fixed guesses, so nothing is clipped.
     // Deliberately independent of the canvas size to avoid a measure/layout feedback loop.
     val insets =
@@ -286,66 +290,22 @@ private fun PlotChart(
             config,
             labelStyle,
             textMeasurer,
+            labelLineHeight,
             gapPx,
-            horizontalBars,
-            categoryLabelWidths,
             minGutter,
             maxGutter,
         ) {
-            val valueAxis = visualizationValueAxis(preview, config)
-            val secondaryAxis = visualizationSecondaryValueAxis(preview, config)
-            val ticks =
-                valueAxis.ticks.map { value ->
-                    textMeasurer.measure(compactNumber(value), labelStyle).size
-                }
-            val secondaryTicks =
-                secondaryAxis
-                    ?.ticks
-                    ?.map { value -> textMeasurer.measure(compactNumber(value), labelStyle).size }
-                    .orEmpty()
-            val tickWidth = ticks.maxOf { it.width }.toFloat()
-            val secondaryTickWidth = secondaryTicks.maxOfOrNull { it.width }?.toFloat() ?: 0f
-            val lineHeight = ticks.maxOf { it.height }.toFloat()
-            val bottom = lineHeight + gapPx * 2f
-            val top =
-                if (horizontalBars && secondaryAxis != null) {
-                    lineHeight + gapPx * 2f
-                } else {
-                    lineHeight / 2f + gapPx
-                }
-            // Scatter marks keep sample order, so the right edge belongs to the max X value.
-            val lastCategory =
-                if (preview.chartType == ChartType.Scatter)
-                    preview.marks.maxByOrNull { it.xValue ?: Double.NEGATIVE_INFINITY }
-                else categoryMarks.lastOrNull()
-            val lastCategoryWidth = lastCategory?.let { categoryLabelWidths[it.xKey] ?: 0f } ?: 0f
-            if (horizontalBars) {
-                val category = categoryLabelWidths.values.maxOrNull() ?: 0f
-                val edgeTickWidth = max(tickWidth, secondaryTickWidth)
-                PlotInsets(
-                    left =
-                        max(category + gapPx * 2f, edgeTickWidth / 2f + gapPx)
-                            .coerceIn(minGutter, maxGutter),
-                    top = top,
-                    right = max(28f, edgeTickWidth / 2f + gapPx),
-                    bottom = bottom,
-                )
-            } else {
-                val defaultRight = max(28f, lastCategoryWidth / 2f + gapPx).coerceAtMost(maxGutter)
-                val right =
-                    if (secondaryAxis != null) {
-                        max(defaultRight, secondaryTickWidth + gapPx * 2f)
-                            .coerceIn(minGutter, maxGutter)
-                    } else {
-                        defaultRight
-                    }
-                PlotInsets(
-                    left = (tickWidth + gapPx * 2f).coerceIn(minGutter, maxGutter),
-                    top = top,
-                    right = right,
-                    bottom = bottom,
-                )
-            }
+            chartPlotInsets(
+                preview = preview,
+                config = config,
+                lineHeight = labelLineHeight,
+                gapPx = gapPx,
+                minGutter = minGutter,
+                maxGutter = maxGutter,
+                measureLabelWidth = { text ->
+                    textMeasurer.measure(text, labelStyle).size.width.toFloat()
+                },
+            )
         }
     val geometry =
         remember(preview, config, size, insets) {
@@ -496,25 +456,26 @@ private fun PlotChart(
                                     style = Stroke(2f),
                                 )
                             if (config.showLabels) {
-                                val available = region.bounds.width - 4f
                                 val labelText = barValueLabelText(mark, config)
                                 val label =
                                     textMeasurer.measure(
                                         labelText,
                                         DataMono.copy(color = contrastingBarLabelColor(color)),
                                     )
-                                if (
-                                    label.size.width <= available &&
-                                        label.size.height <= region.bounds.height - 2f
-                                ) {
+                                val center =
+                                    barLabelCenter(
+                                        bounds = region.bounds,
+                                        labelWidth = label.size.width.toFloat(),
+                                        labelHeight = label.size.height.toFloat(),
+                                        horizontalBars = horizontalBars,
+                                    )
+                                if (center != null) {
                                     drawText(
                                         label,
                                         topLeft =
                                             Offset(
-                                                region.bounds.center.x - label.size.width / 2f,
-                                                if (horizontalBars)
-                                                    region.bounds.center.y - label.size.height / 2f
-                                                else region.bounds.top + 2f,
+                                                center.x - label.size.width / 2f,
+                                                center.y - label.size.height / 2f,
                                             ),
                                     )
                                 }
@@ -569,8 +530,7 @@ private fun PlotChart(
                 if (categoryMarks.isEmpty()) return@clipRect
                 if (horizontalBars) {
                     val bandHeight = plot.height / categoryMarks.size.coerceAtLeast(1)
-                    val lineHeight = textMeasurer.measure("0", labelStyle).size.height.toFloat()
-                    val step = categoryLabelStep(lineHeight + 2f, bandHeight)
+                    val step = categoryLabelStep(labelLineHeight + 2f, bandHeight)
                     val available = plot.left - gapPx * 2f
                     categoryMarks
                         .filterIndexed { index, _ -> index % step == 0 }

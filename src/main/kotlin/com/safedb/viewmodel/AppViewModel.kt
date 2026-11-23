@@ -126,14 +126,10 @@ class AppViewModel(
     fun setWindowActive(active: Boolean) {
         if (windowActive == active) return
         windowActive = active
-        if (!active) {
-            reachabilityJob?.cancel()
-            reachabilityJob = null
-            // Drop an in-flight probe so deactivation keeps the last Connected/Checking value.
-            ++reachabilityGeneration
-            return
-        }
-        activeReachabilityConnection?.let { launchReachabilityLoop(it) }
+        // Drop an in-flight probe so deactivation keeps the last Connected/Checking value.
+        val generation = advanceReachabilityGeneration()
+        if (!active) return
+        activeReachabilityConnection?.let { startReachabilityLoop(it, generation) }
     }
 
     private fun onConnectionCredentialsUpdated(connection: ConnectionDef) {
@@ -145,39 +141,38 @@ class AppViewModel(
     private fun markConnectionReachable(connectionId: String) {
         val active = activeReachabilityConnection ?: return
         if (active.id != connectionId) return
-        reachabilityJob?.cancel()
-        reachabilityJob = null
-        ++reachabilityGeneration
+        val generation = advanceReachabilityGeneration()
         _databaseReachability.value = DatabaseReachability.Connected
         if (windowActive) {
-            launchReachabilityLoop(active, initialDelay = ReachabilityPollInterval)
+            startReachabilityLoop(active, generation, initialDelay = ReachabilityPollInterval)
         }
     }
 
     fun refreshDatabaseReachability(connection: ConnectionDef?) {
-        reachabilityJob?.cancel()
-        reachabilityJob = null
+        val generation = advanceReachabilityGeneration()
         activeReachabilityConnection = connection
         if (connection == null) {
-            ++reachabilityGeneration
             _databaseReachability.value = DatabaseReachability.Disconnected
             return
         }
         // Enter Checking on connection switch instead of flashing Disconnected before probing.
         _databaseReachability.value = DatabaseReachability.Checking
-        if (!windowActive) {
-            ++reachabilityGeneration
-            return
+        if (windowActive) {
+            startReachabilityLoop(connection, generation)
         }
-        launchReachabilityLoop(connection)
     }
 
-    private fun launchReachabilityLoop(
+    private fun advanceReachabilityGeneration(): Int {
+        reachabilityJob?.cancel()
+        reachabilityJob = null
+        return ++reachabilityGeneration
+    }
+
+    private fun startReachabilityLoop(
         connection: ConnectionDef,
+        generation: Int,
         initialDelay: Duration = Duration.ZERO,
     ) {
-        reachabilityJob?.cancel()
-        val generation = ++reachabilityGeneration
         reachabilityJob = scope.launch {
             if (initialDelay > Duration.ZERO) {
                 delay(initialDelay)

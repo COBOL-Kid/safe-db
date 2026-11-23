@@ -15,20 +15,22 @@ import com.safedb.explore.pivotCellLineageKey
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
 import com.safedb.ui.chart.NiceValueAxis
-import com.safedb.ui.chart.PlotInsets
+import com.safedb.ui.chart.PlotClearance
+import com.safedb.ui.chart.barLabelCenter
 import com.safedb.ui.chart.barValueLabelText
 import com.safedb.ui.chart.categoryLabelIndices
+import com.safedb.ui.chart.chartPlotInsets
 import com.safedb.ui.chart.compactNumber
+import com.safedb.ui.chart.estimatedBarLabelHeight
+import com.safedb.ui.chart.estimatedBarLabelWidth
 import com.safedb.ui.chart.legendSeriesLabel
 import com.safedb.ui.chart.visualizationGeometry
-import com.safedb.ui.chart.visualizationSecondaryValueAxis
 import java.io.OutputStream
 import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlinx.serialization.Serializable
@@ -389,28 +391,15 @@ internal fun buildChartSection(
 
     val horizontal =
         chartType == ChartType.Bar && config.barOrientation == BarOrientation.Horizontal
-    val maxCategoryExtent =
-        preview.marks.distinctBy { it.xKey }.maxOfOrNull { estimatedLabelWidth(it.xLabel) } ?: 0f
-    val secondaryAxis = visualizationSecondaryValueAxis(preview, config)
-    val maxSecondaryTickWidth =
-        secondaryAxis?.ticks?.maxOfOrNull { estimatedLabelWidth(compactNumber(it)) } ?: 0f
-    val defaultInsets = PlotInsets()
     val insets =
-        if (horizontal) {
-            PlotInsets(
-                left = (maxCategoryExtent + 12f).coerceIn(44f, 180f),
-                top = if (secondaryAxis != null) 34f else defaultInsets.top,
-                right =
-                    if (secondaryAxis != null) max(28f, maxSecondaryTickWidth / 2f + 10f)
-                    else defaultInsets.right,
-            )
-        } else {
-            PlotInsets(
-                right =
-                    if (secondaryAxis != null) (maxSecondaryTickWidth + 16f).coerceIn(44f, 180f)
-                    else defaultInsets.right,
-            )
-        }
+        chartPlotInsets(
+            preview = preview,
+            config = config,
+            lineHeight = 12f,
+            gapPx = 6f,
+            clearance = PlotClearance(top = 20f, bottom = 22f),
+            measureLabelWidth = ::estimatedLabelWidth,
+        )
     val geometry = visualizationGeometry(preview, config, width.toFloat(), height.toFloat(), insets)
     val plot = geometry.plot
     val multiSeries = preview.series.size > 1
@@ -425,10 +414,14 @@ internal fun buildChartSection(
                 val mark = marksById.getValue(region.markId)
                 val seriesIdx = seriesIndex[mark.seriesKey] ?: 0
                 val labelText = if (config.showLabels) barValueLabelText(mark, config) else null
-                val fitsLabel =
-                    labelText != null &&
-                        estimatedBarLabelWidth(labelText) <= region.bounds.width - 4f &&
-                        region.bounds.height >= 16f
+                val labelCenter = labelText?.let {
+                    barLabelCenter(
+                        bounds = region.bounds,
+                        labelWidth = estimatedBarLabelWidth(it),
+                        labelHeight = estimatedBarLabelHeight(),
+                        horizontalBars = horizontal,
+                    )
+                }
                 HtmlChartShape(
                     kind = "rect",
                     x = region.bounds.left.rounded(),
@@ -438,15 +431,9 @@ internal fun buildChartSection(
                     series = seriesIdx,
                     tooltip = markTooltip(mark, multiSeries),
                     d = mark.sourceRowIndices.takeIf { it.isNotEmpty() },
-                    label = labelText.takeIf { fitsLabel },
-                    lx = if (fitsLabel) region.bounds.center.x.rounded() else null,
-                    ly =
-                        if (fitsLabel) {
-                            (if (horizontal) region.bounds.center.y else region.bounds.top + 10f)
-                                .rounded()
-                        } else {
-                            null
-                        },
+                    label = labelText.takeIf { labelCenter != null },
+                    lx = labelCenter?.x?.rounded(),
+                    ly = labelCenter?.y?.rounded(),
                 )
             }
         ChartType.Line -> {
@@ -704,8 +691,6 @@ private fun markTooltip(mark: VisualizationMark, multiSeries: Boolean): String =
 }
 
 private fun estimatedLabelWidth(label: String): Float = label.length * 7f + 4f
-
-private fun estimatedBarLabelWidth(label: String): Float = label.length * 6.2f
 
 private fun truncatedTickLabel(label: String): String =
     if (label.length > 24) label.take(23) + "…" else label
