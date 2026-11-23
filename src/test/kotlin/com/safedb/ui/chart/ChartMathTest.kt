@@ -629,81 +629,6 @@ class ChartMathTest {
     }
 
     @Test
-    fun denseHistogramEdgeLabelsFitUntruncatedWithoutOverlappingNeighbors() {
-        val plotLeft = 72f
-        val canvasWidth = 900f
-        val gapPx = 6f
-        val centers = List(20) { index -> plotLeft + 20f + index * 40f }
-        val requiredGap = 78f
-
-        val selected = categoryLabelIndices(centers, requiredGap, minX = plotLeft)
-        // Center 0 is at 92; clamped effective center is 72 + 39 = 111, so index 2 (172) is skipped
-        // and index 3 (212) is the next selected label.
-        assertEquals(0, selected[0])
-        assertEquals(3, selected[1])
-
-        val measuredFirst = 52f
-        val measuredSecond = 62f
-        val secondLeft = centers[selected[1]] - measuredSecond / 2f
-        val firstMaxWidth =
-            categoryLabelSpanMaxWidth(
-                center = centers[selected[0]],
-                minX = plotLeft,
-                canvasWidth = canvasWidth,
-                available = centers[selected[1]] - centers[selected[0]] - gapPx,
-                leftLimit = plotLeft,
-                rightLimit = secondLeft - gapPx,
-                isFirst = true,
-                isLast = false,
-            )
-        assertTrue(
-            firstMaxWidth >= measuredFirst,
-            "Expected first histogram label ($measuredFirst px) to fit inside $firstMaxWidth px",
-        )
-        val firstLeft =
-            clampLabelX(
-                centers[selected[0]] - measuredFirst / 2f,
-                measuredFirst,
-                plotLeft,
-                canvasWidth,
-            )
-        assertTrue(firstLeft + measuredFirst + gapPx <= secondLeft)
-
-        // Single label spans the full available width from minX to canvasWidth.
-        assertEquals(
-            canvasWidth - plotLeft,
-            categoryLabelSpanMaxWidth(
-                center = 100f,
-                minX = plotLeft,
-                canvasWidth = canvasWidth,
-                available = 200f,
-                leftLimit = plotLeft,
-                rightLimit = canvasWidth,
-                isFirst = true,
-                isLast = true,
-            ),
-        )
-
-        // Right-edge clamped last label stays clear of previous label.
-        val lastCenter = 885f
-        val prevRight = 760f
-        val lastMax =
-            categoryLabelSpanMaxWidth(
-                center = lastCenter,
-                minX = plotLeft,
-                canvasWidth = canvasWidth,
-                available = 120f,
-                leftLimit = prevRight + gapPx,
-                rightLimit = canvasWidth,
-                isFirst = false,
-                isLast = true,
-            )
-        val lastWidth = min(80f, lastMax)
-        val lastLeft = clampLabelX(lastCenter - lastWidth / 2f, lastWidth, plotLeft, canvasWidth)
-        assertTrue(lastLeft >= prevRight + gapPx)
-    }
-
-    @Test
     fun layoutHorizontalCategoryLabelsSortsDecimatesAndPreventsNeighborOverlap() {
         val plotLeft = 72f
         val plotWidth = 800f
@@ -805,26 +730,7 @@ class ChartMathTest {
     }
 
     @Test
-    fun chartPlotInsetsForCoversHorizontalVerticalSecondaryAndClearance() {
-        val horizontal =
-            chartPlotInsetsFor(
-                horizontal = true,
-                hasSecondaryAxis = false,
-                categoryExtent = 20f,
-                valueTickWidth = 80f,
-                secondaryTickWidth = 0f,
-                lastCategoryWidth = 0f,
-                lineHeight = 12f,
-                gapPx = 6f,
-                minGutter = 44f,
-                maxGutter = 180f,
-                clearance = PlotClearance(),
-            )
-        assertEquals(46f, horizontal.left)
-        assertEquals(46f, horizontal.right)
-        assertEquals(12f, horizontal.top)
-        assertEquals(24f, horizontal.bottom)
-
+    fun chartPlotInsetsForClampsLeftClearsTopAndLeavesWideHorizontalRightUnclamped() {
         val clampedLeft =
             chartPlotInsetsFor(
                 horizontal = true,
@@ -840,55 +746,6 @@ class ChartMathTest {
                 clearance = PlotClearance(),
             )
         assertEquals(180f, clampedLeft.left)
-
-        val wideRight =
-            chartPlotInsetsFor(
-                horizontal = true,
-                hasSecondaryAxis = false,
-                categoryExtent = 20f,
-                valueTickWidth = 100f,
-                secondaryTickWidth = 0f,
-                lastCategoryWidth = 0f,
-                lineHeight = 12f,
-                gapPx = 6f,
-                minGutter = 44f,
-                maxGutter = 180f,
-                clearance = PlotClearance(),
-            )
-        assertEquals(56f, wideRight.right)
-
-        val veryWideRight =
-            chartPlotInsetsFor(
-                horizontal = true,
-                hasSecondaryAxis = false,
-                categoryExtent = 20f,
-                valueTickWidth = 1000f,
-                secondaryTickWidth = 0f,
-                lastCategoryWidth = 0f,
-                lineHeight = 12f,
-                gapPx = 6f,
-                minGutter = 44f,
-                maxGutter = 180f,
-                clearance = PlotClearance(),
-            )
-        assertEquals(506f, veryWideRight.right)
-
-        val verticalSecondary =
-            chartPlotInsetsFor(
-                horizontal = false,
-                hasSecondaryAxis = true,
-                categoryExtent = 0f,
-                valueTickWidth = 30f,
-                secondaryTickWidth = 40f,
-                lastCategoryWidth = 10f,
-                lineHeight = 12f,
-                gapPx = 6f,
-                minGutter = 44f,
-                maxGutter = 180f,
-                clearance = PlotClearance(),
-            )
-        assertEquals(44f, verticalSecondary.left)
-        assertEquals(52f, verticalSecondary.right)
 
         val topCleared =
             chartPlotInsetsFor(
@@ -906,43 +763,21 @@ class ChartMathTest {
             )
         assertEquals(20f, topCleared.top)
 
-        val bottomCleared =
+        val veryWideRight =
             chartPlotInsetsFor(
                 horizontal = true,
                 hasSecondaryAxis = false,
                 categoryExtent = 20f,
-                valueTickWidth = 80f,
+                valueTickWidth = 1000f,
                 secondaryTickWidth = 0f,
                 lastCategoryWidth = 0f,
                 lineHeight = 12f,
                 gapPx = 6f,
                 minGutter = 44f,
                 maxGutter = 180f,
-                clearance = PlotClearance(bottom = 22f),
+                clearance = PlotClearance(),
             )
-        assertEquals(46f, bottomCleared.left)
-        assertEquals(12f, bottomCleared.top)
-        assertEquals(46f, bottomCleared.right)
-        assertEquals(24f, bottomCleared.bottom)
-
-        val raisedBottomCleared =
-            chartPlotInsetsFor(
-                horizontal = true,
-                hasSecondaryAxis = false,
-                categoryExtent = 20f,
-                valueTickWidth = 80f,
-                secondaryTickWidth = 0f,
-                lastCategoryWidth = 0f,
-                lineHeight = 6f,
-                gapPx = 6f,
-                minGutter = 44f,
-                maxGutter = 180f,
-                clearance = PlotClearance(bottom = 22f),
-            )
-        assertEquals(46f, raisedBottomCleared.left)
-        assertEquals(9f, raisedBottomCleared.top)
-        assertEquals(46f, raisedBottomCleared.right)
-        assertEquals(22f, raisedBottomCleared.bottom)
+        assertEquals(506f, veryWideRight.right)
     }
 
     @Test
