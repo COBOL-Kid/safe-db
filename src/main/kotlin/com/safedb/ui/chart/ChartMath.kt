@@ -238,15 +238,15 @@ private fun stackedValueSpans(
 }
 
 private object BarPlacer {
-    const val HorizontalStackedTopInset = 0.15f
-    const val HorizontalStackedHeight = 0.7f
-    const val HorizontalGroupedTopInset = 0.15f
-    const val HorizontalGroupedSlotHeight = 0.7f
-    const val HorizontalGroupedBarHeight = 0.82f
-    const val VerticalStackedSideInset = 0.16f
-    const val VerticalGroupedLeftInset = 0.14f
-    const val VerticalGroupedWidthFactor = 0.72f
-    const val VerticalGroupedBarWidth = 0.86f
+    const val HORIZONTAL_STACKED_TOP_INSET = 0.15f
+    const val HORIZONTAL_STACKED_HEIGHT = 0.7f
+    const val HORIZONTAL_GROUPED_TOP_INSET = 0.15f
+    const val HORIZONTAL_GROUPED_SLOT_HEIGHT = 0.7f
+    const val HORIZONTAL_GROUPED_BAR_HEIGHT = 0.82f
+    const val VERTICAL_STACKED_SIDE_INSET = 0.16f
+    const val VERTICAL_GROUPED_LEFT_INSET = 0.14f
+    const val VERTICAL_GROUPED_WIDTH_FACTOR = 0.72f
+    const val VERTICAL_GROUPED_BAR_WIDTH = 0.86f
 
     fun place(
         horizontal: Boolean,
@@ -321,18 +321,21 @@ private object BarPlacer {
     ): Pair<Float, Float> {
         val bandStart = categoryOrigin + categoryIndex * band
         if (stacked && horizontal) {
-            val start = bandStart + band * HorizontalStackedTopInset
-            return start to (start + band * HorizontalStackedHeight)
+            val start = bandStart + band * HORIZONTAL_STACKED_TOP_INSET
+            return start to (start + band * HORIZONTAL_STACKED_HEIGHT)
         }
         if (stacked) {
-            val start = bandStart + band * VerticalStackedSideInset
-            val end = categoryOrigin + (categoryIndex + 1) * band - band * VerticalStackedSideInset
+            val start = bandStart + band * VERTICAL_STACKED_SIDE_INSET
+            val end =
+                categoryOrigin + (categoryIndex + 1) * band - band * VERTICAL_STACKED_SIDE_INSET
             return start to end
         }
-        val leadingInset = if (horizontal) HorizontalGroupedTopInset else VerticalGroupedLeftInset
+        val leadingInset =
+            if (horizontal) HORIZONTAL_GROUPED_TOP_INSET else VERTICAL_GROUPED_LEFT_INSET
         val slotFraction =
-            if (horizontal) HorizontalGroupedSlotHeight else VerticalGroupedWidthFactor
-        val barFraction = if (horizontal) HorizontalGroupedBarHeight else VerticalGroupedBarWidth
+            if (horizontal) HORIZONTAL_GROUPED_SLOT_HEIGHT else VERTICAL_GROUPED_WIDTH_FACTOR
+        val barFraction =
+            if (horizontal) HORIZONTAL_GROUPED_BAR_HEIGHT else VERTICAL_GROUPED_BAR_WIDTH
         val slot = band * slotFraction / markCount.coerceAtLeast(1)
         val start = bandStart + band * leadingInset + seriesIndex * slot
         return start to (start + slot * barFraction)
