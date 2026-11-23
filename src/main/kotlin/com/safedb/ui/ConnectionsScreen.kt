@@ -34,6 +34,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -63,16 +65,31 @@ fun ConnectionsScreen(
     onSelectConnection: (ConnectionDef) -> Unit = {},
     openNewConnectionForm: Boolean = false,
     onOpenNewConnectionFormConsumed: () -> Unit = {},
+    editConnectionId: String? = null,
+    onEditConnectionConsumed: () -> Unit = {},
     activeConnectionId: String? = null,
     defaultConnectionId: String? = null,
 ) {
     var showConnectionForm by remember { mutableStateOf(false) }
     var editingConnection by remember { mutableStateOf<ConnectionDef?>(null) }
+    val connections by viewModel.connections.collectAsState()
+    val loading by viewModel.loading.collectAsState()
     LaunchedEffect(openNewConnectionForm) {
         if (openNewConnectionForm) {
             showConnectionForm = true
             editingConnection = null
             onOpenNewConnectionFormConsumed()
+        }
+    }
+    LaunchedEffect(editConnectionId, connections, loading) {
+        val targetId = editConnectionId ?: return@LaunchedEffect
+        val target = connections.firstOrNull { it.id == targetId }
+        if (target != null) {
+            showConnectionForm = false
+            editingConnection = target
+            onEditConnectionConsumed()
+        } else if (!loading) {
+            onEditConnectionConsumed()
         }
     }
     ConnectionsScreenContent(
@@ -319,12 +336,12 @@ private fun ConnectionCard(
                     }
                 }
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     androidx.compose.material3.IconButton(
                         onClick = onEdit,
-                        modifier = Modifier.size(32.dp),
+                        modifier = Modifier.size(40.dp).pointerHoverIcon(PointerIcon.Hand),
                     ) {
                         Icon(
                             Icons.Filled.Settings,
@@ -335,7 +352,7 @@ private fun ConnectionCard(
                     }
                     DeleteIconButton(
                         onClick = onDelete,
-                        modifier = Modifier.size(32.dp),
+                        modifier = Modifier.size(40.dp),
                         iconModifier = Modifier.size(18.dp),
                     )
                 }

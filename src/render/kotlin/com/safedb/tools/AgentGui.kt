@@ -23,7 +23,7 @@ fun main(args: Array<String>) {
         System.err.println("safe-db agent-gui: ${error.message}")
         exitProcess(2)
     }
-    SecretsManager.initStore(envValue = "disabled")
+    SecretsManager.initMemoryStore()
     val dataDir =
         Path.of(
                 System.getenv("SAFEDB_AGENT_GUI_DATA_DIR")?.takeIf { it.isNotBlank() }

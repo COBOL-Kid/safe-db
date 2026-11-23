@@ -88,18 +88,35 @@ class AppState {
     private val _openNewConnectionForm = MutableStateFlow(false)
     val openNewConnectionForm: StateFlow<Boolean> = _openNewConnectionForm.asStateFlow()
 
+    private val _editConnectionId = MutableStateFlow<String?>(null)
+    val editConnectionId: StateFlow<String?> = _editConnectionId.asStateFlow()
+
     fun navigate(route: AppRoute) {
         _route.value = route
-        if (route != AppRoute.Connections) _openNewConnectionForm.value = false
+        if (route != AppRoute.Connections) {
+            _openNewConnectionForm.value = false
+            _editConnectionId.value = null
+        }
     }
 
     fun requestNewConnectionForm() {
+        _editConnectionId.value = null
         _openNewConnectionForm.value = true
         _route.value = AppRoute.Connections
     }
 
     fun consumeNewConnectionFormRequest() {
         _openNewConnectionForm.value = false
+    }
+
+    fun requestEditConnection(connectionId: String) {
+        _openNewConnectionForm.value = false
+        _editConnectionId.value = connectionId
+        _route.value = AppRoute.Connections
+    }
+
+    fun consumeEditConnectionRequest() {
+        _editConnectionId.value = null
     }
 
     internal fun setActiveConnection(

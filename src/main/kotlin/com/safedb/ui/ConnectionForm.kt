@@ -41,6 +41,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,7 +49,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -359,6 +364,14 @@ private fun MainConnectionFields(form: ConnectionFormState) {
 
 @Composable
 private fun PasswordField(form: ConnectionFormState) {
+    val passwordFocusRequester = remember { FocusRequester() }
+    var focusPasswordOnEnable by remember(form.connectionId) { mutableStateOf(false) }
+    LaunchedEffect(form.passwordChangeEnabled, focusPasswordOnEnable) {
+        if (form.passwordChangeEnabled && focusPasswordOnEnable) {
+            focusPasswordOnEnable = false
+            passwordFocusRequester.requestFocus()
+        }
+    }
     if (form.isEditing && !form.passwordChangeEnabled) {
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             OutlinedTextField(
@@ -369,7 +382,15 @@ private fun PasswordField(form: ConnectionFormState) {
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodyMedium,
                 label = { CompactFieldLabel("Password") },
-                trailingIcon = { PlainTextAction("Change", onClick = form::enablePasswordChange) },
+                trailingIcon = {
+                    PlainTextAction(
+                        "Change",
+                        onClick = {
+                            focusPasswordOnEnable = true
+                            form.enablePasswordChange()
+                        },
+                    )
+                },
             )
             if (form.credentialMaterialChanged()) {
                 Text(
@@ -384,7 +405,10 @@ private fun PasswordField(form: ConnectionFormState) {
             OutlinedTextField(
                 value = form.password,
                 onValueChange = form::updatePassword,
-                modifier = Modifier.fillMaxWidth().height(CompactFieldHeight),
+                modifier =
+                    Modifier.fillMaxWidth()
+                        .height(CompactFieldHeight)
+                        .focusRequester(passwordFocusRequester),
                 textStyle = MaterialTheme.typography.bodyMedium,
                 label = { CompactFieldLabel("Password") },
                 placeholder = { CompactFieldPlaceholder("Enter password") },
@@ -746,7 +770,9 @@ private fun PlainTextAction(
 ) {
     Row(
         modifier =
-            Modifier.clickable(onClick = onClick).padding(horizontal = 6.dp, vertical = 6.dp),
+            Modifier.pointerHoverIcon(PointerIcon.Hand)
+                .clickable(onClick = onClick)
+                .padding(horizontal = 8.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

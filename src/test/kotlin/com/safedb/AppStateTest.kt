@@ -114,6 +114,29 @@ class AppStateTest {
     }
 
     @Test
+    fun editConnectionRequestNavigatesToConnectionsAndClearsWhenConsumedOrSuperseded() {
+        val state = AppState()
+        state.requestEditConnection("c1")
+        assertEquals(AppRoute.Connections, state.route.value)
+        assertEquals("c1", state.editConnectionId.value)
+        assertEquals(false, state.openNewConnectionForm.value)
+
+        state.consumeEditConnectionRequest()
+        assertNull(state.editConnectionId.value)
+        assertEquals(AppRoute.Connections, state.route.value)
+
+        state.requestEditConnection("c2")
+        state.requestNewConnectionForm()
+        assertNull(state.editConnectionId.value)
+        assertEquals(true, state.openNewConnectionForm.value)
+
+        state.requestEditConnection("c3")
+        state.navigate(AppRoute.Home)
+        assertNull(state.editConnectionId.value)
+        assertEquals(AppRoute.Home, state.route.value)
+    }
+
+    @Test
     fun restoredQueryUsesFirstTableSchemaWithoutHistorySource() {
         val spec =
             QuerySpec(

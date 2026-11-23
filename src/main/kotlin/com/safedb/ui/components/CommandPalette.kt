@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -72,6 +73,7 @@ fun CommandPalette(
     appState: AppState,
     viewModel: AppViewModel,
     onConnectionSelected: (ConnectionDef) -> Unit,
+    onEditConnection: (ConnectionDef) -> Unit = {},
 ) {
     if (!open) return
 
@@ -196,6 +198,19 @@ fun CommandPalette(
                     icon = Icons.Filled.Link,
                 ) {
                     onConnectionSelected(connection)
+                    onDismiss()
+                },
+            )
+        }
+        for (connection in connections) {
+            add(
+                PaletteCommand(
+                    id = "edit-conn-${connection.id}",
+                    label = "Edit connection: ${connection.name}",
+                    hint = "${connection.dialect.displayName()} · ${connection.database}",
+                    icon = Icons.Filled.Settings,
+                ) {
+                    onEditConnection(connection)
                     onDismiss()
                 },
             )

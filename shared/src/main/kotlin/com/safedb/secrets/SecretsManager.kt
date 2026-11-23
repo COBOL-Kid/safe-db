@@ -82,6 +82,15 @@ object SecretsManager {
         activeLabel = labelFor(activeStore)
     }
 
+    fun initMemoryStore() {
+        storeReadCountForTest = 0
+        println(
+            "WARN: using in-memory credential store: credentials are held in process memory only",
+        )
+        activeStore = DisabledMemoryStore()
+        activeLabel = "memory"
+    }
+
     fun passwordForDefinition(def: ConnectionDef): Result<String> {
         val cacheKey = "${def.id}:${def.credentialFingerprint()}"
         CredentialSession.get(cacheKey)?.let {
@@ -135,12 +144,16 @@ object SecretsManager {
     fun lockCredentials() = CredentialSession.lockCredentials()
 
     fun passwordNotFoundMessage(): String =
-        if (activeLabel == "disabled") {
-            "Password not found for this connection because $ENV_BACKEND=disabled is " +
-                "overriding the persisted credential store. Unset $ENV_BACKEND so the " +
-                "saved password can be read; do not add the connection again."
-        } else {
-            "Password not found for this connection. Delete and add the connection again to store the password."
+        when (activeLabel) {
+            "disabled" ->
+                "Password not found for this connection because $ENV_BACKEND=disabled is " +
+                    "overriding the persisted credential store. Unset $ENV_BACKEND so the " +
+                    "saved password can be read; do not add the connection again."
+            "memory" ->
+                "Password not found for this connection because credentials are held in " +
+                    "memory only for this session. Edit the connection to re-enter the password."
+            else ->
+                "Password not found for this connection. Delete and add the connection again to store the password."
         }
 
     fun formatSaveCredentialError(err: Throwable): String {

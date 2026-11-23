@@ -1,7 +1,7 @@
 # Agent-driven GUI testing on Linux / WSL
 
 > [!WARNING]
-> **Dev-only and unsupported on Linux.** Production `safe-db` supports macOS and Windows only; [`Main.kt`](../src/main/kotlin/com/safedb/Main.kt) and [`DataDirectory.kt`](../shared/src/main/kotlin/com/safedb/platform/DataDirectory.kt) continue to reject Linux. The `runAgentGui` entry point lives in the `render` source set, which is never packaged into shipped artifacts, and disables the OS keychain backend in `AgentGui.kt` so credentials stay in process memory. Font rendering, Swing file choosers, and window chrome may differ slightly from macOS and Windows.
+> **Dev-only and unsupported on Linux.** Production `safe-db` supports macOS and Windows only; [`Main.kt`](../src/main/kotlin/com/safedb/Main.kt) and [`DataDirectory.kt`](../shared/src/main/kotlin/com/safedb/platform/DataDirectory.kt) continue to reject Linux. The `runAgentGui` entry point lives in the `render` source set, which is never packaged into shipped artifacts, and uses an in-memory credential store (`SecretsManager.initMemoryStore()`) rather than `SAFEDB_KEYCHAIN_BACKEND=disabled` so credentials stay in process memory. Font rendering, Swing file choosers, and window chrome may differ slightly from macOS and Windows.
 
 This workflow lets any CLI agent manually test the real Compose Desktop GUI on a Linux or WSL dev box using a headless virtual X display (`Xvfb`), a lightweight window manager (`openbox`), `xdotool` for input, and ImageMagick (`import`) for screenshots.
 
@@ -61,7 +61,7 @@ Tips:
 - Coordinates are absolute screen pixels (including the `openbox` title bar at the top of the window).
 - Click the center of elements read from the latest screenshot. Clicking on a text field's border or label can leave focus in the previously focused field.
 - Pasting a connection string and clicking **Apply** is the fastest way to fill the New Connection form.
-- The New Connection screen says "OS keychain", but in this dev-only mode `AgentGui.kt` disables the OS keychain backend so credentials stay in process memory.
+- The New Connection screen says "OS keychain", but in this dev-only mode `AgentGui.kt` uses an in-memory credential store (`SecretsManager.initMemoryStore()`) rather than `SAFEDB_KEYCHAIN_BACKEND=disabled`. Saved connections persist across restarts while passwords do not — after a restart, edit the connection (from the card gear or Command Palette `Edit connection: ...`) to re-enter its password.
 
 ## Script commands
 

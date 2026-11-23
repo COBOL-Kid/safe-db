@@ -104,6 +104,25 @@ class SecretsTest {
     }
 
     @Test
+    fun missingPasswordExplainsInMemorySessionStore() {
+        SecretsManager.initMemoryStore()
+        assertEquals("memory", SecretsManager.activeBackendLabel())
+
+        val def = connectionDef("missing-memory-password")
+        val result = SecretsManager.passwordForDefinition(def)
+        assertTrue(result.isFailure)
+        val message = result.exceptionOrNull()!!.message!!
+        assertTrue(message.contains("memory only for this session"))
+        assertTrue(message.contains("Edit the connection to re-enter the password"))
+        assertFalse(message.contains("SAFEDB_KEYCHAIN_BACKEND"))
+        assertFalse(message.contains("do not add the connection again"))
+
+        SecretsManager.savePasswordForDefinition(def, "in-memory-secret").getOrThrow()
+        CredentialSession.lockCredentials()
+        assertEquals("in-memory-secret", SecretsManager.passwordForDefinition(def).getOrThrow())
+    }
+
+    @Test
     fun linuxCannotSelectTheOsCredentialStore() {
         listOf("auto", "protected").forEach { backend ->
             val error =

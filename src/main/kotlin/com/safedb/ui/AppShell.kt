@@ -67,6 +67,7 @@ internal fun AppShellContent(
     val initialLoading by viewModel.initialLoading.collectAsState()
     val activeConnectionId by appState.activeConnectionId.collectAsState()
     val openNewConnectionForm by appState.openNewConnectionForm.collectAsState()
+    val editConnectionId by appState.editConnectionId.collectAsState()
     val schemaSelection by appState.schemaSelection.collectAsState()
     val settings by viewModel.settings.settings.collectAsState()
     val schemaHistoryError by viewModel.settings.schemaHistoryError.collectAsState()
@@ -142,6 +143,7 @@ internal fun AppShellContent(
         onConnectionSelected = { target ->
             selectConnection(target, thenNavigate = AppRoute.Builder)
         },
+        onEditConnection = { target -> appState.requestEditConnection(target.id) },
     )
 
     SettingsPanel(
@@ -187,6 +189,8 @@ internal fun AppShellContent(
                         viewModel = viewModel.connections,
                         openNewConnectionForm = openNewConnectionForm,
                         onOpenNewConnectionFormConsumed = appState::consumeNewConnectionFormRequest,
+                        editConnectionId = editConnectionId,
+                        onEditConnectionConsumed = appState::consumeEditConnectionRequest,
                         activeConnectionId = activeConnectionId,
                         defaultConnectionId = settings.defaultConnectionId,
                         onSelectConnection = { target -> selectConnection(target) },
