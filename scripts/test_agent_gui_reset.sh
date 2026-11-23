@@ -4,10 +4,48 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/safedb-agent-gui-reset-test.XXXXXX")"
-trap 'rm -rf "$TEST_ROOT"' EXIT
+SLEEP_PIDS=()
+cleanup_test() {
+  local pid
+  for pid in "${SLEEP_PIDS[@]}"; do
+    if [[ -n "$pid" ]] && builtin kill -0 "$pid" 2>/dev/null; then
+      builtin kill "$pid" 2>/dev/null || true
+    fi
+  done
+  for pid in "${SLEEP_PIDS[@]}"; do
+    builtin wait "$pid" 2>/dev/null || true
+  done
+  rm -rf "$TEST_ROOT"
+}
+trap cleanup_test EXIT
 
 # shellcheck source=scripts/agent_gui.sh
 source "$REPO_ROOT/scripts/agent_gui.sh"
+
+KILL_LOG="$TEST_ROOT/kill-args"
+: >"$KILL_LOG"
+
+# Record kill arguments and refuse pid 1 / process group -1. Delegates to the builtin.
+kill() {
+  local arg prev=""
+  for arg in "$@"; do
+    if [[ "$arg" == "1" || "$arg" == "-1" || "$arg" == "-- -1" ]]; then
+      fail "refusing to signal unsafe pid argument: $arg"
+    fi
+    if [[ "$prev" == "--" && "$arg" == "-1" ]]; then
+      fail "refusing to signal unsafe pid argument: -- -1"
+    fi
+    prev="$arg"
+  done
+  printf '%s\n' "$*" >>"$KILL_LOG"
+  builtin kill "$@"
+}
+
+# Point stop helpers at temp pid files before any stop call.
+XVFB_PID_FILE="$TEST_ROOT/xvfb.pid"
+OPENBOX_PID_FILE="$TEST_ROOT/openbox.pid"
+VNC_PID_FILE="$TEST_ROOT/vnc.pid"
+APP_PID_FILE="$TEST_ROOT/app.pid"
 
 fail() {
   echo "agent_gui reset regression failed: $*" >&2
@@ -42,6 +80,67 @@ setup_state() {
   printf 'data\n' >"$base/data/item.db"
   printf 'shot\n' >"$base/shots/screen.png"
   printf 'log\n' >"$base/app.log"
+}
+
+reset_kill_log() {
+  : >"$KILL_LOG"
+}
+
+assert_no_kill() {
+  if [[ -s "$KILL_LOG" ]]; then
+    fail "$1: expected no signal, got: $(<"$KILL_LOG")"
+  fi
+}
+
+wait_for_cmdline_token() {
+  local pid="$1"
+  local token="$2"
+  local i cmdline
+  for ((i = 0; i < 50; i++)); do
+    if [[ -r "/proc/$pid/cmdline" ]]; then
+      cmdline="$(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null || true)"
+      if [[ "$cmdline" == *"$token"* ]]; then
+        return 0
+      fi
+    fi
+    sleep 0.05
+  done
+  fail "cmdline for $pid did not contain '$token'"
+}
+
+start_sleep() {
+  local name="${1:-}"
+  if [[ -n "$name" ]]; then
+    (exec -a "$name" sleep 30) &
+  else
+    sleep 30 &
+  fi
+  LAST_SLEEP_PID=$!
+  SLEEP_PIDS+=("$LAST_SLEEP_PID")
+  if [[ -n "$name" ]]; then
+    wait_for_cmdline_token "$LAST_SLEEP_PID" "$name"
+  else
+    wait_for_cmdline_token "$LAST_SLEEP_PID" sleep
+  fi
+}
+
+assert_kill_targets_only() {
+  local allowed="$1"
+  local label="$2"
+  local line arg saw_allowed=false
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" ]] && continue
+    for arg in $line; do
+      if [[ "$arg" =~ ^[0-9]+$ ]]; then
+        [[ "$arg" == "$allowed" ]] || fail "$label: kill targeted unexpected pid '$arg': $line"
+        saw_allowed=true
+      elif [[ "$arg" =~ ^-[1-9][0-9]*$ ]]; then
+        [[ "$arg" == "-$allowed" ]] || fail "$label: kill targeted unexpected group '$arg': $line"
+        saw_allowed=true
+      fi
+    done
+  done <"$KILL_LOG"
+  [[ "$saw_allowed" == "true" ]] || fail "$label: expected a signal to pid $allowed"
 }
 
 # 1. Override equal to $state/data: data and shots removed, sibling app.log kept, no Not removing.
@@ -138,5 +237,54 @@ assert_exists "$c7/app.log"
 reset_body="$(declare -f cmd_reset)"
 assert_contains "$reset_body" "remove_agent_gui_reset_targets" "cmd_reset body"
 assert_not_contains "$reset_body" 'rm -rf "$DATA_DIR"' "cmd_reset body"
+
+# Kill boundary: pid 1 is not a signal target, even as a process group.
+reset_kill_log
+printf '1\n' >"$XVFB_PID_FILE"
+stop_pidfile "$XVFB_PID_FILE" Xvfb true
+assert_missing "$XVFB_PID_FILE"
+assert_no_kill "pid 1"
+[[ -d "/proc/$$" ]] || fail "test process is not alive"
+
+# Kill boundary: a live process whose cmdline lacks the expected token is not signaled.
+reset_kill_log
+start_sleep
+mismatch_pid="$LAST_SLEEP_PID"
+printf '%s\n' "$mismatch_pid" >"$XVFB_PID_FILE"
+if is_pid_running "$XVFB_PID_FILE" Xvfb; then
+  fail "mismatched cmdline reported running"
+fi
+printf '%s\n' "$mismatch_pid" >"$XVFB_PID_FILE"
+stop_pidfile "$XVFB_PID_FILE" Xvfb
+assert_no_kill "mismatched cmdline"
+builtin kill -0 "$mismatch_pid" || fail "mismatched sleep died"
+assert_missing "$XVFB_PID_FILE"
+
+# Kill boundary: a cmdline match may be signaled; an unrelated sleep in the same run is not.
+reset_kill_log
+start_sleep Xvfb
+matched_pid="$LAST_SLEEP_PID"
+start_sleep
+other_pid="$LAST_SLEEP_PID"
+printf '%s\n' "$matched_pid" >"$XVFB_PID_FILE"
+is_pid_running "$XVFB_PID_FILE" Xvfb || fail "Xvfb-named sleep was not running"
+stop_pidfile "$XVFB_PID_FILE" Xvfb
+for ((i = 0; i < 50; i++)); do
+  builtin kill -0 "$matched_pid" 2>/dev/null || break
+  sleep 0.1
+done
+if builtin kill -0 "$matched_pid" 2>/dev/null; then
+  fail "matched sleep still alive"
+fi
+assert_missing "$XVFB_PID_FILE"
+builtin kill -0 "$other_pid" || fail "unrelated sleep died"
+assert_kill_targets_only "$matched_pid" "matched cmdline"
+
+# Kill boundary: non-numeric pid text is removed and not signaled.
+reset_kill_log
+printf 'not-a-pid\n' >"$OPENBOX_PID_FILE"
+stop_pidfile "$OPENBOX_PID_FILE" openbox true
+assert_missing "$OPENBOX_PID_FILE"
+assert_no_kill "non-numeric pid"
 
 echo "agent_gui reset tests passed"

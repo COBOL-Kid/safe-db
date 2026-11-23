@@ -53,15 +53,30 @@ Environment:
 EOF
 }
 
+# Refuse a pid file that is not a live process whose cmdline contains the expected token.
+pid_identity_ok() {
+  local pid="$1"
+  local token="${2:-}"
+  [[ -n "$token" ]] || return 1
+  [[ "$pid" =~ ^[1-9][0-9]+$ ]] || return 1
+  local cmdline_file="/proc/${pid}/cmdline"
+  [[ -r "$cmdline_file" ]] || return 1
+  local cmdline
+  cmdline="$(tr '\0' ' ' <"$cmdline_file" 2>/dev/null)" || return 1
+  [[ -n "$cmdline" && "$cmdline" == *"$token"* ]]
+}
+
 is_pid_running() {
   local pid_file="$1"
-  if [[ -f "$pid_file" ]]; then
-    local pid
-    pid="$(<"$pid_file")"
-    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
-      return 0
-    fi
+  local token="${2:-}"
+  [[ -n "$token" ]] || return 1
+  [[ -f "$pid_file" ]] || return 1
+  local pid
+  pid="$(<"$pid_file")"
+  if pid_identity_ok "$pid" "$token"; then
+    return 0
   fi
+  rm -f -- "$pid_file"
   return 1
 }
 
@@ -98,39 +113,49 @@ is_group_alive() {
 
 stop_pidfile() {
   local pid_file="$1"
-  local kill_group="${2:-false}"
-  if [[ -f "$pid_file" ]]; then
-    local pid
-    pid="$(<"$pid_file")"
-    if [[ -n "$pid" ]]; then
-      if [[ "$kill_group" == "true" ]]; then
-        if is_group_alive "$pid"; then
-          kill -TERM -- "-$pid" 2>/dev/null || true
-          local i=0
-          while is_group_alive "$pid" && ((i < 20)); do
-            sleep 0.2
-            ((i += 1))
-          done
-          if is_group_alive "$pid"; then
-            kill -KILL -- "-$pid" 2>/dev/null || true
-          fi
-        fi
-      elif kill -0 "$pid" 2>/dev/null; then
-        pkill -TERM -P "$pid" 2>/dev/null || true
-        kill -TERM "$pid" 2>/dev/null || true
-        local i=0
-        while kill -0 "$pid" 2>/dev/null && ((i < 20)); do
-          sleep 0.2
-          ((i += 1))
-        done
-        if kill -0 "$pid" 2>/dev/null; then
-          pkill -KILL -P "$pid" 2>/dev/null || true
-          kill -KILL "$pid" 2>/dev/null || true
-        fi
+  local token="${2:-}"
+  local kill_group="${3:-false}"
+  [[ -n "$token" ]] || return 0
+  [[ -f "$pid_file" ]] || return 0
+  local pid
+  pid="$(<"$pid_file")"
+  if ! pid_identity_ok "$pid" "$token"; then
+    rm -f -- "$pid_file"
+    return 0
+  fi
+  local i=0
+  if [[ "$kill_group" == "true" ]]; then
+    if is_group_alive "$pid"; then
+      kill -TERM -- "-$pid" 2>/dev/null || true
+      while is_group_alive "$pid" && ((i < 20)); do
+        sleep 0.2
+        ((i += 1))
+      done
+      if is_group_alive "$pid"; then
+        kill -KILL -- "-$pid" 2>/dev/null || true
       fi
     fi
-    rm -f "$pid_file"
+  elif kill -0 "$pid" 2>/dev/null; then
+    pkill -TERM -P "$pid" 2>/dev/null || true
+    kill -TERM "$pid" 2>/dev/null || true
+    while kill -0 "$pid" 2>/dev/null && ((i < 20)); do
+      sleep 0.2
+      ((i += 1))
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+      pkill -KILL -P "$pid" 2>/dev/null || true
+      kill -KILL "$pid" 2>/dev/null || true
+    fi
   fi
+  # Keep the pid file when the matched process or its group is still alive.
+  if [[ "$kill_group" == "true" ]]; then
+    if is_group_alive "$pid" || kill -0 "$pid" 2>/dev/null; then
+      return 0
+    fi
+  elif kill -0 "$pid" 2>/dev/null; then
+    return 0
+  fi
+  rm -f -- "$pid_file"
 }
 
 cmd_up() {
@@ -151,17 +176,16 @@ cmd_up() {
   check_prereqs "$use_vnc"
   mkdir -p "$STATE_DIR" "$SHOTS_DIR" "$DATA_DIR"
 
-  if [[ "$foreground" == "true" ]]; then
-    trap 'trap - INT TERM; cmd_down; exit 0' INT TERM
-  fi
+  trap cmd_down EXIT
+  trap 'exit 1' INT TERM HUP
 
-  if ! is_pid_running "$XVFB_PID_FILE"; then
+  if ! is_pid_running "$XVFB_PID_FILE" Xvfb; then
     nohup Xvfb "$DISPLAY_NUM" -screen 0 "${SCREEN_RES}x24" -nolisten tcp -ac \
       >"$XVFB_LOG" 2>&1 &
     echo $! >"$XVFB_PID_FILE"
     local i=0
     until xdotool getdisplaygeometry >/dev/null 2>&1; do
-      if ! is_pid_running "$XVFB_PID_FILE"; then
+      if ! is_pid_running "$XVFB_PID_FILE" Xvfb; then
         echo "Xvfb exited unexpectedly. Log ($XVFB_LOG):" >&2
         cat "$XVFB_LOG" >&2 || true
         exit 1
@@ -169,26 +193,25 @@ cmd_up() {
       ((i += 1))
       if ((i >= 50)); then
         echo "Timed out waiting for Xvfb on $DISPLAY_NUM." >&2
-        stop_pidfile "$XVFB_PID_FILE"
         exit 1
       fi
       sleep 0.1
     done
   fi
 
-  if ! is_pid_running "$OPENBOX_PID_FILE"; then
+  if ! is_pid_running "$OPENBOX_PID_FILE" openbox; then
     nohup openbox >"$OPENBOX_LOG" 2>&1 &
     echo $! >"$OPENBOX_PID_FILE"
     sleep 0.3
   fi
 
-  if [[ "$use_vnc" == "true" ]] && ! is_pid_running "$VNC_PID_FILE"; then
+  if [[ "$use_vnc" == "true" ]] && ! is_pid_running "$VNC_PID_FILE" x11vnc; then
     nohup x11vnc -display "$DISPLAY_NUM" -localhost -forever -nopw -rfbport 5900 -shared \
       >"$VNC_LOG" 2>&1 &
     echo $! >"$VNC_PID_FILE"
   fi
 
-  if ! is_pid_running "$APP_PID_FILE"; then
+  if ! is_pid_running "$APP_PID_FILE" runAgentGui; then
     (
       cd "$ROOT"
       export SAFEDB_AGENT_GUI_DATA_DIR="$DATA_DIR"
@@ -204,14 +227,9 @@ cmd_up() {
     if [[ -n "$win_id" ]]; then
       break
     fi
-    if ! is_pid_running "$APP_PID_FILE"; then
+    if ! is_pid_running "$APP_PID_FILE" runAgentGui; then
       echo "Safe-DB failed to start. Last 40 lines of $APP_LOG:" >&2
       tail -n 40 "$APP_LOG" >&2 || true
-      if [[ "$foreground" == "true" ]]; then
-        cmd_down
-      else
-        stop_pidfile "$APP_PID_FILE" true
-      fi
       exit 1
     fi
     sleep 1
@@ -221,11 +239,6 @@ cmd_up() {
   if [[ -z "$win_id" ]]; then
     echo "Timed out after 120s waiting for Safe-DB window. Last 40 lines of $APP_LOG:" >&2
     tail -n 40 "$APP_LOG" >&2 || true
-    if [[ "$foreground" == "true" ]]; then
-      cmd_down
-    else
-      stop_pidfile "$APP_PID_FILE" true
-    fi
     exit 1
   fi
 
@@ -234,23 +247,24 @@ cmd_up() {
 
   echo "Agent GUI ready on DISPLAY=$DISPLAY_NUM ($SCREEN_RES), window=$win_id"
   echo "Data dir: $DATA_DIR"
-  if is_pid_running "$VNC_PID_FILE"; then
+  if is_pid_running "$VNC_PID_FILE" x11vnc; then
     echo "VNC listening on localhost:5900"
   fi
 
   if [[ "$foreground" == "true" ]]; then
-    while is_pid_running "$APP_PID_FILE"; do
+    while is_pid_running "$APP_PID_FILE" runAgentGui; do
       sleep 1
     done
-    cmd_down
+  else
+    trap - EXIT INT TERM HUP
   fi
 }
 
 cmd_down() {
-  stop_pidfile "$APP_PID_FILE" true
-  stop_pidfile "$VNC_PID_FILE"
-  stop_pidfile "$OPENBOX_PID_FILE"
-  stop_pidfile "$XVFB_PID_FILE"
+  stop_pidfile "$APP_PID_FILE" runAgentGui true
+  stop_pidfile "$VNC_PID_FILE" x11vnc
+  stop_pidfile "$OPENBOX_PID_FILE" openbox
+  stop_pidfile "$XVFB_PID_FILE" Xvfb
   echo "Agent GUI stopped."
 }
 
@@ -281,11 +295,16 @@ cmd_windows() {
 }
 
 cmd_status() {
-  local label file
-  for pair in "xvfb:$XVFB_PID_FILE" "openbox:$OPENBOX_PID_FILE" "x11vnc:$VNC_PID_FILE" "app:$APP_PID_FILE"; do
-    label="${pair%%:*}"
-    file="${pair#*:}"
-    if is_pid_running "$file"; then
+  local label file token spec
+  local specs=(
+    "xvfb|$XVFB_PID_FILE|Xvfb"
+    "openbox|$OPENBOX_PID_FILE|openbox"
+    "x11vnc|$VNC_PID_FILE|x11vnc"
+    "app|$APP_PID_FILE|runAgentGui"
+  )
+  for spec in "${specs[@]}"; do
+    IFS='|' read -r label file token <<<"$spec"
+    if is_pid_running "$file" "$token"; then
       echo "$label: running (pid $(<"$file"))"
     else
       echo "$label: stopped"
@@ -468,14 +487,8 @@ cmd_logs() {
 normalize_path() {
   local input="${1:-}"
   [[ -n "$input" ]] || return 1
-  if command -v realpath >/dev/null 2>&1; then
-    realpath -m -- "$input" 2>/dev/null && return 0
-  fi
-  [[ "$input" == /* ]] || return 1
-  case "$input" in
-    *..*) return 1 ;;
-  esac
-  printf '%s\n' "${input%/}"
+  command -v realpath >/dev/null 2>&1 || return 1
+  realpath -m -- "$input"
 }
 
 is_within() {
