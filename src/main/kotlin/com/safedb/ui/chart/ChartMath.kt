@@ -407,6 +407,8 @@ internal fun visualizationGeometry(
     )
 }
 
+internal const val LegendEntryLimit = 12
+
 internal fun legendSeriesLabel(
     series: VisualizationSeries,
     hasSecondaryAxis: Boolean,

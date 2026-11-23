@@ -14,15 +14,18 @@ import com.safedb.explore.displayColumnLabels
 import com.safedb.explore.pivotCellLineageKey
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
+import com.safedb.ui.chart.CategoryLabelEntry
+import com.safedb.ui.chart.LegendEntryLimit
 import com.safedb.ui.chart.NiceValueAxis
 import com.safedb.ui.chart.PlotClearance
 import com.safedb.ui.chart.barLabelCenter
 import com.safedb.ui.chart.barValueLabelText
-import com.safedb.ui.chart.categoryLabelIndices
+import com.safedb.ui.chart.categoryLabelStep
 import com.safedb.ui.chart.chartPlotInsets
 import com.safedb.ui.chart.compactNumber
 import com.safedb.ui.chart.estimatedBarLabelHeight
 import com.safedb.ui.chart.estimatedBarLabelWidth
+import com.safedb.ui.chart.layoutHorizontalCategoryLabels
 import com.safedb.ui.chart.legendSeriesLabel
 import com.safedb.ui.chart.visualizationGeometry
 import java.io.OutputStream
@@ -31,7 +34,6 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
@@ -504,21 +506,39 @@ internal fun buildChartSection(
         categories
             .mapNotNull { mark ->
                 geometry.categoryCenters[mark.xKey]?.let { center ->
-                    center to truncatedTickLabel(mark.xLabel)
+                    val label = truncatedTickLabel(mark.xLabel)
+                    CategoryLabelEntry(
+                        xKey = mark.xKey,
+                        text = label,
+                        center = center,
+                        naturalWidth = estimatedLabelWidth(label),
+                    )
                 }
             }
-            .sortedBy { it.first }
-    // Measure the truncated label that is actually rendered, and cap the gap like the in-app
-    // chart (VisualizationChart) so long labels thin the axis instead of emptying it.
-    val requiredGap =
-        if (horizontal) 16f
-        else min((centered.maxOfOrNull { estimatedLabelWidth(it.second) } ?: 0f) + 8f, 160f)
+            .sortedBy { it.center }
     val categoryTicks =
-        categoryLabelIndices(centered.map { it.first }, requiredGap).map { index ->
-            HtmlAxisTick(pos = centered[index].first.rounded(), label = centered[index].second)
+        if (horizontal) {
+            val band = plot.height / centered.size.coerceAtLeast(1)
+            val step = categoryLabelStep(centered.maxOfOrNull { it.naturalWidth } ?: 0f, band)
+            centered
+                .filterIndexed { index, _ -> index % step == 0 }
+                .map { entry -> HtmlAxisTick(pos = entry.center.rounded(), label = entry.text) }
+        } else {
+            layoutHorizontalCategoryLabels(
+                    entries = centered,
+                    plotLeft = plot.left,
+                    plotWidth = plot.width,
+                    canvasWidth = width.toFloat(),
+                    gapPx = 6f,
+                    measureFitted = { text, _ -> estimatedLabelWidth(text) },
+                    measuredWidth = { it },
+                )
+                .map { placed ->
+                    HtmlAxisTick(pos = placed.entry.center.rounded(), label = placed.entry.text)
+                }
         }
     val secondaryValueTicks = geometry.secondaryValueAxis?.let(::axisTicks).orEmpty()
-    val shownLegend = if (multiSeries) preview.series.take(12) else emptyList()
+    val shownLegend = if (multiSeries) preview.series.take(LegendEntryLimit) else emptyList()
     return HtmlChartSection(
         title = preview.title,
         width = width,

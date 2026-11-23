@@ -49,6 +49,7 @@ import com.safedb.explore.VisualizationConfig
 import com.safedb.explore.VisualizationMark
 import com.safedb.explore.VisualizationPreview
 import com.safedb.ui.chart.CategoryLabelEntry
+import com.safedb.ui.chart.LegendEntryLimit
 import com.safedb.ui.chart.NiceValueAxis
 import com.safedb.ui.chart.barLabelCenter
 import com.safedb.ui.chart.barValueLabelText
@@ -65,8 +66,6 @@ import com.safedb.ui.chart.visualizationGeometry
 import com.safedb.ui.theme.DataMono
 import com.safedb.ui.theme.SafeDbTheme
 import kotlin.math.max
-
-private const val LegendEntryLimit = 12
 
 private enum class ValueAxisSide {
     Left,

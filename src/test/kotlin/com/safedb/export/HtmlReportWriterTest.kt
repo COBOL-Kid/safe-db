@@ -27,6 +27,9 @@ import com.safedb.model.ResultCell
 import com.safedb.model.ResultColumn
 import com.safedb.model.TableRef
 import com.safedb.ui.chart.BarLabelFontSizePx
+import com.safedb.ui.chart.LegendEntryLimit
+import com.safedb.ui.chart.categoryLabelIndices
+import com.safedb.ui.chart.categoryLabelStep
 import com.safedb.ui.chart.contrastingBarLabelColor
 import com.safedb.ui.chart.toCssHex
 import java.io.ByteArrayOutputStream
@@ -426,6 +429,73 @@ class HtmlReportWriterTest {
         // The gap is measured on the truncated label and capped, so no tick is dropped.
         assertEquals(4, chart.categoryTicks.size)
         assertTrue(chart.categoryTicks.all { it.label.length == 24 && it.label.endsWith("…") })
+    }
+
+    @Test
+    fun horizontalCategoryTicksFollowLabelStepNotFixedGap() {
+        val labels = (0 until 8).map { index -> "c%02d%s".format(index, "x".repeat(21)) }
+        val sample =
+            QueryResult(
+                columns = listOf(ResultColumn("t0__status", "varchar")),
+                rows = labels.map { listOf(ResultCell.text(it)) },
+                rowCount = labels.size,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val config =
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("t0__status", "Status"),
+                values = listOf(VisualizationMeasure("count", MeasureFn.Count)),
+                barOrientation = BarOrientation.Horizontal,
+            )
+        val preview = applyVisualization(sample, config, session().baseSpec.tables)
+
+        val chart = buildChartSection(preview, config)
+
+        val orderedLabels = preview.marks.distinctBy { it.xKey }.map { it.xLabel }
+        val plotHeight = (chart.plot[3] - chart.plot[1]).toFloat()
+        val band = plotHeight / orderedLabels.size
+        val maxLabelWidth = orderedLabels.maxOf { it.length * 7f + 4f }
+        val step = categoryLabelStep(maxLabelWidth, band)
+        val stride = orderedLabels.indices.filter { it % step == 0 }
+        val centers =
+            orderedLabels.indices.map { index -> chart.plot[1].toFloat() + (index + 0.5f) * band }
+        assertTrue(step > 1, "Expected the shared label step to skip categories, was $step")
+        assertTrue(band > 16f, "Band must exceed the old 16px gap")
+        assertTrue(stride != categoryLabelIndices(centers, 16f))
+        assertEquals(stride.map { orderedLabels[it] }, chart.categoryTicks.map { it.label })
+    }
+
+    @Test
+    fun legendCapsAtSharedEntryLimit() {
+        val seriesLabels = (0 until 13).map { "s%02d".format(it) }
+        val sample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__status", "varchar"),
+                        ResultColumn("t0__region", "varchar"),
+                    ),
+                rows = seriesLabels.map { listOf(ResultCell.text("only"), ResultCell.text(it)) },
+                rowCount = seriesLabels.size,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val config =
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("t0__status", "Status"),
+                values = listOf(VisualizationMeasure("count", MeasureFn.Count)),
+                series = VisualizationField("t0__region", "Region"),
+            )
+        val preview = applyVisualization(sample, config, session().baseSpec.tables)
+
+        val chart = buildChartSection(preview, config)
+
+        assertEquals(13, preview.series.size)
+        assertEquals(LegendEntryLimit, chart.legend.size)
+        assertEquals(1, chart.legendMore)
     }
 
     @Test
