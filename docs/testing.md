@@ -1,6 +1,6 @@
 # Commands and verification
 
-`./gradlew check` is enough for most pull requests: desktop, `:shared`, and `:mcp` unit tests, `compileRenderKotlin`, test discovery, Docker harness orchestration, and Kover ratchets.
+`./gradlew check` is enough for most pull requests: desktop, `:shared`, and `:mcp` unit tests, `compileRenderKotlin`, test discovery, Docker harness orchestration, `testAgentGuiReset`, and Kover ratchets.
 
 Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less builds. `check` requires at least 406 desktop, 758 shared, and 251 MCP tests, with 92% desktop, 89% shared, and 93% MCP line-coverage floors. Inspect JUnit XML if discovery is uncertain. Shared kover ignores `integrationTest`, matching MCP, so the ratchet is the `check` unit report. The root Kover allowlist includes `com.safedb.launch.*` and `com.safedb.canvas.*`, and attributes split packages by source file (`CsvWriter.kt` in `com.safedb.export` and `SchemaRelationships.kt` in `com.safedb.schema` count under `:shared`, while desktop files in those packages count under desktop). Unknown split-package sourcefiles fail the ratchet.
 
@@ -8,8 +8,8 @@ Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less bui
 | --- | --- |
 | `./gradlew help` | Validate root Gradle configuration after build logic changes. |
 | `./gradlew run` | Start the graphical desktop app on macOS or Windows. |
-| `./gradlew runAgentGui` / `scripts/agent_gui.sh up` | Run the real GUI on Linux/WSL under Xvfb for agent-driven manual testing (dev-only). See [agent-gui.md](agent-gui.md). |
-| `./gradlew check` | Fast gate: desktop, shared, and mcp unit tests, `compileRenderKotlin`, discovery, Docker harness orchestration, and Kover ratchets. |
+| `scripts/agent_gui.sh up` / `./gradlew runAgentGui` | `scripts/agent_gui.sh up` is the harness that starts Xvfb and launches `./gradlew --no-daemon runAgentGui`. `./gradlew runAgentGui` is the unpackaged entry point that harness launches; it does not start Xvfb and uses the ambient `DISPLAY`. See [agent-gui.md](agent-gui.md). |
+| `./gradlew check` | Fast gate: desktop, shared, and mcp unit tests, `compileRenderKotlin`, discovery, Docker harness orchestration, `testAgentGuiReset`, and Kover ratchets. |
 | `./gradlew ktfmtCheck` | Kotlin format check (`ktfmtFormat` to rewrite). Included in `check`. |
 | `./gradlew qodanaScan` | JVM Community Qodana pass (`qodana.yaml`). Local static analysis; not labeled CI. |
 | `./gradlew check koverXmlReport koverVerify --rerun-tasks --no-build-cache` | Fresh unit-coverage proof for broad Kotlin/build changes. Shared and MCP kover both ignore `integrationTest`. |

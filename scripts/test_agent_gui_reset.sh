@@ -233,10 +233,49 @@ assert_exists "$c7/data/item.db"
 assert_exists "$c7/shots/screen.png"
 assert_exists "$c7/app.log"
 
-# Verify cmd_reset delegates to remove_agent_gui_reset_targets and does not rm $DATA_DIR directly.
-reset_body="$(declare -f cmd_reset)"
-assert_contains "$reset_body" "remove_agent_gui_reset_targets" "cmd_reset body"
-assert_not_contains "$reset_body" 'rm -rf "$DATA_DIR"' "cmd_reset body"
+# cmd_reset composition. Pid files stay absent so cmd_down does not signal.
+# STATE_DIR is a temp dir, never the real build/agent-gui tree.
+clear_reset_pid_files() {
+  rm -f -- "$XVFB_PID_FILE" "$OPENBOX_PID_FILE" "$VNC_PID_FILE" "$APP_PID_FILE"
+}
+
+# Outside override: managed data and shots are wiped; the outside marker is kept.
+clear_reset_pid_files
+reset_kill_log
+r_out="$TEST_ROOT/reset-outside"
+r_out_data="$TEST_ROOT/reset-outside-data"
+setup_state "$r_out"
+mkdir -p "$r_out_data"
+printf 'keep\n' >"$r_out_data/marker"
+STATE_DIR="$r_out"
+SHOTS_DIR="$r_out/shots"
+DATA_DIR="$r_out_data"
+out="$(cmd_reset)"
+assert_missing "$r_out/data"
+assert_missing "$r_out/shots"
+assert_exists "$r_out_data/marker"
+assert_contains "$out" "Not removing" "cmd_reset outside"
+assert_contains "$out" "$r_out_data" "cmd_reset outside path"
+assert_no_kill "cmd_reset outside"
+
+# state/data is a symlink to an outside directory: unlink the symlink, keep the target.
+clear_reset_pid_files
+reset_kill_log
+r_link="$TEST_ROOT/reset-symlink"
+r_link_target="$TEST_ROOT/reset-symlink-target"
+mkdir -p "$r_link/shots" "$r_link_target"
+printf 'shot\n' >"$r_link/shots/screen.png"
+printf 'keep\n' >"$r_link_target/marker"
+ln -s "$r_link_target" "$r_link/data"
+STATE_DIR="$r_link"
+SHOTS_DIR="$r_link/shots"
+DATA_DIR="$r_link/data"
+out="$(cmd_reset)"
+assert_missing "$r_link/data"
+assert_missing "$r_link/shots"
+assert_exists "$r_link_target/marker"
+assert_not_contains "$out" "Not removing" "cmd_reset symlink"
+assert_no_kill "cmd_reset symlink"
 
 # Kill boundary: pid 1 is not a signal target, even as a process group.
 reset_kill_log

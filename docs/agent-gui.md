@@ -31,7 +31,7 @@ sudo apt install xvfb xdotool imagemagick openbox x11vnc
    # or keep the command in the foreground (for runners that reap background children on exit):
    scripts/agent_gui.sh up --foreground
    ```
-   This starts `Xvfb :99` (`1600x1000x24`), `openbox`, optional `x11vnc`, and `./gradlew --no-daemon runAgentGui`, then waits for the `Safe-DB` window, moves it to `(0, 0)`, and focuses it. Because `-Dsun.java2d.uiScale=1` is set on `runAgentGui`, screenshot pixel coordinates match `click X Y` coordinates 1:1. With `--foreground`, `up` blocks until the app exits and runs `down` on `SIGINT`/`SIGTERM`.
+   This starts `Xvfb :99` (`1600x1000x24`), `openbox`, optional `x11vnc`, and `./gradlew --no-daemon runAgentGui`, then waits for the `Safe-DB` window, moves it to `(0, 0)`, and focuses it. Because `-Dsun.java2d.uiScale=1` is set on `runAgentGui`, screenshot pixel coordinates match `click X Y` coordinates 1:1. A failed `up` and a foreground exit run `down` through the `EXIT` trap, including `HUP`, not only `SIGINT`/`SIGTERM`. A successful background `up` disarms that trap before it returns.
 
    App state persists in `build/agent-gui/data` across runs so saved connections survive restarts (override with `SAFEDB_AGENT_GUI_DATA_DIR`).
 
@@ -67,7 +67,7 @@ Tips:
 
 | Command | Purpose |
 | --- | --- |
-| `scripts/agent_gui.sh up [--vnc] [--foreground]` | Start `Xvfb`, `openbox`, optional `x11vnc`, and `runAgentGui` (`--foreground` stays attached until exit and cleans up on `SIGINT`/`SIGTERM`). |
+| `scripts/agent_gui.sh up [--vnc] [--foreground]` | Start `Xvfb`, `openbox`, optional `x11vnc`, and `runAgentGui`. A failed `up` and a foreground exit run `down` through the `EXIT` trap, including `HUP`. A successful background `up` disarms that trap before returning. |
 | `scripts/agent_gui.sh down` | Stop the app, VNC, `openbox`, and `Xvfb` (idempotent). |
 | `scripts/agent_gui.sh status` | Show process status and visible windows. |
 | `scripts/agent_gui.sh screenshot [name] [--window]` | Save root or active-window PNG under `build/agent-gui/shots/` and print its path. |
