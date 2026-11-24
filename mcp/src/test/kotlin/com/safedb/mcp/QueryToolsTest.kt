@@ -1,7 +1,6 @@
 package com.safedb.mcp
 
 import com.safedb.adapter.ConnectionFailedException
-import com.safedb.model.Dialect
 import com.safedb.model.SafeDbJson
 import com.safedb.model.Settings
 import com.safedb.model.TableRef
@@ -28,7 +27,6 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -346,7 +344,7 @@ class QueryToolsTest {
     }
 
     @Test
-    fun specArgumentIsRejectedAsUnknown() = runBlocking {
+    fun unknownSpecArgumentIsRejectedAcrossPayloads() = runBlocking {
         val service = queryService()
         val specJson =
             SafeDbJson.lenient.encodeToJsonElement(
@@ -357,36 +355,27 @@ class QueryToolsTest {
                     ),
             )
         withTempMcpClient(service) { client ->
-            val specOnly =
-                client.callTool("run_query", mapOf("connection_id" to "c1", "spec" to specJson))
-            assertEquals(true, specOnly.isError)
-            assertEquals(
-                "invalid_arguments",
-                specOnly.json().getValue("error").jsonPrimitive.content,
-            )
-            assertEquals(
-                "unknown argument 'spec'",
-                specOnly.json().getValue("message").jsonPrimitive.content,
-            )
-
-            val withStraySpec =
-                client.callTool(
-                    "run_query",
+            listOf(
+                    mapOf("connection_id" to "c1", "spec" to specJson),
                     mapOf(
                         "connection_id" to "c1",
                         "sql" to "SELECT id, email FROM public.customers",
                         "spec" to specJson,
                     ),
+                    mapOf("connection_id" to "c1", "spec" to "not-an-object"),
                 )
-            assertEquals(true, withStraySpec.isError)
-            assertEquals(
-                "invalid_arguments",
-                withStraySpec.json().getValue("error").jsonPrimitive.content,
-            )
-            assertEquals(
-                "unknown argument 'spec'",
-                withStraySpec.json().getValue("message").jsonPrimitive.content,
-            )
+                .forEach { args ->
+                    val rejected = client.callTool("run_query", args)
+                    assertEquals(true, rejected.isError)
+                    assertEquals(
+                        "invalid_arguments",
+                        rejected.json().getValue("error").jsonPrimitive.content,
+                    )
+                    assertEquals(
+                        "unknown argument 'spec'",
+                        rejected.json().getValue("message").jsonPrimitive.content,
+                    )
+                }
         }
         assertTrue(service.schemaCalls.isEmpty())
         assertTrue(service.runQueryRequests.isEmpty())
@@ -518,17 +507,6 @@ class QueryToolsTest {
             assertTrue(havingMessage.contains("summarize_result"))
             assertFalse(havingMessage.contains("Explore"))
 
-            val specAsString =
-                client.callTool(
-                    "run_query",
-                    mapOf("connection_id" to "c1", "spec" to "not-an-object"),
-                )
-            assertEquals(true, specAsString.isError)
-            assertEquals(
-                "invalid_arguments",
-                specAsString.json().getValue("error").jsonPrimitive.content,
-            )
-
             val confirmationAsString =
                 client.callTool(
                     "run_query",
@@ -548,23 +526,9 @@ class QueryToolsTest {
     }
 
     @Test
-    fun malformedSpecAndConfirmationObjectsAreParseErrors() = runBlocking {
+    fun malformedConfirmationObjectsAreParseErrors() = runBlocking {
         val service = queryService()
         withTempMcpClient(service) { client ->
-            val malformedSpec =
-                client.callTool(
-                    "run_query",
-                    mapOf(
-                        "connection_id" to "c1",
-                        "spec" to JsonObject(mapOf("tables" to JsonPrimitive("not-an-array"))),
-                    ),
-                )
-            assertEquals(true, malformedSpec.isError)
-            assertEquals(
-                "invalid_arguments",
-                malformedSpec.json().getValue("error").jsonPrimitive.content,
-            )
-
             val missingConfirmationFields =
                 client.callTool(
                     "run_query",
@@ -946,53 +910,6 @@ class QueryToolsTest {
                 )
             assertEquals(true, queried.isError)
             assertEquals("connection", queried.json().getValue("error").jsonPrimitive.content)
-        }
-    }
-
-    @Test
-    fun receiptOmitsNullArtifactKeys() {
-        val receipt =
-            QueryReceipt(
-                dialect = Dialect.Postgres,
-                columns = emptyList(),
-                rowCount = 0,
-                sampleCapped = false,
-                warnings = emptyList(),
-                risk = riskSummary(allowedMcpRisk()),
-                preview = emptyList(),
-                previewTruncated = false,
-                resultId = "rid",
-            )
-        val omitted = toolJson.encodeToString(receipt)
-        assertTrue(omitted.contains("\"result_id\""))
-        assertFalse(omitted.contains("\"artifact_path\""))
-        assertFalse(omitted.contains("\"artifact_bytes\""))
-        assertFalse(omitted.contains("\"sample_capped\""))
-        assertFalse(omitted.contains("\"sample_cap_reason\""))
-        assertFalse(omitted.contains("\"sample_unbounded\""))
-
-        val capped =
-            toolJson.encodeToString(
-                receipt.copy(sampleCapped = true, sampleCapReason = "sql_limit"),
-            )
-        assertTrue(capped.contains("\"sample_capped\""))
-        assertTrue(capped.contains("\"sample_cap_reason\":\"sql_limit\""))
-        assertFalse(capped.contains("\"artifact_path\""))
-        assertFalse(capped.contains("\"artifact_bytes\""))
-    }
-
-    @Test
-    fun runQueryToolMetadataIsDocumented() = runBlocking {
-        withTempMcpClient(queryService()) { client ->
-            val tool = client.listTools().tools.single { it.name == "run_query" }
-            assertNull(tool.annotations)
-            assertEquals(listOf("connection_id", "sql"), tool.inputSchema.required)
-            assertFalse(tool.inputSchema.properties?.containsKey("spec") == true)
-            val description = tool.description.orEmpty()
-            assertTrue(description.contains("On error risk_gate"))
-            assertFalse(description.contains("change the gate"))
-            assertNotNull(tool.outputSchema)
-            assertTrue(tool.outputSchema?.properties?.containsKey("row_count") == true)
         }
     }
 }

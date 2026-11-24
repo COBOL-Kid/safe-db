@@ -133,6 +133,14 @@ class SchemaTableResolveTest {
             assertEquals("table names must be schema.table or table", err.message())
         }
     }
+
+    @Test
+    fun unqualifiedTableLookupMatchesCaseInsensitively() {
+        val resolved = resolveUnqualifiedTable("CUSTOMERS", sampleMcpSchema().tables)
+        val table = assertIs<Arg.Ok<TableInfo>>(resolved).value
+        assertEquals("public", table.schema)
+        assertEquals("customers", table.name)
+    }
 }
 
 private fun table(schema: String, name: String): TableInfo =

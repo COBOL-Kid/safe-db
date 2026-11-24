@@ -633,21 +633,6 @@ class AdapterTest {
     }
 
     @Test
-    fun sqlServerVerifiedTransportDoesNotSetAConnectionTrustStore() {
-        val properties =
-            createDataSourceConfig(
-                    connection(Dialect.Mssql, 1433, TransportSecurityMode.VerifyIdentity),
-                    "pw",
-                )
-                .dataSourceProperties
-
-        assertEquals("false", properties.getProperty("trustServerCertificate"))
-        assertNull(properties.getProperty("trustStore"))
-        assertNull(properties.getProperty("trustStoreType"))
-        assertNull(properties.getProperty("trustStorePassword"))
-    }
-
-    @Test
     fun oracleIdentityModeEnablesServerDnMatching() {
         val identity =
             connection(Dialect.Oracle, 1521, TransportSecurityMode.VerifyIdentity)

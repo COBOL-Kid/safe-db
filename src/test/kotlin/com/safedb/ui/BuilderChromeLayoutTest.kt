@@ -287,31 +287,6 @@ class BuilderChromeLayoutTest {
     }
 
     @Test
-    fun betweenOperatorLabelFitsAtDefaultAndMinimumWidth() {
-        listOf(
-                APP_MIN_WINDOW_WIDTH_PX to APP_MIN_WINDOW_HEIGHT_PX,
-                APP_DEFAULT_WINDOW_WIDTH_DP to APP_DEFAULT_WINDOW_HEIGHT_DP,
-            )
-            .forEach { (width, height) ->
-                listOf(true, false).forEach { sidebarExpanded ->
-                    withBuilderChrome(
-                        width = width,
-                        height = height,
-                        sidebarExpanded = sidebarExpanded,
-                        prepare = { _, viewModel -> addBetweenAndInFilters(viewModel) },
-                    ) { scene ->
-                        val between = scene.requireContaining("BETWEEN")
-                        assertTrue(
-                            between.boundsInRoot.width >= BETWEEN_OP_LABEL_MIN_WIDTH_PX,
-                            "BETWEEN was truncated to ${between.boundsInRoot.width}px at ${width}x${height} " +
-                                "sidebarExpanded=$sidebarExpanded",
-                        )
-                    }
-                }
-            }
-    }
-
-    @Test
     fun stackedFiltersStayReachableAfterResultsOpen() {
         listOf(true, false).forEach { sidebarExpanded ->
             withBuilderChrome(

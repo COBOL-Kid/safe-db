@@ -1,6 +1,7 @@
 package com.safedb.query.sql
 
 import com.safedb.model.BindValue
+import com.safedb.model.ColumnInfo
 import com.safedb.model.Dialect
 import com.safedb.model.FilterNode
 import com.safedb.model.FilterOp
@@ -8,7 +9,10 @@ import com.safedb.model.GroupConnector
 import com.safedb.model.LiteralKind
 import com.safedb.model.Outcome
 import com.safedb.model.QuerySpec
+import com.safedb.model.Schema
+import com.safedb.model.TableInfo
 import com.safedb.query.DEFAULT_LIMIT
+import com.safedb.query.compileValidated
 import com.safedb.query.validateQuery
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -421,6 +425,18 @@ class SqlToSpecTest {
         val clamped = success("SELECT id FROM users LIMIT 2147483648")
         assertEquals(Int.MAX_VALUE, clamped.spec.limit)
         assertFalse(clamped.spec.uncapped)
+
+        for (dialect in Dialect.entries) {
+            val parsed =
+                assertIs<SqlParseResult.Success>(
+                    parseSqlToSpec("SELECT u.id FROM users u", dialect, schema, "public"),
+                )
+            val (validated, _) = validateQuery(parsed.spec, schema, emptyList(), dialect).unwrap()
+            val compiled = compileValidated(validated, dialect).unwrap().sql
+            assertFalse(compiled.contains("LIMIT"), compiled)
+            assertFalse(compiled.contains("TOP "), compiled)
+            assertFalse(compiled.contains("FETCH FIRST"), compiled)
+        }
     }
 
     @Test
@@ -439,6 +455,68 @@ class SqlToSpecTest {
         assertEquals("name", spec.groups.single().column)
         assertEquals("users", spec.groups.single().tableAlias)
         assertEquals("name", spec.sorts.single().column)
+    }
+
+    @Test
+    fun resolvesCaseInsensitiveFallbackAndRejectsAmbiguousOrInvalidResolutions() {
+        val isNullSpec = spec("SELECT id FROM users WHERE name IS NULL")
+        val isNullLeaf = assertIs<FilterNode.Leaf>(isNullSpec.filters.children.single()).spec
+        assertEquals(FilterOp.IsNull, isNullLeaf.op)
+        assertEquals(null, isNullLeaf.value)
+
+        val caseFallback = spec("SELECT U.ID FROM USERS U WHERE U.NAME = 'ada'")
+        assertEquals("id", caseFallback.columns.single().column)
+
+        val emptySchemaErr =
+            assertIs<SqlParseResult.Failure>(
+                parseSqlToSpec(
+                    "SELECT id FROM users",
+                    Dialect.Postgres,
+                    Schema(emptyList()),
+                    "public",
+                ),
+            )
+        assertTrue(emptySchemaErr.issues.single().message.isNotBlank())
+
+        val badDate =
+            assertIs<SqlParseResult.Failure>(
+                parseSqlToSpec(
+                    "SELECT id FROM users WHERE created_at = '2025-13-40'",
+                    Dialect.Postgres,
+                    schema,
+                    "public",
+                ),
+            )
+        assertEquals(SqlIssueCode.LiteralTypeMismatch, badDate.issues.single().code)
+
+        val ambiguousSchema =
+            Schema(
+                listOf(
+                    TableInfo(
+                        "public",
+                        "Items",
+                        listOf(ColumnInfo("id", "int", false)),
+                        emptyList(),
+                    ),
+                    TableInfo(
+                        "public",
+                        "ITEMS",
+                        listOf(ColumnInfo("id", "int", false)),
+                        emptyList(),
+                    ),
+                ),
+            )
+        val ambig =
+            assertIs<SqlParseResult.Failure>(
+                parseSqlToSpec("SELECT id FROM items", Dialect.Postgres, ambiguousSchema, "public"),
+            )
+        assertEquals(SqlIssueCode.UnknownTable, ambig.issues.single().code)
+
+        val unknownCol =
+            assertIs<SqlParseResult.Failure>(
+                parseSqlToSpec("SELECT missing_col FROM users", Dialect.Postgres, schema, "public"),
+            )
+        assertEquals(SqlIssueCode.UnknownColumn, unknownCol.issues.single().code)
     }
 }
 

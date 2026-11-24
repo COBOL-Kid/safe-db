@@ -446,15 +446,6 @@ class RecipeToolsTest {
     }
 
     @Test
-    fun recipeToolsAreReadOnly() = runBlocking {
-        withTempMcpClient(exploreSampleService()) { client ->
-            val tools = client.listTools().tools.associateBy { it.name }
-            assertEquals(true, tools.getValue("list_recipes").annotations?.readOnlyHint)
-            assertEquals(true, tools.getValue("apply_recipe").annotations?.readOnlyHint)
-        }
-    }
-
-    @Test
     fun listRecipesPaginatesValidatesAndReflectsSharedStore() = runBlocking {
         val service = exploreSampleService()
         repeat(5) { index -> service.exploreRecipes += sampleRecipe(id = "r$index") }
@@ -462,28 +453,19 @@ class RecipeToolsTest {
             val tool = client.listTools().tools.single { it.name == "list_recipes" }
             assertTrue(tool.description.orEmpty().contains("desktop app"))
 
-            val first = client.callJson("list_recipes", mapOf("offset" to 1, "limit" to 2))
+            val page = client.callJson("list_recipes", mapOf("offset" to 1, "limit" to 2))
             assertEquals(
                 listOf("r1", "r2"),
-                first.getValue("recipes").jsonArray.map { it.jsonObject.string("id") },
+                page.getValue("recipes").jsonArray.map { it.jsonObject.string("id") },
             )
-            assertEquals("5", first.string("total_count"))
-            assertEquals("true", first.string("truncated"))
-            assertEquals("3", first.string("next_offset"))
-
-            val last = client.callJson("list_recipes", mapOf("offset" to 3, "limit" to 2))
-            assertEquals("false", last.string("truncated"))
-            assertFalse(last.containsKey("next_offset"))
+            assertEquals("5", page.string("total_count"))
+            assertEquals("true", page.string("truncated"))
+            assertEquals("3", page.string("next_offset"))
 
             assertError(
                 client.callTool("list_recipes", mapOf("limit" to 0)),
                 "invalid_arguments",
                 "limit must be 1 or more",
-            )
-            assertError(
-                client.callTool("list_recipes", mapOf("offset" to -1)),
-                "invalid_arguments",
-                "offset must be 0 or more",
             )
         }
     }

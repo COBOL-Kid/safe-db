@@ -425,29 +425,6 @@ class SafeDbServiceImplTest {
     }
 
     @Test
-    fun runQueryIntrospectsConnectedSchemaBeforeValidation() = runBlocking {
-        SecretsManager.useStoreForTest(DisabledMemoryStore())
-        val dir = Files.createTempDirectory("safedb-service-test")
-        val configStore = ConfigStore.new(dir)
-        configStore.save(sampleConnection())
-        SecretsManager.savePasswordForDefinition(sampleConnection(), "secret").getOrThrow()
-        val adapter = FakeConnectedAdapter()
-        val service =
-            SafeDbServiceImpl(
-                configStore = configStore,
-                queryStore = QueryStore.new(dir),
-                settingsStore = SettingsStore.new(dir),
-                querySessionFactory = null,
-                adapterFactory = AdapterFactory { _, _ -> adapter },
-            )
-
-        service.runQuery(QueryRunRequest("c1", sampleQuerySpec()))
-
-        assertEquals(1, adapter.introspectionCount)
-        assertEquals(1, adapter.closeCount)
-    }
-
-    @Test
     fun getSchemaAndRunQueryAlwaysIntrospectFreshSchema() = runBlocking {
         SecretsManager.useStoreForTest(DisabledMemoryStore())
         val dir = Files.createTempDirectory("safedb-service-test")
@@ -879,6 +856,33 @@ class SafeDbServiceImplTest {
         assertEquals(0, adapter.executeCount)
         assertEquals(1, adapter.closeCount)
         assertTrue(queryStore.listHistory().isEmpty())
+    }
+
+    @Test
+    fun rejectsMissingConnectionOnNullPasswordTestOrUpdateAndGuardsNullRecipeStore() = runBlocking {
+        SecretsManager.useStoreForTest(DisabledMemoryStore())
+        val dir = Files.createTempDirectory("safedb-service-edge")
+        try {
+            val service =
+                SafeDbServiceImpl(
+                    configStore = ConfigStore.new(dir),
+                    queryStore = QueryStore.new(dir),
+                    settingsStore = SettingsStore.new(dir),
+                    recipeStore = null,
+                    querySessionFactory = null,
+                )
+
+            assertFailsWith<ConnectionNotFoundException> {
+                service.testConnection(sampleConnection().copy(id = "missing"), password = null)
+            }
+            assertFailsWith<ConnectionNotFoundException> {
+                service.updateConnection(sampleConnection().copy(id = "missing"), password = null)
+            }
+            assertEquals(emptyList(), service.listExploreRecipes())
+            assertFailsWith<IllegalStateException> { service.deleteExploreRecipe("r1") }
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
     }
 }
 

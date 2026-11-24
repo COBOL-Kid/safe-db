@@ -157,6 +157,26 @@ class AppStateTest {
         )
     }
 
+    @Test
+    fun clearDefaultConnectionAndSetActiveSchemaRespectConnectionState() {
+        val state = AppState()
+
+        state.setActiveSchema("ignored")
+        assertEquals(SchemaSelectionIntent.Unselected, state.schemaSelection.value)
+
+        state.activateDefaultConnection("c1", "public")
+        state.setActiveSchema("analytics")
+        assertEquals(
+            SchemaSelectionIntent("analytics", SchemaSelectionSource.User),
+            state.schemaSelection.value,
+        )
+
+        state.clearDefaultConnection()
+        assertNull(state.activeConnectionId.value)
+        assertNull(state.activeConnectionOrigin.value)
+        assertEquals(SchemaSelectionIntent.Unselected, state.schemaSelection.value)
+    }
+
     private fun connection(id: String) =
         ConnectionDef(
             id = id,

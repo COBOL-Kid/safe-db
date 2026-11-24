@@ -289,4 +289,47 @@ class SecretsTest {
             pool.shutdownNow()
         }
     }
+
+    @Test
+    fun rejectsEndpointMismatchLegacyPayloadBadVersionAndFormatsEntitlementErrors() {
+        val original = connectionDef("conn-bound")
+        SecretsManager.savePasswordForDefinition(original, "secret").getOrThrow()
+        CredentialSession.lockCredentials()
+
+        val differentHost = original.copy(host = "other.internal")
+        val mismatchHost = SecretsManager.passwordForDefinition(differentHost)
+        assertTrue(mismatchHost.isFailure)
+        assertTrue(
+            mismatchHost
+                .exceptionOrNull()!!
+                .message!!
+                .contains(
+                    "do not match this connection endpoint or transport configuration",
+                ),
+        )
+
+        val differentTransport =
+            original.copy(
+                transportSecurity = TransportSecurity(TransportSecurityMode.VerifyIdentity),
+            )
+        assertTrue(SecretsManager.passwordForDefinition(differentTransport).isFailure)
+
+        store.setPassword(SERVICE_NAME, "conn-legacy", "plain-text-secret")
+        val legacy = SecretsManager.passwordForDefinition(connectionDef("conn-legacy"))
+        assertTrue(legacy.isFailure)
+        assertTrue(legacy.exceptionOrNull()!!.message!!.contains("predates endpoint binding"))
+
+        store.setPassword(
+            SERVICE_NAME,
+            "conn-v2",
+            """{"version":2,"fingerprint":"${connectionDef("conn-v2").credentialFingerprint()}","password":"pw"}""",
+        )
+        assertTrue(SecretsManager.passwordForDefinition(connectionDef("conn-v2")).isFailure)
+
+        val entitlementError =
+            SecretsManager.formatSaveCredentialError(
+                IllegalStateException("Missing entitlement for keychain"),
+            )
+        assertTrue(entitlementError.contains("SAFEDB_KEYCHAIN_BACKEND=disabled"))
+    }
 }

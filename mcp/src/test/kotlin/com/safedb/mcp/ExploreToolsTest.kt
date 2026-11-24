@@ -18,7 +18,6 @@ import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -145,50 +144,80 @@ class ExploreToolsTest {
     }
 
     @Test
-    fun pivotResultHandlesUnknownIdsAndInvalidArguments() = runBlocking {
+    fun exploreToolsRejectMissingUnknownAndMalformedArguments() = runBlocking {
         val service = exploreSampleService()
         withTempMcpClient(service) { client ->
-            val unknown = client.callTool("pivot_result", mapOf("result_id" to "missing"))
-            assertEquals(true, unknown.isError)
-            assertEquals("not_found", unknown.json().getValue("error").jsonPrimitive.content)
+            val missingResultPivot = client.callTool("pivot_result", emptyMap())
             assertEquals(
-                "Result not found",
-                unknown.json().getValue("message").jsonPrimitive.content,
+                "result_id is required",
+                missingResultPivot.json().getValue("message").jsonPrimitive.content,
             )
+            val missingResultFilter = client.callTool("filter_result_rows", emptyMap())
+            assertEquals(
+                "result_id is required",
+                missingResultFilter.json().getValue("message").jsonPrimitive.content,
+            )
+
+            listOf("pivot_result", "filter_result_rows").forEach { toolName ->
+                val unknown = client.callTool(toolName, mapOf("result_id" to "missing"))
+                assertEquals(true, unknown.isError)
+                assertEquals("not_found", unknown.json().getValue("error").jsonPrimitive.content)
+                assertEquals(
+                    "Result not found",
+                    unknown.json().getValue("message").jsonPrimitive.content,
+                )
+            }
 
             val resultId = storeExploreResult(client)
-            val notArray =
-                client.callTool(
-                    "pivot_result",
-                    mapOf("result_id" to resultId, "row_dimensions" to "region"),
+            listOf(
+                    Triple(
+                        "pivot_result",
+                        mapOf("result_id" to resultId, "row_dimensions" to "region"),
+                        "row_dimensions must be an array",
+                    ),
+                    Triple(
+                        "pivot_result",
+                        mapOf("result_id" to resultId, "row_dimensions" to listOf(5)),
+                        "row_dimensions[0] must be a string or object",
+                    ),
+                    Triple(
+                        "pivot_result",
+                        mapOf("result_id" to resultId, "bogus" to true),
+                        "unknown argument 'bogus'",
+                    ),
+                    Triple(
+                        "pivot_result",
+                        mapOf("result_id" to resultId, "show_row_totals" to "yes"),
+                        "show_row_totals must be a boolean",
+                    ),
+                    Triple(
+                        "filter_result_rows",
+                        mapOf("result_id" to resultId, "filters" to "x"),
+                        "filters must be an array",
+                    ),
+                    Triple(
+                        "filter_result_rows",
+                        mapOf("result_id" to resultId, "limit" to 0),
+                        "limit must be 1 or more",
+                    ),
+                    Triple(
+                        "filter_result_rows",
+                        mapOf("result_id" to resultId, "bogus" to 1),
+                        "unknown argument 'bogus'",
+                    ),
                 )
-            assertEquals(true, notArray.isError)
-            assertEquals(
-                "row_dimensions must be an array",
-                notArray.json().getValue("message").jsonPrimitive.content,
-            )
-
-            val unknownArgument =
-                client.callTool(
-                    "pivot_result",
-                    mapOf("result_id" to resultId, "bogus" to true),
-                )
-            assertEquals(true, unknownArgument.isError)
-            assertEquals(
-                "unknown argument 'bogus'",
-                unknownArgument.json().getValue("message").jsonPrimitive.content,
-            )
-
-            val badTotals =
-                client.callTool(
-                    "pivot_result",
-                    mapOf("result_id" to resultId, "show_row_totals" to "yes"),
-                )
-            assertEquals(true, badTotals.isError)
-            assertEquals(
-                "show_row_totals must be a boolean",
-                badTotals.json().getValue("message").jsonPrimitive.content,
-            )
+                .forEach { (toolName, args, expectedMessage) ->
+                    val response = client.callTool(toolName, args)
+                    assertEquals(true, response.isError)
+                    assertEquals(
+                        "invalid_arguments",
+                        response.json().getValue("error").jsonPrimitive.content,
+                    )
+                    assertEquals(
+                        expectedMessage,
+                        response.json().getValue("message").jsonPrimitive.content,
+                    )
+                }
         }
     }
 
@@ -553,39 +582,6 @@ class ExploreToolsTest {
     }
 
     @Test
-    fun filterResultRowsHandlesUnknownIdsAndInvalidArguments() = runBlocking {
-        val service = exploreSampleService()
-        withTempMcpClient(service) { client ->
-            val unknown = client.callTool("filter_result_rows", mapOf("result_id" to "missing"))
-            assertEquals(true, unknown.isError)
-            assertEquals("not_found", unknown.json().getValue("error").jsonPrimitive.content)
-
-            val resultId = storeExploreResult(client)
-            val zeroLimit =
-                client.callTool(
-                    "filter_result_rows",
-                    mapOf("result_id" to resultId, "limit" to 0),
-                )
-            assertEquals(true, zeroLimit.isError)
-            assertEquals(
-                "limit must be 1 or more",
-                zeroLimit.json().getValue("message").jsonPrimitive.content,
-            )
-
-            val unknownArgument =
-                client.callTool(
-                    "filter_result_rows",
-                    mapOf("result_id" to resultId, "bogus" to 1),
-                )
-            assertEquals(true, unknownArgument.isError)
-            assertEquals(
-                "unknown argument 'bogus'",
-                unknownArgument.json().getValue("message").jsonPrimitive.content,
-            )
-        }
-    }
-
-    @Test
     fun unknownColumnErrorsSuggestKnownColumnsInDialectCasing() = runBlocking {
         val service = exploreSampleService()
         service.runQueryResult =
@@ -620,94 +616,6 @@ class ExploreToolsTest {
                 "Unknown column 'customers__id'. Known columns: CUSTOMERS__EMAIL, CUSTOMERS__ID",
                 unknown.json().getValue("message").jsonPrimitive.content,
             )
-        }
-    }
-
-    @Test
-    fun pivotResultRejectsMissingResultIdAndMalformedPayload() = runBlocking {
-        val service = exploreSampleService()
-        withTempMcpClient(service) { client ->
-            val resultId = storeExploreResult(client)
-            val missingResultId = client.callTool("pivot_result", emptyMap())
-            assertEquals(
-                "result_id is required",
-                missingResultId.json().getValue("message").jsonPrimitive.content,
-            )
-
-            val malformed =
-                client.callTool(
-                    "pivot_result",
-                    mapOf("result_id" to resultId, "row_dimensions" to listOf(5)),
-                )
-            assertEquals(true, malformed.isError)
-            assertEquals(
-                "invalid_arguments",
-                malformed.json().getValue("error").jsonPrimitive.content,
-            )
-        }
-    }
-
-    @Test
-    fun filterResultRowsRejectsMissingResultIdAndMalformedPayload() = runBlocking {
-        val service = exploreSampleService()
-        withTempMcpClient(service) { client ->
-            val resultId = storeExploreResult(client)
-            val missingResultId = client.callTool("filter_result_rows", emptyMap())
-            assertEquals(
-                "result_id is required",
-                missingResultId.json().getValue("message").jsonPrimitive.content,
-            )
-
-            val malformed =
-                client.callTool(
-                    "filter_result_rows",
-                    mapOf("result_id" to resultId, "filters" to "x"),
-                )
-            assertEquals(true, malformed.isError)
-            assertEquals(
-                "invalid_arguments",
-                malformed.json().getValue("error").jsonPrimitive.content,
-            )
-        }
-    }
-
-    @Test
-    fun exploreToolsAreReadOnly() = runBlocking {
-        withTempMcpClient(exploreSampleService()) { client ->
-            val tools = client.listTools().tools.associateBy { it.name }
-            assertEquals(true, tools.getValue("pivot_result").annotations?.readOnlyHint)
-            assertEquals(true, tools.getValue("filter_result_rows").annotations?.readOnlyHint)
-        }
-    }
-
-    @Test
-    fun filterResultRowsSchemaDocumentsMembersIncludedKeys() = runBlocking {
-        withTempMcpClient(exploreSampleService()) { client ->
-            val filters =
-                client
-                    .listTools()
-                    .tools
-                    .single { it.name == "filter_result_rows" }
-                    .inputSchema
-                    .properties
-                    ?.get("filters")
-                    ?.jsonObject
-            assertNotNull(filters)
-            val description = filters.getValue("description").jsonPrimitive.content
-            assertTrue(description.contains("included_keys"))
-            assertTrue(description.contains("members"))
-            val includedKeys =
-                filters
-                    .getValue("items")
-                    .jsonObject
-                    .getValue("properties")
-                    .jsonObject
-                    .getValue("included_keys")
-                    .jsonObject
-                    .getValue("description")
-                    .jsonPrimitive
-                    .content
-            assertTrue(includedKeys.contains("members"))
         }
     }
 

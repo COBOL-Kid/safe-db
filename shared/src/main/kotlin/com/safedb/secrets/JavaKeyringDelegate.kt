@@ -2,7 +2,6 @@ package com.safedb.secrets
 
 import com.github.javakeyring.Keyring
 import com.github.javakeyring.PasswordAccessException
-import com.safedb.platform.DesktopPlatform
 
 internal class JavaKeyringDelegate(private val keyring: Keyring) : CredentialStore {
     override fun setPassword(service: String, account: String, password: String) {
@@ -49,18 +48,3 @@ private fun hasWindowsMissingItemCode(lower: String): Boolean {
     val after = index + marker.length
     return after == lower.length || !lower[after].isDigit()
 }
-
-internal fun createJavaKeyringDelegateOrNull(): CredentialStore? = runCatching {
-    JavaKeyringDelegate(Keyring.create())
-}
-    .getOrNull()
-
-// Operational startup secrets must not use the fallback allowed for connection credentials.
-internal fun createStrictPlatformCredentialStoreOrNull(
-    platform: DesktopPlatform = DesktopPlatform.current(),
-): CredentialStore? =
-    when (platform) {
-        DesktopPlatform.MacOs,
-        DesktopPlatform.Windows -> createJavaKeyringDelegateOrNull()
-        DesktopPlatform.Linux -> null
-    }

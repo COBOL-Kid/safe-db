@@ -1572,6 +1572,191 @@ class QueryEngineTest {
         assertTrue(failure.contains("YYYY-MM-DDTHH:MM"))
     }
 
+    @Test
+    fun validateFiltersRejectsOversizeTextBadTypedLiteralsBadNodeIdsAndMismatchedShapes() {
+        val typedTable =
+            TableInfo(
+                schema = "public",
+                name = "typed",
+                columns =
+                    listOf(
+                        ColumnInfo("id", "int", nullable = false),
+                        ColumnInfo("txt", "text", nullable = true),
+                        ColumnInfo("flt", "double precision", nullable = true),
+                        ColumnInfo("flag", "boolean", nullable = true),
+                        ColumnInfo("d", "date", nullable = true),
+                        ColumnInfo("ts", "timestamp", nullable = true),
+                    ),
+                indexes = emptyList(),
+            )
+        val typedSchema = Schema(listOf(typedTable))
+        val baseSpec =
+            sampleSpec()
+                .copy(
+                    tables = listOf(TableRef("public", "typed", "t0")),
+                    columns = listOf(ColumnSel("t0", "id")),
+                )
+
+        fun runValidate(vararg nodes: FilterNode): String =
+            validateQuery(
+                    baseSpec.copy(
+                        filters = FilterGroup("root", GroupConnector.And, nodes.toList()),
+                    ),
+                    typedSchema,
+                    emptyList(),
+                )
+                .unwrapErr()
+
+        assertTrue(
+            runValidate(
+                    FilterNode.Leaf(
+                        leafOn(
+                            "txt",
+                            FilterOp.Eq,
+                            FilterValue.Single(
+                                lit(LiteralKind.Text, "x".repeat(MAX_TEXT_LITERAL_LEN + 1)),
+                            ),
+                        ),
+                    ),
+                )
+                .contains("exceeds maximum length"),
+        )
+        assertTrue(
+            runValidate(
+                    FilterNode.Leaf(
+                        leafOn(
+                            "flt",
+                            FilterOp.Eq,
+                            FilterValue.Single(lit(LiteralKind.Decimal, "nanx")),
+                        ),
+                    ),
+                )
+                .contains("not a valid decimal"),
+        )
+        assertTrue(
+            runValidate(
+                    FilterNode.Leaf(
+                        leafOn(
+                            "flag",
+                            FilterOp.Eq,
+                            FilterValue.Single(lit(LiteralKind.Bool, "maybe")),
+                        ),
+                    ),
+                )
+                .contains("not a valid boolean"),
+        )
+        assertTrue(
+            runValidate(
+                    FilterNode.Leaf(
+                        leafOn(
+                            "d",
+                            FilterOp.Eq,
+                            FilterValue.Single(lit(LiteralKind.Date, "2025-99-99")),
+                        ),
+                    ),
+                )
+                .contains("for 't0.d'"),
+        )
+        assertTrue(
+            runValidate(
+                    FilterNode.Leaf(
+                        leafOn(
+                            "ts",
+                            FilterOp.Eq,
+                            FilterValue.Single(lit(LiteralKind.DateTime, "not-a-timestamp")),
+                        ),
+                    ),
+                )
+                .contains("for 't0.ts'"),
+        )
+        assertTrue(
+            runValidate(
+                    FilterNode.Leaf(
+                        FilterSpec(
+                            id = "  ",
+                            tableAlias = "t0",
+                            column = "id",
+                            op = FilterOp.IsNull,
+                        ),
+                    ),
+                )
+                .contains("non-empty stable id"),
+        )
+        assertTrue(
+            runValidate(
+                    FilterNode.Leaf(FilterSpec("dup", "t0", "id", FilterOp.IsNull)),
+                    FilterNode.Leaf(FilterSpec("dup", "t0", "id", FilterOp.IsNotNull)),
+                )
+                .contains("Duplicate filter node id"),
+        )
+        assertTrue(
+            runValidate(
+                    FilterNode.Leaf(
+                        leafOn(
+                            "id",
+                            FilterOp.IsNull,
+                            FilterValue.Single(lit(LiteralKind.Int, "1")),
+                        ),
+                    ),
+                )
+                .contains("should not have a value"),
+        )
+        assertTrue(
+            runValidate(
+                    FilterNode.Leaf(
+                        leafOn(
+                            "id",
+                            FilterOp.Eq,
+                            FilterValue.ListValue(listOf(lit(LiteralKind.Int, "1"))),
+                        ),
+                    ),
+                )
+                .contains("expects a single value"),
+        )
+        assertTrue(
+            runValidate(
+                    FilterNode.Leaf(
+                        leafOn(
+                            "id",
+                            FilterOp.In,
+                            FilterValue.Single(lit(LiteralKind.Int, "1")),
+                        ),
+                    ),
+                )
+                .contains("expects a list of values"),
+        )
+        assertTrue(
+            runValidate(
+                    FilterNode.Leaf(
+                        leafOn(
+                            "id",
+                            FilterOp.Between,
+                            FilterValue.Single(lit(LiteralKind.Int, "1")),
+                        ),
+                    ),
+                )
+                .contains("expects a range (from/to)"),
+        )
+    }
+
+    @Test
+    fun checkJoinConnectivityAcceptsReverseDirectionJoin() {
+        val spec =
+            QuerySpec(
+                tables =
+                    listOf(
+                        TableRef("public", "users", "t0"),
+                        TableRef("public", "categories", "t1"),
+                    ),
+                columns = listOf(ColumnSel("t0", "id")),
+                joins = listOf(JoinSpec("t1", "id", "t0", "category_id")),
+                filters = FilterGroup.empty(),
+                limit = 100,
+                schemaVersion = CURRENT_SCHEMA_VERSION,
+            )
+        assertTrue(checkJoinConnectivity(spec))
+    }
+
     private fun sampleConnection(id: String) =
         ConnectionDef(
             id = id,

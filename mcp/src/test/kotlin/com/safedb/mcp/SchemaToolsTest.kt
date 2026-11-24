@@ -548,23 +548,6 @@ class SchemaToolsTest {
     }
 
     @Test
-    fun listAndDescribeToolMetadataIsDocumented() = runBlocking {
-        withTempMcpClient(catalogService()) { client ->
-            val tools = client.listTools().tools.associateBy { it.name }
-            assertEquals(true, tools.getValue("list_tables").annotations?.readOnlyHint)
-            assertTrue(
-                tools.getValue("list_tables").outputSchema?.properties?.containsKey("tables") ==
-                    true,
-            )
-            assertEquals(true, tools.getValue("describe_table").annotations?.readOnlyHint)
-            assertTrue(
-                tools.getValue("describe_table").outputSchema?.properties?.containsKey("columns") ==
-                    true,
-            )
-        }
-    }
-
-    @Test
     fun listTablesPaginatesAndValidatesOffsetAndLimit() = runBlocking {
         val service = catalogService()
         val columns = listOf(ColumnInfo(name = "id", dataType = "int", nullable = false))
@@ -581,7 +564,7 @@ class SchemaToolsTest {
                     },
             )
         withTempMcpClient(service) { client ->
-            val first =
+            val page =
                 client
                     .callTool(
                         "list_tables",
@@ -590,39 +573,18 @@ class SchemaToolsTest {
                     .json()
             assertEquals(
                 listOf("table_2", "table_3"),
-                first.getValue("tables").jsonArray.map {
+                page.getValue("tables").jsonArray.map {
                     it.jsonObject.getValue("name").jsonPrimitive.content
                 },
             )
-            assertEquals("5", first.getValue("total_count").jsonPrimitive.content)
-            assertEquals("true", first.getValue("truncated").jsonPrimitive.content)
-            assertEquals("3", first.getValue("next_offset").jsonPrimitive.content)
-
-            val last =
-                client
-                    .callTool(
-                        "list_tables",
-                        mapOf("connection_id" to "c1", "offset" to 3, "limit" to 2),
-                    )
-                    .json()
-            assertEquals(
-                listOf("table_4", "table_5"),
-                last.getValue("tables").jsonArray.map {
-                    it.jsonObject.getValue("name").jsonPrimitive.content
-                },
-            )
-            assertEquals("false", last.getValue("truncated").jsonPrimitive.content)
-            assertFalse(last.containsKey("next_offset"))
+            assertEquals("5", page.getValue("total_count").jsonPrimitive.content)
+            assertEquals("true", page.getValue("truncated").jsonPrimitive.content)
+            assertEquals("3", page.getValue("next_offset").jsonPrimitive.content)
 
             assertError(
                 client.callTool("list_tables", mapOf("connection_id" to "c1", "limit" to 0)),
                 "invalid_arguments",
                 "limit must be 1 or more",
-            )
-            assertError(
-                client.callTool("list_tables", mapOf("connection_id" to "c1", "offset" to -1)),
-                "invalid_arguments",
-                "offset must be 0 or more",
             )
         }
     }

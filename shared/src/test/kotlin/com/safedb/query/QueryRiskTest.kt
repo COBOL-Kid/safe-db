@@ -22,6 +22,7 @@ import com.safedb.model.JoinSpec
 import com.safedb.model.LiteralKind
 import com.safedb.model.MetadataCoverage
 import com.safedb.model.Outcome
+import com.safedb.model.PlanOperationKind
 import com.safedb.model.PlanUnavailableReason
 import com.safedb.model.QueryRiskGate
 import com.safedb.model.QuerySpec
@@ -1094,6 +1095,107 @@ class QueryRiskTest {
         )
     }
 
+    @Test
+    fun negativePredicatesDistinctAndUnknownSortCompatibilityRecordAccurateSignals() {
+        val completeTable =
+            table(
+                columns = listOf(column("id"), column("status", ColumnCategory.Text)),
+                indexes =
+                    listOf(
+                        index("orders_pk", listOf(IndexKey("id")), unique = true),
+                        index(
+                                "orders_status_partial",
+                                listOf(IndexKey("status", direction = null)),
+                            )
+                            .copy(isPartial = null),
+                    ),
+            )
+        val negativeComplete =
+            assess(
+                spec(
+                    filters =
+                        group(
+                            leaf("t0", "id", FilterOp.Eq, "1"),
+                            FilterNode.Leaf(
+                                FilterSpec(
+                                    id = "t0-status-notin",
+                                    tableAlias = "t0",
+                                    column = "status",
+                                    op = FilterOp.NotIn,
+                                    value =
+                                        FilterValue.ListValue(
+                                            listOf(FilterLiteral(LiteralKind.Text, "cancelled")),
+                                        ),
+                                ),
+                            ),
+                        ),
+                ),
+                listOf(completeTable),
+            )
+        assertTrue(
+            negativeComplete.signals.any { it.code == RiskSignalCode.ScanProneNegativePredicate },
+        )
+
+        val incompleteTable =
+            completeTable.copy(indexMetadata = MetadataCoverage.unavailable("not_collected"))
+        val negativeIncomplete =
+            assess(
+                spec(filters = group(leaf("t0", "status", FilterOp.Ne, "cancelled"))),
+                listOf(incompleteTable),
+            )
+        assertTrue(
+            negativeIncomplete.uncertainties.any {
+                it.code == "negative_predicate_capability_unknown"
+            },
+        )
+
+        val distinctNonRedundant =
+            assess(
+                spec(
+                    columns = listOf(ColumnSel("t0", "id")),
+                    distinct = true,
+                    groups = listOf(GroupSpec("t0", "id"), GroupSpec("t0", "status")),
+                ),
+                listOf(completeTable),
+            )
+        assertTrue(
+            distinctNonRedundant.signals.any {
+                it.target == RiskTarget.Operation(PlanOperationKind.Distinct, setOf("t0"))
+            },
+        )
+
+        val distinctCoveredByGroupBy =
+            assess(
+                spec(
+                    columns = listOf(ColumnSel("t0", "status")),
+                    distinct = true,
+                    groups = listOf(GroupSpec("t0", "status")),
+                ),
+                listOf(completeTable),
+            )
+        assertFalse(
+            distinctCoveredByGroupBy.signals.any {
+                it.target == RiskTarget.Operation(PlanOperationKind.Distinct, setOf("t0"))
+            },
+        )
+
+        val nullDirIndexTable =
+            table(
+                columns = listOf(column("id"), column("status", ColumnCategory.Text)),
+                indexes =
+                    listOf(
+                        index("orders_pk", listOf(IndexKey("id")), unique = true),
+                        index("orders_status", listOf(IndexKey("status", direction = null))),
+                    ),
+            )
+        val unknownSort =
+            assess(
+                spec(sorts = listOf(SortSpec("t0", "status", SortDirection.Asc))),
+                listOf(nullDirIndexTable),
+            )
+        assertTrue(unknownSort.uncertainties.any { it.code == "sort_compatibility_unknown" })
+    }
+
     private fun signal(category: RiskCategory, points: Int) =
         RiskSignal(
             RiskSignalCode.NoEffectiveRestriction,
@@ -1136,6 +1238,7 @@ private fun spec(
     filters: FilterGroup = FilterGroup("root"),
     limit: Int = 100,
     uncapped: Boolean = false,
+    distinct: Boolean = false,
     sorts: List<SortSpec> = emptyList(),
     groups: List<GroupSpec> = emptyList(),
     connectorOverrides: Map<String, GroupConnector> = emptyMap(),
@@ -1147,6 +1250,7 @@ private fun spec(
         filters = filters,
         limit = limit,
         uncapped = uncapped,
+        distinct = distinct,
         sorts = sorts,
         groups = groups,
         schemaVersion = CURRENT_SCHEMA_VERSION,

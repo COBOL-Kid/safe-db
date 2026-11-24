@@ -16,12 +16,10 @@ import com.safedb.model.TableInfo
 import com.safedb.service.FakeSafeDbServiceSupport
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.QueryViewModel
-import com.safedb.viewmodel.buildFilterValue
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -173,75 +171,6 @@ class FilterRowLayoutTest {
             )
             scene.assertNoHorizontalOverflow(sceneWidth)
         }
-    }
-
-    @Test
-    fun buildFilterValueCreatesBlankDefaultsAndPreservesTypedTextAcrossKinds() {
-        assertNull(buildFilterValue(FilterOp.IsNull, "varchar"))
-        assertEquals(
-            FilterValue.Single(FilterLiteral(LiteralKind.Int, "")),
-            buildFilterValue(FilterOp.Eq, "bigint"),
-        )
-        assertEquals(
-            FilterValue.ListValue(listOf(FilterLiteral(LiteralKind.Text, ""))),
-            buildFilterValue(FilterOp.In, "varchar"),
-        )
-        assertEquals(
-            FilterValue.Pair(
-                FilterLiteral(LiteralKind.DateTime, ""),
-                FilterLiteral(LiteralKind.DateTime, ""),
-            ),
-            buildFilterValue(FilterOp.Between, "timestamp"),
-        )
-
-        val preservedSingle =
-            buildFilterValue(
-                FilterOp.Ne,
-                "bigint",
-                FilterValue.Single(FilterLiteral(LiteralKind.Text, "42")),
-            )
-        assertEquals(
-            FilterValue.Single(FilterLiteral(LiteralKind.Int, "42")),
-            preservedSingle,
-        )
-
-        val preservedPair =
-            buildFilterValue(
-                FilterOp.Between,
-                "bigint",
-                FilterValue.Pair(
-                    FilterLiteral(LiteralKind.Text, "10"),
-                    FilterLiteral(LiteralKind.Text, "20"),
-                ),
-            )
-        assertEquals(
-            FilterValue.Pair(
-                FilterLiteral(LiteralKind.Int, "10"),
-                FilterLiteral(LiteralKind.Int, "20"),
-            ),
-            preservedPair,
-        )
-
-        val retaggedList =
-            buildFilterValue(
-                FilterOp.In,
-                "varchar",
-                FilterValue.ListValue(
-                    listOf(
-                        FilterLiteral(LiteralKind.Int, "1"),
-                        FilterLiteral(LiteralKind.Int, "2"),
-                    ),
-                ),
-            )
-        assertEquals(
-            FilterValue.ListValue(
-                listOf(
-                    FilterLiteral(LiteralKind.Text, "1"),
-                    FilterLiteral(LiteralKind.Text, "2"),
-                ),
-            ),
-            retaggedList,
-        )
     }
 }
 

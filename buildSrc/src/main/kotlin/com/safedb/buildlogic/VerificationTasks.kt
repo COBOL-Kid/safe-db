@@ -29,36 +29,108 @@ abstract class VerifyUnitTestDiscovery : DefaultTask() {
     @get:PathSensitive(PathSensitivity.RELATIVE)
     abstract val mcpResults: DirectoryProperty
 
-    @get:Input abstract val minimumDesktopTests: Property<Int>
+    @get:InputDirectory
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val desktopClasses: DirectoryProperty
 
-    @get:Input abstract val minimumSharedTests: Property<Int>
+    @get:InputDirectory
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val sharedClasses: DirectoryProperty
 
-    @get:Input abstract val minimumMcpTests: Property<Int>
+    @get:InputDirectory
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val mcpClasses: DirectoryProperty
 
     @TaskAction
     fun verify() {
-        verifySuite("desktop", desktopResults.get().asFile, minimumDesktopTests.get())
-        verifySuite("shared", sharedResults.get().asFile, minimumSharedTests.get())
-        verifySuite("mcp", mcpResults.get().asFile, minimumMcpTests.get())
+        listOf(
+                Triple("desktop", desktopClasses.get().asFile, desktopResults.get().asFile),
+                Triple("shared", sharedClasses.get().asFile, sharedResults.get().asFile),
+                Triple("mcp", mcpClasses.get().asFile, mcpResults.get().asFile),
+            )
+            .forEach { (label, classesDir, resultsDir) ->
+                val result =
+                    verifyUnitTestClassDiscovery(
+                        label = label,
+                        compiledTestClasses = collectCompiledTestClasses(classesDir),
+                        reports = junitReports(resultsDir).map(File::readText),
+                        resultsLocation = resultsDir.toString(),
+                    )
+                logger.lifecycle(
+                    "$label discovery verified: ${result.executed} tests across ${result.discoveredClasses} classes",
+                )
+            }
+    }
+}
+
+internal data class UnitDiscoveryResult(
+    val label: String,
+    val executed: Int,
+    val discoveredClasses: Int,
+)
+
+internal fun collectCompiledTestClasses(classesDir: File): Set<String> {
+    if (!classesDir.isDirectory) return emptySet()
+    return classesDir
+        .walkTopDown()
+        .filter { file ->
+            file.isFile && file.name.endsWith("Test.class") && '$' !in file.name
+        }
+        .map { file ->
+            file.relativeTo(classesDir)
+                .path
+                .replace(File.separatorChar, '.')
+                .removeSuffix(".class")
+        }
+        .toSet()
+}
+
+internal fun verifyUnitTestClassDiscovery(
+    label: String,
+    compiledTestClasses: Set<String>,
+    reports: List<String>,
+    resultsLocation: String = "the test results directory",
+): UnitDiscoveryResult {
+    check(compiledTestClasses.isNotEmpty()) { "$label compiled no *Test.class files" }
+    check(reports.isNotEmpty()) { "$label produced no JUnit XML reports in $resultsLocation" }
+
+    var executed = 0
+    var failures = 0
+    var skippedTests = 0
+    val discoveredClasses = mutableSetOf<String>()
+
+    val factory = DocumentBuilderFactory.newInstance()
+    for (report in reports) {
+        val document =
+            factory.newDocumentBuilder().parse(ByteArrayInputStream(report.toByteArray(Charsets.UTF_8)))
+        val testcases = document.getElementsByTagName("testcase")
+        for (index in 0 until testcases.length) {
+            val testcase = testcases.item(index)
+            executed += 1
+            val className =
+                testcase.attributes.getNamedItem("classname")?.nodeValue?.substringBefore('$')
+            if (!className.isNullOrBlank()) {
+                discoveredClasses += className
+            }
+            val children = testcase.childNodes
+            for (childIndex in 0 until children.length) {
+                when (children.item(childIndex).nodeName) {
+                    "failure",
+                    "error" -> failures += 1
+                    "skipped" -> skippedTests += 1
+                }
+            }
+        }
     }
 
-    private fun verifySuite(label: String, resultsDir: File, minimumTests: Int) {
-        val reports = junitReports(resultsDir)
-        check(reports.isNotEmpty()) { "$label produced no JUnit XML reports in $resultsDir" }
-        val testcase = Regex("<testcase\\b")
-        val failure = Regex("<(failure|error)\\b")
-        val skipped = Regex("<skipped\\b")
-        val executed = reports.sumOf { report -> testcase.findAll(report.readText()).count() }
-        val failures = reports.sumOf { report -> failure.findAll(report.readText()).count() }
-        val skippedTests = reports.sumOf { report -> skipped.findAll(report.readText()).count() }
-        check(failures == 0) { "$label JUnit XML contains $failures failures/errors" }
-        check(skippedTests == 0) { "$label JUnit XML contains $skippedTests skipped tests" }
-        check(executed >= minimumTests) {
-            "$label discovered $executed tests; expected at least $minimumTests. " +
-                "Raise this floor when intentionally adding tests, never lower it to hide missing discovery."
-        }
-        logger.lifecycle("$label discovery verified: $executed tests")
+    check(failures == 0) { "$label JUnit XML contains $failures failures/errors" }
+    check(skippedTests == 0) { "$label JUnit XML contains $skippedTests skipped tests" }
+    val missingClasses = (compiledTestClasses - discoveredClasses).sorted()
+    check(missingClasses.isEmpty()) {
+        "$label compiled test classes did not report any executed testcases: " +
+            missingClasses.joinToString(", ")
     }
+    return UnitDiscoveryResult(label, executed, discoveredClasses.size)
 }
 
 abstract class VerifyCoverageRatchet : DefaultTask() {
@@ -133,6 +205,9 @@ abstract class VerifyIntegrationTestDiscovery : DefaultTask() {
                 junitReports(mcpResultsDir).map(File::readText),
                 requireMysql = "mysql" in requiredEngines,
                 requirePostgres = "postgres" in requiredEngines,
+                requireMssql = "mssql" in requiredEngines,
+                requireOracle = "oracle" in requiredEngines,
+                requireDb2 = "db2" in requiredEngines,
                 resultsLocation = mcpResultsDir.toString(),
             )
         for (result in mcpResults) {
@@ -292,6 +367,7 @@ private data class IntegrationSuite(
     val engine: String,
     val classNameFragment: String,
     val minimum: Int,
+    val methodNameFragment: String? = null,
 )
 
 private val integrationSuites =
@@ -352,6 +428,9 @@ internal fun verifyMcpIntegrationTestDiscovery(
     reports: List<String>,
     requireMysql: Boolean,
     requirePostgres: Boolean = false,
+    requireMssql: Boolean = false,
+    requireOracle: Boolean = false,
+    requireDb2: Boolean = false,
     resultsLocation: String = "the MCP integration test results directory",
 ): List<IntegrationDiscoveryResult> {
     check(reports.isNotEmpty()) {
@@ -361,9 +440,55 @@ internal fun verifyMcpIntegrationTestDiscovery(
         add(IntegrationSuite("mcp packaged stdio", "McpPackagedStdioIntegrationTest", 1))
         if (requireMysql) {
             add(IntegrationSuite("mcp mysql", "McpMySqlIntegrationTest", 1))
+            add(
+                IntegrationSuite(
+                    "mcp packaged mysql",
+                    "McpPackagedDialectsIntegrationTest",
+                    1,
+                    methodNameFragment = "Mysql",
+                ),
+            )
         }
         if (requirePostgres) {
             add(IntegrationSuite("mcp postgres", "McpPostgresIntegrationTest", 1))
+            add(
+                IntegrationSuite(
+                    "mcp packaged postgres",
+                    "McpPackagedDialectsIntegrationTest",
+                    1,
+                    methodNameFragment = "Postgres",
+                ),
+            )
+        }
+        if (requireMssql) {
+            add(
+                IntegrationSuite(
+                    "mcp packaged mssql",
+                    "McpPackagedDialectsIntegrationTest",
+                    1,
+                    methodNameFragment = "Mssql",
+                ),
+            )
+        }
+        if (requireOracle) {
+            add(
+                IntegrationSuite(
+                    "mcp packaged oracle",
+                    "McpPackagedDialectsIntegrationTest",
+                    1,
+                    methodNameFragment = "Oracle",
+                ),
+            )
+        }
+        if (requireDb2) {
+            add(
+                IntegrationSuite(
+                    "mcp packaged db2",
+                    "McpPackagedDialectsIntegrationTest",
+                    1,
+                    methodNameFragment = "Db2",
+                ),
+            )
         }
     }
     val counts = suites.associate { it.engine to intArrayOf(0, 0) }
@@ -376,7 +501,13 @@ internal fun verifyMcpIntegrationTestDiscovery(
         for (index in 0 until testcases.length) {
             val testcase = testcases.item(index)
             val className = testcase.attributes.getNamedItem("classname")?.nodeValue ?: continue
-            val suite = suites.firstOrNull { className.contains(it.classNameFragment) } ?: continue
+            val methodName = testcase.attributes.getNamedItem("name")?.nodeValue.orEmpty()
+            val suite =
+                suites.firstOrNull { candidate ->
+                    className.contains(candidate.classNameFragment) &&
+                        (candidate.methodNameFragment == null ||
+                            methodName.contains(candidate.methodNameFragment))
+                } ?: continue
             counts.getValue(suite.engine)[0] += 1
             val children = testcase.childNodes
             for (childIndex in 0 until children.length) {

@@ -965,6 +965,133 @@ class QueryViewModelStateTest {
             scope.advanceUntilIdle()
         }
 
+    @Test
+    fun removesJoinByExactOrReversedMatch() {
+        val viewModel = QueryViewModel(NoOpService(), TestScope(StandardTestDispatcher()))
+        val customerJoin = JoinSpec("t0", "customer_id", "t1", "id")
+        val productJoin = JoinSpec("t2", "product_id", "t3", "id")
+
+        viewModel.addJoin(customerJoin)
+        viewModel.addJoin(productJoin)
+
+        viewModel.removeJoin(JoinSpec("t1", "id", "t0", "customer_id"))
+        assertEquals(listOf(productJoin), viewModel.joins.toList())
+
+        viewModel.removeJoin(JoinSpec("t4", "id", "t5", "id"))
+        assertEquals(listOf(productJoin), viewModel.joins.toList())
+
+        viewModel.removeJoin(productJoin)
+        assertTrue(viewModel.joins.isEmpty())
+    }
+
+    @Test
+    fun buildFilterValueCreatesBlankDefaultsAndPreservesTypedTextAcrossKinds() {
+        assertNull(buildFilterValue(FilterOp.IsNull, "varchar"))
+        assertEquals(
+            FilterValue.Single(FilterLiteral(LiteralKind.Int, "")),
+            buildFilterValue(FilterOp.Eq, "bigint"),
+        )
+        assertEquals(
+            FilterValue.ListValue(listOf(FilterLiteral(LiteralKind.Text, ""))),
+            buildFilterValue(FilterOp.In, "varchar"),
+        )
+        assertEquals(
+            FilterValue.Pair(
+                FilterLiteral(LiteralKind.DateTime, ""),
+                FilterLiteral(LiteralKind.DateTime, ""),
+            ),
+            buildFilterValue(FilterOp.Between, "timestamp"),
+        )
+
+        val preservedSingle =
+            buildFilterValue(
+                FilterOp.Ne,
+                "bigint",
+                FilterValue.Single(FilterLiteral(LiteralKind.Text, "42")),
+            )
+        assertEquals(
+            FilterValue.Single(FilterLiteral(LiteralKind.Int, "42")),
+            preservedSingle,
+        )
+
+        val preservedPair =
+            buildFilterValue(
+                FilterOp.Between,
+                "bigint",
+                FilterValue.Pair(
+                    FilterLiteral(LiteralKind.Text, "10"),
+                    FilterLiteral(LiteralKind.Text, "20"),
+                ),
+            )
+        assertEquals(
+            FilterValue.Pair(
+                FilterLiteral(LiteralKind.Int, "10"),
+                FilterLiteral(LiteralKind.Int, "20"),
+            ),
+            preservedPair,
+        )
+
+        val retaggedList =
+            buildFilterValue(
+                FilterOp.In,
+                "varchar",
+                FilterValue.ListValue(
+                    listOf(
+                        FilterLiteral(LiteralKind.Int, "1"),
+                        FilterLiteral(LiteralKind.Int, "2"),
+                    ),
+                ),
+            )
+        assertEquals(
+            FilterValue.ListValue(
+                listOf(
+                    FilterLiteral(LiteralKind.Text, "1"),
+                    FilterLiteral(LiteralKind.Text, "2"),
+                ),
+            ),
+            retaggedList,
+        )
+    }
+
+    @Test
+    fun sortCyclingSetSortConnectorTogglesRemoveJoinByIndexAndNestedFilterCheckWork() {
+        val viewModel = QueryViewModel(NoOpService(), TestScope(StandardTestDispatcher()))
+        viewModel.addTable(table("orders", "id", "status"))
+        viewModel.addTable(table("users", "id"))
+        viewModel.addJoin(JoinSpec("t0", "id", "t1", "id"))
+        assertEquals(1, viewModel.joins.size)
+        viewModel.removeJoin(0)
+        assertTrue(viewModel.joins.isEmpty())
+
+        // cycleSort: null -> Asc -> Desc -> removed
+        viewModel.cycleSort("t0", "id")
+        assertEquals(SortDirection.Asc, viewModel.sortForColumn("t0", "id")?.direction)
+        viewModel.cycleSort("t0", "id")
+        assertEquals(SortDirection.Desc, viewModel.sortForColumn("t0", "id")?.direction)
+        viewModel.cycleSort("t0", "id")
+        assertNull(viewModel.sortForColumn("t0", "id"))
+
+        // setSort adds then updates direction
+        viewModel.setSort("t0", "id", SortDirection.Asc)
+        viewModel.setSort("t0", "id", SortDirection.Desc)
+        assertEquals(SortDirection.Desc, viewModel.sortForColumn("t0", "id")?.direction)
+
+        // Nested filter group containsFilter + toggleChildConnector override & reset
+        viewModel.addFilterForColumn("t0", "id", "int")
+        viewModel.addGroupToGroup(emptyList(), GroupConnector.Or)
+        viewModel.addFilterToGroup(
+            listOf(1),
+            filter("nested-leaf", "t0", "status"),
+        )
+        assertTrue(viewModel.hasFilterForColumn("t0", "status"))
+        assertEquals(GroupConnector.And, viewModel.getConnectorForChild(listOf(1)))
+        viewModel.toggleChildConnector(listOf(1))
+        assertEquals(GroupConnector.Or, viewModel.getConnectorForChild(listOf(1)))
+        viewModel.toggleChildConnector(listOf(1))
+        assertEquals(GroupConnector.And, viewModel.getConnectorForChild(listOf(1)))
+        assertTrue(viewModel.connectorOverrides.isEmpty())
+    }
+
     private fun sampleTable() =
         TableInfo(
             schema = "public",

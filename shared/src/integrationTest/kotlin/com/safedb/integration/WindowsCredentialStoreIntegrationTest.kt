@@ -1,4 +1,4 @@
-package com.safedb.secrets
+package com.safedb.integration
 
 import com.safedb.adapter.Adapter
 import com.safedb.adapter.SERVICE_NAME
@@ -7,6 +7,10 @@ import com.safedb.model.Dialect
 import com.safedb.model.TransportSecurity
 import com.safedb.model.TransportSecurityMode
 import com.safedb.platform.DesktopPlatform
+import com.safedb.secrets.CredentialSession
+import com.safedb.secrets.DisabledMemoryStore
+import com.safedb.secrets.SecretsManager
+import com.safedb.secrets.createJavaKeyringDelegateOrNull
 import com.safedb.service.SafeDbServiceImpl
 import com.safedb.store.ConfigStore
 import com.safedb.store.QueryStore
@@ -14,14 +18,17 @@ import com.safedb.store.SettingsStore
 import java.nio.file.Files
 import java.util.UUID
 import kotlin.test.AfterTest
-import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
+import org.junit.jupiter.api.Assumptions.assumeTrue
+import org.junit.jupiter.api.Tag
+import org.junit.jupiter.api.Test
 
-class WindowsCredentialStoreTest {
+@Tag("integration")
+class WindowsCredentialStoreIntegrationTest {
     private var connectionId: String? = null
 
     @AfterTest
@@ -34,7 +41,7 @@ class WindowsCredentialStoreTest {
 
     @Test
     fun platformStoreIsWindowsCredentialManager() {
-        if (!runningOnWindows()) return
+        assumeTrue(runningOnWindows(), "Requires Windows Credential Manager")
         SecretsManager.initStore(platform = DesktopPlatform.Windows)
         assertEquals("windows", SecretsManager.activeBackendLabel())
         val store = createJavaKeyringDelegateOrNull()
@@ -44,7 +51,7 @@ class WindowsCredentialStoreTest {
 
     @Test
     fun boundPasswordRoundTripsThroughCredentialManager() {
-        if (!runningOnWindows()) return
+        assumeTrue(runningOnWindows(), "Requires Windows Credential Manager")
         SecretsManager.initStore(platform = DesktopPlatform.Windows)
         val def = mysqlDef(UUID.randomUUID().toString())
         connectionId = def.id
@@ -58,7 +65,7 @@ class WindowsCredentialStoreTest {
 
     @Test
     fun missingCredentialReadsAsAbsentRatherThanThrowing() {
-        if (!runningOnWindows()) return
+        assumeTrue(runningOnWindows(), "Requires Windows Credential Manager")
         val store = createJavaKeyringDelegateOrNull()
         assertNotNull(store)
         assertNull(store.getPassword(SERVICE_NAME, "missing-${UUID.randomUUID()}"))
@@ -67,7 +74,7 @@ class WindowsCredentialStoreTest {
 
     @Test
     fun missingPasswordIsAFailureNotAThrow() {
-        if (!runningOnWindows()) return
+        assumeTrue(runningOnWindows(), "Requires Windows Credential Manager")
         SecretsManager.initStore(platform = DesktopPlatform.Windows)
         val def = mysqlDef(UUID.randomUUID().toString())
         val result = SecretsManager.passwordForDefinition(def)
@@ -79,27 +86,35 @@ class WindowsCredentialStoreTest {
 
     @Test
     fun createMysqlConnectionThenReadsPasswordFromCredentialManager() = runBlocking {
-        if (!runningOnWindows()) return@runBlocking
+        assumeTrue(runningOnWindows(), "Requires Windows Credential Manager")
         SecretsManager.initStore(platform = DesktopPlatform.Windows)
-        val candidate = reachableMysqlDef() ?: return@runBlocking
-        val def = candidate
-        connectionId = def.id
+        val def = reachableMysqlDef()
+        assumeTrue(def != null, "Requires a reachable local MySQL test instance")
+        val resolved = def!!
+        connectionId = resolved.id
         val dir = Files.createTempDirectory("safedb-credman-mysql")
-        val service =
-            SafeDbServiceImpl(
-                configStore = ConfigStore.new(dir),
-                queryStore = QueryStore.new(dir),
-                settingsStore = SettingsStore.new(dir),
+        try {
+            val service =
+                SafeDbServiceImpl(
+                    configStore = ConfigStore.new(dir),
+                    queryStore = QueryStore.new(dir),
+                    settingsStore = SettingsStore.new(dir),
+                )
+
+            service.createConnection(resolved, "safedb")
+            CredentialSession.lockCredentials()
+
+            assertEquals("safedb", SecretsManager.passwordForDefinition(resolved).getOrThrow())
+            val schema = service.getSchema(resolved.id)
+            assertTrue(
+                schema.tables.isNotEmpty(),
+                "expected tables after saving the MySQL connection",
             )
-
-        service.createConnection(def, "safedb")
-        CredentialSession.lockCredentials()
-
-        assertEquals("safedb", SecretsManager.passwordForDefinition(def).getOrThrow())
-        val schema = service.getSchema(def.id)
-        assertTrue(schema.tables.isNotEmpty(), "expected tables after saving the MySQL connection")
-        service.deleteConnection(def.id)
-        connectionId = null
+            service.deleteConnection(resolved.id)
+            connectionId = null
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
     }
 
     private fun reachableMysqlDef(): ConnectionDef? {

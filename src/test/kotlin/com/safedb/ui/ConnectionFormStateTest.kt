@@ -476,6 +476,21 @@ class ConnectionFormStateTest {
         assertNull(genericState.formError)
     }
 
+    @Test
+    fun applyParsedInputReportsParseErrorsAndKeepSavedPasswordRevertsEdit() {
+        val state = ConnectionFormState(sampleConnection())
+        state.connectionString = "not-a-valid-jdbc-string"
+        state.applyParsedInput()
+        assertTrue(!state.parseError.isNullOrBlank())
+
+        state.enablePasswordChange()
+        state.password = "temp"
+        assertTrue(state.passwordChangeEnabled)
+        state.keepSavedPassword()
+        assertFalse(state.passwordChangeEnabled)
+        assertEquals("", state.password)
+    }
+
     private fun sampleConnection() =
         ConnectionDef(
             id = "c1",

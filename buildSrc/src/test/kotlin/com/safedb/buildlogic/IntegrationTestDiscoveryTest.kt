@@ -184,6 +184,64 @@ class IntegrationTestDiscoveryTest {
     }
 
     @Test
+    fun unitTestDiscoveryVerifiesEveryCompiledClassRanWithoutSkipsOrFailures() {
+        val result =
+            verifyUnitTestClassDiscovery(
+                label = "mcp",
+                compiledTestClasses = setOf("com.safedb.mcp.OneTest", "com.safedb.mcp.TwoTest"),
+                reports =
+                    listOf(
+                        "<testsuite><testcase classname=\"com.safedb.mcp.OneTest\" name=\"a\"/></testsuite>",
+                        "<testsuite><testcase classname=\"com.safedb.mcp.TwoTest\$Nested\" name=\"b\"/></testsuite>",
+                    ),
+            )
+
+        assertEquals(UnitDiscoveryResult("mcp", executed = 2, discoveredClasses = 2), result)
+    }
+
+    @Test
+    fun unitTestDiscoveryRejectsMissingTestClassFailureOrSkip() {
+        val missing =
+            assertFailsWith<IllegalStateException> {
+                verifyUnitTestClassDiscovery(
+                    label = "desktop",
+                    compiledTestClasses = setOf("com.safedb.ATest", "com.safedb.BTest"),
+                    reports =
+                        listOf(
+                            "<testsuite><testcase classname=\"com.safedb.ATest\" name=\"a\"/></testsuite>",
+                        ),
+                )
+            }
+        assertTrue(missing.message!!.contains("com.safedb.BTest"))
+
+        val skipped =
+            assertFailsWith<IllegalStateException> {
+                verifyUnitTestClassDiscovery(
+                    label = "shared",
+                    compiledTestClasses = setOf("com.safedb.ATest"),
+                    reports =
+                        listOf(
+                            "<testsuite><testcase classname=\"com.safedb.ATest\" name=\"a\"><skipped/></testcase></testsuite>",
+                        ),
+                )
+            }
+        assertTrue(skipped.message!!.contains("1 skipped tests"))
+
+        val failed =
+            assertFailsWith<IllegalStateException> {
+                verifyUnitTestClassDiscovery(
+                    label = "shared",
+                    compiledTestClasses = setOf("com.safedb.ATest"),
+                    reports =
+                        listOf(
+                            "<testsuite><testcase classname=\"com.safedb.ATest\" name=\"a\"><failure/></testcase></testsuite>",
+                        ),
+                )
+            }
+        assertTrue(failed.message!!.contains("1 failures/errors"))
+    }
+
+    @Test
     fun mysqlOnlyRequirementDoesNotDemandMcpPostgres() {
         val result =
             verifyMcpIntegrationTestDiscovery(
@@ -191,6 +249,12 @@ class IntegrationTestDiscoveryTest {
                     listOf(
                         mcpReport("McpPackagedStdioIntegrationTest"),
                         mcpReport("McpMySqlIntegrationTest"),
+                        mcpReport("McpPackagedDialectsIntegrationTest", name = "packagedJarQueriesMysql()"),
+                        mcpReport(
+                            "McpPackagedDialectsIntegrationTest",
+                            name = "packagedJarQueriesPostgres()",
+                            skipped = true,
+                        ),
                         mcpReport("McpPostgresIntegrationTest", skipped = true),
                     ),
                 requireMysql = true,
@@ -201,6 +265,7 @@ class IntegrationTestDiscoveryTest {
             listOf(
                 IntegrationDiscoveryResult("mcp packaged stdio", 1, 0),
                 IntegrationDiscoveryResult("mcp mysql", 1, 0),
+                IntegrationDiscoveryResult("mcp packaged mysql", 1, 0),
             ),
             result,
         )
@@ -224,6 +289,10 @@ class IntegrationTestDiscoveryTest {
                     listOf(
                         mcpReport("McpPackagedStdioIntegrationTest"),
                         mcpReport("McpPostgresIntegrationTest"),
+                        mcpReport(
+                            "McpPackagedDialectsIntegrationTest",
+                            name = "packagedJarQueriesPostgres()",
+                        ),
                     ),
                 requireMysql = false,
                 requirePostgres = true,
@@ -232,6 +301,35 @@ class IntegrationTestDiscoveryTest {
             listOf(
                 IntegrationDiscoveryResult("mcp packaged stdio", 1, 0),
                 IntegrationDiscoveryResult("mcp postgres", 1, 0),
+                IntegrationDiscoveryResult("mcp packaged postgres", 1, 0),
+            ),
+            result,
+        )
+    }
+
+    @Test
+    fun packagedDialectsTrackMssqlOracleAndDb2WhenRequired() {
+        val result =
+            verifyMcpIntegrationTestDiscovery(
+                reports =
+                    listOf(
+                        mcpReport("McpPackagedStdioIntegrationTest"),
+                        mcpReport("McpPackagedDialectsIntegrationTest", name = "packagedJarQueriesMssql()"),
+                        mcpReport("McpPackagedDialectsIntegrationTest", name = "packagedJarQueriesOracle()"),
+                        mcpReport("McpPackagedDialectsIntegrationTest", name = "packagedJarQueriesDb2()"),
+                    ),
+                requireMysql = false,
+                requireMssql = true,
+                requireOracle = true,
+                requireDb2 = true,
+            )
+
+        assertEquals(
+            listOf(
+                IntegrationDiscoveryResult("mcp packaged stdio", 1, 0),
+                IntegrationDiscoveryResult("mcp packaged mssql", 1, 0),
+                IntegrationDiscoveryResult("mcp packaged oracle", 1, 0),
+                IntegrationDiscoveryResult("mcp packaged db2", 1, 0),
             ),
             result,
         )
@@ -258,8 +356,9 @@ class IntegrationTestDiscoveryTest {
     private fun mcpReport(
         className: String,
         skipped: Boolean = false,
+        name: String = "test",
     ): String =
-        "<testsuite><testcase classname=\"com.safedb.mcp.$className\" name=\"test\">" +
+        "<testsuite><testcase classname=\"com.safedb.mcp.$className\" name=\"$name\">" +
             (if (skipped) "<skipped/>" else "") +
             "</testcase></testsuite>"
 }

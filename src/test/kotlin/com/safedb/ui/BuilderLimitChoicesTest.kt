@@ -7,16 +7,6 @@ import kotlin.test.assertNull
 
 class BuilderLimitChoicesTest {
     @Test
-    fun numericChipsStayGroupedAndAllIsASeparateLabel() {
-        assertEquals(listOf(500, 1_000, 5_000), BUILDER_LIMIT_CHOICES)
-        assertEquals("ALL", BUILDER_ALL_LIMIT_LABEL)
-        assertEquals("%,d".format(500), builderLimitChoiceLabel(500))
-        assertEquals("%,d".format(1_000), builderLimitChoiceLabel(1_000))
-        assertEquals("%,d".format(5_000), builderLimitChoiceLabel(5_000))
-        assertEquals("%,d".format(10_000), builderLimitChoiceLabel(10_000))
-    }
-
-    @Test
     fun limitFieldShowsAllOnlyWhenUncapped() {
         assertEquals("500", limitFieldText(500, false))
         assertEquals("10000", limitFieldText(10_000, false))

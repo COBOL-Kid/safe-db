@@ -773,6 +773,59 @@ class QueryPlanRefinementTest {
         )
     }
 
+    @Test
+    fun failClosedUncertaintiesRecordUnmappedAndMissingRowSignals() {
+        val unmappedAndMissingRows =
+            refineRiskWithPlan(
+                buildAssessment("f", listOf(genericAccessSignal()), emptyList()),
+                NormalizedQueryPlan(
+                    relations =
+                        listOf(
+                            PlanRelationAccess(
+                                table = "unknown_tbl",
+                                alias = "bogus",
+                                method = PlanAccessMethod.TableScan,
+                                estimatedRows = 100,
+                            ),
+                            PlanRelationAccess(
+                                table = "orders",
+                                schema = "public",
+                                alias = "orders_scan",
+                                method = PlanAccessMethod.BoundedRange,
+                                estimatedRows = null,
+                            ),
+                        ),
+                    blockingOperations =
+                        listOf(
+                            PlanBlockingOperation(
+                                PlanOperationKind.Sort,
+                                aliases = emptySet(),
+                                estimatedRows = 10,
+                            ),
+                            PlanBlockingOperation(
+                                PlanOperationKind.Grouping,
+                                aliases = setOf("t0"),
+                                estimatedRows = 10,
+                            ),
+                        ),
+                    joins =
+                        listOf(
+                            PlanJoinEvidence(emptySet(), 50),
+                            PlanJoinEvidence(setOf("t0"), null),
+                        ),
+                ),
+                oneTableSpec(),
+                Schema(listOf(table("orders"))),
+            )
+
+        val codes = unmappedAndMissingRows.uncertainties.map { it.code }.toSet()
+        assertTrue("plan_relation_unmapped" in codes, codes.toString())
+        assertTrue("plan_access_rows_unknown" in codes, codes.toString())
+        assertTrue("plan_operation_unmapped" in codes, codes.toString())
+        assertTrue("plan_join_unmapped" in codes, codes.toString())
+        assertTrue("plan_join_rows_unknown" in codes, codes.toString())
+    }
+
     private fun refineAccess(
         method: PlanAccessMethod,
         rows: Long,

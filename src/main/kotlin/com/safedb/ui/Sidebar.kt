@@ -182,7 +182,10 @@ internal fun Sidebar(
     Row(modifier = Modifier.fillMaxHeight()) {
         Column(
             modifier =
-                Modifier.width(sidebarWidth).fillMaxHeight().background(c.navigationBackground),
+                Modifier.width(sidebarWidth)
+                    .fillMaxHeight()
+                    .background(c.navigationBackground)
+                    .testTag(SIDEBAR_RAIL_TAG),
         ) {
             SidebarHeader(
                 collapsed = layoutCollapsed,
@@ -422,7 +425,11 @@ private fun SidebarUtilities(
 private fun LogoMark() {
     val c = SafeDbTheme.colors
     Box(
-        modifier = Modifier.size(34.dp).clip(ChipShape).background(c.actionPrimary),
+        modifier =
+            Modifier.size(34.dp)
+                .clip(ChipShape)
+                .background(c.actionPrimary)
+                .testTag(SIDEBAR_LOGO_TAG),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -434,6 +441,8 @@ private fun LogoMark() {
     }
 }
 
+internal const val SIDEBAR_RAIL_TAG = "sidebar-rail"
+internal const val SIDEBAR_LOGO_TAG = "sidebar-logo"
 internal const val SIDEBAR_STATUS_TAG = "sidebar-status"
 
 @Composable

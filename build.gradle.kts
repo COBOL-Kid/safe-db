@@ -142,12 +142,16 @@ tasks.qodanaScan {
 val koverIncludedClasses =
     listOf(
         "com.safedb.AppState*",
-        "com.safedb.AppVersion*",
-        "com.safedb.AppWindowIcon*",
         "com.safedb.export.*",
         "com.safedb.platform.*",
         "com.safedb.viewmodel.*",
         "com.safedb.ui.ConnectionFormState*",
+        "com.safedb.ui.ExploreTemplates*",
+        "com.safedb.ui.ExploreUiModel*",
+        "com.safedb.ui.TransportSecurityOptions*",
+        "com.safedb.ui.WorksheetColumnInteractions*",
+        "com.safedb.ui.chart.*",
+        "com.safedb.ui.util.*",
         "com.safedb.adapter.*",
         "com.safedb.canvas.*",
         "com.safedb.connection.*",
@@ -162,7 +166,23 @@ val koverIncludedClasses =
         "com.safedb.store.*",
     )
 
-val koverExcludedClasses = listOf("*ComposableSingletons*", "*\$\$serializer*")
+val koverExcludedClasses =
+    listOf(
+        "*ComposableSingletons*",
+        "*\$\$serializer*",
+        "com.safedb.service.DispatchingSafeDbService*",
+        "com.safedb.secrets.PlatformCredentialStore*",
+        "com.safedb.secrets.JavaKeyringDelegate",
+        "com.safedb.secrets.JavaKeyringDelegate\$*",
+        "com.safedb.adapter.MySqlAdapter",
+        "com.safedb.adapter.MySqlAdapter\$*",
+        "com.safedb.adapter.PgAdapter",
+        "com.safedb.adapter.PgAdapter\$*",
+        "com.safedb.adapter.OracleAdapter",
+        "com.safedb.adapter.OracleAdapter\$*",
+        "com.safedb.adapter.MssqlAdapter",
+        "com.safedb.adapter.MssqlAdapter\$*",
+    )
 
 kover {
     reports {

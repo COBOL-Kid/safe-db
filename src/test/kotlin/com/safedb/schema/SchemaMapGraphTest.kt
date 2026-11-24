@@ -573,6 +573,127 @@ class SchemaMapGraphTest {
         assertNotNull(graph.nodes.singleOrNull { it.id == "public.broken" })
     }
 
+    @Test
+    fun geometryBoundsTranslationsSameColumnRoutingAndSearchLayoutWork() {
+        val point = SchemaMapPoint(10f, 20f).translated(5f, -3f)
+        assertEquals(SchemaMapPoint(15f, 17f), point)
+
+        val relGeom =
+            SchemaMapRelationshipGeometry(
+                    source = SchemaMapPoint(0f, 10f),
+                    target = SchemaMapPoint(50f, 100f),
+                    bends = listOf(SchemaMapPoint(20f, 10f), SchemaMapPoint(20f, 100f)),
+                    anchor = SchemaMapPoint(20f, 55f),
+                    sourceTowardRight = true,
+                    targetTowardRight = false,
+                )
+                .translated(4f, 6f)
+        assertEquals(SchemaMapPoint(4f, 16f), relGeom.source)
+        assertEquals(SchemaMapPoint(54f, 106f), relGeom.target)
+        assertEquals(SchemaMapPoint(24f, 61f), relGeom.anchor)
+
+        // Same-column vertical alignment routing and bounds computation
+        val t1 = parent()
+        val t2 =
+            table(
+                "orders",
+                columns = listOf(column("id"), column("customer_id")),
+                indexes = listOf(primary("orders_pkey", "id")),
+                foreignKeys = listOf(foreignKey("orders_customer_fk", "customer_id")),
+            )
+        val schema = Schema(listOf(t1, t2))
+        val graph = buildSchemaMapGraph(schema, "public")
+        val sameColumnPositions =
+            mapOf(
+                "public.customers" to SchemaMapPoint(100f, 0f),
+                "public.orders" to SchemaMapPoint(100f, 320f),
+            )
+        val sizes = graph.nodes.associate { it.id to SchemaMapSize(200f, 100f) }
+        val routed = schemaMapRelationshipGeometries(graph, sameColumnPositions, sizes)
+        assertEquals(1, routed.size)
+
+        val contentBounds =
+            schemaMapContentBounds(graph, sameColumnPositions, sizes, density = 2f, routed)
+        val nodeBounds =
+            schemaMapNodeBounds("public.customers", sameColumnPositions, sizes, density = 2f)
+        assertEquals(200f, nodeBounds.left)
+        assertEquals(0f, nodeBounds.top)
+        assertTrue(contentBounds.right >= nodeBounds.right)
+        assertTrue(contentBounds.bottom >= 640f)
+
+        // Search: blank query returns all nodes; externalColumns match external targets
+        val externalGraph =
+            buildSchemaMapGraph(
+                Schema(
+                    listOf(
+                        table(
+                            "members",
+                            columns = listOf(column("id"), column("org_id")),
+                            foreignKeys =
+                                listOf(
+                                    ForeignKeyInfo(
+                                        "members_org_fk",
+                                        listOf("org_id"),
+                                        "ext",
+                                        "orgs",
+                                        listOf("external_org_pk"),
+                                    ),
+                                ),
+                        ),
+                    ),
+                ),
+                "public",
+            )
+        val blankSearch = searchSchemaMap(externalGraph, "   ")
+        assertEquals(externalGraph.nodes.map { it.id }.toSet(), blankSearch.nodeIds)
+        val externalColMatch = searchSchemaMap(externalGraph, "external_org_pk")
+        assertTrue("ext.orgs" in externalColMatch.nodeIds)
+        assertEquals(listOf("external_org_pk"), externalColMatch.columnsByNode["ext.orgs"])
+
+        // Multi-layer DAG + enough isolated tables to trigger component packWidth wrapping (>
+        // 1650f)
+        val layeredTables =
+            listOf(
+                parent(),
+                table(
+                    "t_l2",
+                    listOf(column("id"), column("customer_id")),
+                    foreignKeys = listOf(foreignKey("fk_l2", "customer_id")),
+                ),
+                table(
+                    "t_l3",
+                    listOf(column("id"), column("l2_id")),
+                    foreignKeys =
+                        listOf(
+                            ForeignKeyInfo(
+                                "fk_l3",
+                                listOf("l2_id"),
+                                "public",
+                                "t_l2",
+                                listOf("id"),
+                            ),
+                        ),
+                ),
+                table(
+                    "t_l4",
+                    listOf(column("id"), column("l3_id")),
+                    foreignKeys =
+                        listOf(
+                            ForeignKeyInfo(
+                                "fk_l4",
+                                listOf("l3_id"),
+                                "public",
+                                "t_l3",
+                                listOf("id"),
+                            ),
+                        ),
+                ),
+            ) + (1..8).map { i -> table("iso_$i", listOf(column("id"))) }
+        val packedGraph = buildSchemaMapGraph(Schema(layeredTables), "public")
+        val packedPositions = layoutSchemaMap(packedGraph)
+        assertTrue(packedPositions.values.map { it.y }.distinct().size >= 2)
+    }
+
     private fun parent(columns: List<ColumnInfo> = listOf(column("id"))) =
         table(
             "customers",

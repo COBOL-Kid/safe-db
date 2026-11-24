@@ -487,6 +487,15 @@ internal suspend fun withTempMcpClient(
     }
 }
 
+internal inline fun <T> withTempDir(prefix: String = "safedb-mcp-cli", block: (Path) -> T): T {
+    val dir = Files.createTempDirectory(prefix)
+    try {
+        return block(dir)
+    } finally {
+        dir.toFile().deleteRecursively()
+    }
+}
+
 internal suspend fun withMcpClient(server: Server, block: suspend (Client) -> Unit) {
     val clientToServer = java.io.PipedInputStream(PIPE_BUFFER)
     val clientOut = java.io.PipedOutputStream(clientToServer)

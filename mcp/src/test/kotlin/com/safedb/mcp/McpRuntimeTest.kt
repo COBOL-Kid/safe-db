@@ -5,6 +5,8 @@ import com.safedb.platform.DesktopPlatform
 import com.safedb.secrets.SecretsManager
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.ServerOptions
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequestParams
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.Implementation
 import io.modelcontextprotocol.kotlin.sdk.types.ServerCapabilities
@@ -19,6 +21,7 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -26,9 +29,11 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Runnable
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 
 class McpRuntimeTest {
     @AfterTest
@@ -276,6 +281,117 @@ class McpRuntimeTest {
             System.setOut(previous)
         }
     }
+
+    @Test
+    fun allToolsExposeExpectedAnnotationsAndSchemas() = runBlocking {
+        val readOnlyTools =
+            setOf(
+                "list_connections",
+                "list_tables",
+                "describe_table",
+                "search_catalog",
+                "find_join_paths",
+                "get_result_rows",
+                "summarize_result",
+                "pivot_result",
+                "filter_result_rows",
+                "list_recipes",
+                "apply_recipe",
+                "list_saved_queries",
+                "list_query_history",
+            )
+        val destructiveTools = setOf("delete_connection", "delete_saved_query")
+        val nonReadOnlyAssessTools = setOf("assess_query")
+        val unannotatedTools = setOf("run_query", "save_query", "run_saved_query", "export_result")
+
+        withTempMcpClient(RecordingSafeDbService()) { client ->
+            val tools = client.listTools().tools.associateBy { it.name }
+            assertEquals(
+                readOnlyTools + destructiveTools + nonReadOnlyAssessTools + unannotatedTools,
+                tools.keys,
+            )
+            readOnlyTools.forEach { name ->
+                assertEquals(true, tools.getValue(name).annotations?.readOnlyHint, name)
+            }
+            destructiveTools.forEach { name ->
+                assertEquals(true, tools.getValue(name).annotations?.destructiveHint, name)
+            }
+            nonReadOnlyAssessTools.forEach { name ->
+                assertEquals(false, tools.getValue(name).annotations?.readOnlyHint, name)
+            }
+            unannotatedTools.forEach { name -> assertNull(tools.getValue(name).annotations, name) }
+            assertEquals(
+                listOf("connection_id", "sql"),
+                tools.getValue("run_query").inputSchema.required,
+            )
+            assertFalse(
+                tools.getValue("run_query").inputSchema.properties?.containsKey("spec") == true,
+            )
+        }
+    }
+
+    @Test
+    fun parseListPageParamsAndPaginateListValidateAndSlice() {
+        val defaults = assertIs<Arg.Ok<ListPageParams>>(parseListPageParams(listRequest()))
+        assertEquals(ListPageParams(offset = 0, limit = LIST_DEFAULT_LIMIT), defaults.value)
+
+        val clamped =
+            assertIs<Arg.Ok<ListPageParams>>(
+                parseListPageParams(listRequest("offset" to 2, "limit" to LIST_MAX_LIMIT + 50)),
+            )
+        assertEquals(ListPageParams(offset = 2, limit = LIST_MAX_LIMIT), clamped.value)
+
+        listOf(
+                listRequest("offset" to -1) to "offset must be 0 or more",
+                listRequest("limit" to 0) to "limit must be 1 or more",
+                listRequest("offset" to "abc") to "offset must be an integer",
+                listRequest("limit" to "abc") to "limit must be an integer",
+            )
+            .forEach { (request, expectedMessage) ->
+                val err = assertIs<Arg.Err>(parseListPageParams(request))
+                val msg =
+                    Json.parseToJsonElement((err.result.content.single() as TextContent).text)
+                        .jsonObject
+                        .getValue("message")
+                        .jsonPrimitive
+                        .content
+                assertEquals(expectedMessage, msg)
+            }
+
+        val middle = paginateList(listOf("a", "b", "c", "d", "e"), offset = 1, limit = 2)
+        assertEquals(
+            ListPage(listOf("b", "c"), totalCount = 5, truncated = true, nextOffset = 3),
+            middle,
+        )
+
+        val end = paginateList(listOf("a", "b", "c", "d", "e"), offset = 3, limit = 2)
+        assertEquals(
+            ListPage(listOf("d", "e"), totalCount = 5, truncated = false, nextOffset = null),
+            end,
+        )
+
+        val pastEnd = paginateList(listOf("a", "b"), offset = 5, limit = 2)
+        assertEquals(
+            ListPage(emptyList(), totalCount = 2, truncated = false, nextOffset = null),
+            pastEnd,
+        )
+    }
+
+    private fun listRequest(vararg entries: Pair<String, Any>): CallToolRequest =
+        CallToolRequest(
+            CallToolRequestParams(
+                name = "list",
+                arguments =
+                    buildJsonObject {
+                        entries.forEach { (key, value) ->
+                            when (value) {
+                                is Int -> put(key, value)
+                                is String -> put(key, JsonPrimitive(value))
+                            }
+                        }
+                    },
+            ),
+        )
 }
 
 private fun assertStructuredMatchesText(result: CallToolResult) {

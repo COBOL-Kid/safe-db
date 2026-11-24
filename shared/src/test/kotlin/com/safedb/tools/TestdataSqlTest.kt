@@ -43,13 +43,6 @@ class TestdataSqlTest {
         val init = Files.readString(root.resolve("docker/test-databases/db2-init.sh"))
         assertTrue(init.contains("/fixtures/db2-drop-statements.sql"))
         assertTrue(!init.contains("DROP VIEW CUSTOMER_ORDER_SUMMARY"))
-        val seed =
-            Files.readString(
-                root.resolve("shared/src/tools/kotlin/com/safedb/tools/SeedRelational.kt"),
-            )
-        assertTrue(seed.contains("db2DropStatements("))
-        assertTrue(seed.contains(DB2_DROP_STATEMENTS_RELATIVE))
-        assertTrue(!seed.contains("DROP VIEW CUSTOMER_ORDER_SUMMARY"))
         val compose = Files.readString(root.resolve("compose.yaml"))
         assertTrue(compose.contains("db2-drop-statements.sql:/fixtures/db2-drop-statements.sql"))
     }

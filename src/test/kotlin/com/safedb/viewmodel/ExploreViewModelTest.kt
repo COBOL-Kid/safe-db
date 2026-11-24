@@ -39,6 +39,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -830,6 +831,100 @@ class ExploreViewModelTest {
         assertFalse(viewModel.exporting)
         assertTrue(Files.size(firstPath) > 0L)
         assertEquals(0L, Files.size(secondPath))
+    }
+
+    @Test
+    fun exportFailureHiddenColumnsIncompleteChartTemplateToggleAndMemberLabelsWork() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val richSample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__status", "varchar"),
+                        ResultColumn("t0__flag", "boolean"),
+                        ResultColumn("t0__num", "bigint"),
+                        ResultColumn("t0__flt", "double"),
+                        ResultColumn("t0__bin", "bytea"),
+                    ),
+                rows =
+                    listOf(
+                        listOf(
+                            ResultCell.text("open"),
+                            ResultCell.BoolCell(true),
+                            ResultCell.IntegerCell(7),
+                            ResultCell.FloatCell(2.5),
+                            ResultCell.binary(byteArrayOf(1, 2)),
+                        ),
+                        listOf(
+                            ResultCell.Null,
+                            ResultCell.Null,
+                            ResultCell.Null,
+                            ResultCell.Null,
+                            ResultCell.Null,
+                        ),
+                    ),
+                rowCount = 2,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val viewModel =
+            ExploreViewModel(
+                createExploreSession(connection(), sampleSpec(), richSample),
+                computationScope = this,
+                computeDispatcher = dispatcher,
+                ioDispatcher = dispatcher,
+            )
+        runCurrent()
+
+        assertEquals(
+            listOf("(blank)", "open"),
+            viewModel.memberOptions("t0__status").map { it.label },
+        )
+        assertEquals(
+            listOf("(blank)", "true"),
+            viewModel.memberOptions("t0__flag").map { it.label },
+        )
+        assertEquals(listOf("(blank)", "7"), viewModel.memberOptions("t0__num").map { it.label })
+        assertEquals(listOf("(blank)", "2.5"), viewModel.memberOptions("t0__flt").map { it.label })
+        assertEquals(listOf("(blank)", "AQI="), viewModel.memberOptions("t0__bin").map { it.label })
+
+        viewModel.toggleColumnPath("open")
+        assertTrue("open" in viewModel.config.collapsedColumnPaths)
+
+        viewModel.applyVisualizationTemplate(
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("t0__status", "Status"),
+                values = listOf(VisualizationMeasure("c", MeasureFn.Count, label = "Count")),
+            ),
+        )
+        assertEquals(ExploreMode.Visualization, viewModel.workspace.activeMode)
+        runCurrent()
+
+        // Incomplete chart guard
+        viewModel.updateVisualization { VisualizationConfig() }
+        runCurrent()
+        val visOut = createTempFile(suffix = ".csv")
+        viewModel.saveVisualizationCsv(visOut)
+        assertEquals("Complete the chart before exporting.", viewModel.exportError)
+
+        // All worksheet columns hidden guard
+        viewModel.updateWorksheetColumnLayout(
+            viewModel.worksheetPreview.columns.map {
+                WorksheetColumnLayout(ref = it.valueRef, visible = false)
+            },
+        )
+        val wsOut = createTempFile(suffix = ".csv")
+        viewModel.saveWorksheetCsv(wsOut)
+        assertEquals("Show at least one worksheet column before exporting.", viewModel.exportError)
+
+        // completeExport failure propagation when writing to an invalid parent directory
+        val badPath = java.nio.file.Path.of("/nonexistent-safedb-dir-${System.nanoTime()}/out.csv")
+        viewModel.savePreviewCsv(badPath)
+        advanceUntilIdle()
+        assertFalse(viewModel.exporting)
+        assertNull(viewModel.exportMessage)
+        assertTrue(!viewModel.exportError.isNullOrBlank())
     }
 
     private fun ExploreViewModel.reconfigure(mode: ExploreMode) {

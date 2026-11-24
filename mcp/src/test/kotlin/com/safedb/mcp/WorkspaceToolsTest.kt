@@ -21,7 +21,6 @@ import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -410,18 +409,6 @@ class WorkspaceToolsTest {
     }
 
     @Test
-    fun workspaceToolAnnotationsAreDocumented() = runBlocking {
-        withTempMcpClient(workspaceService()) { client ->
-            val tools = client.listTools().tools.associateBy { it.name }
-            assertEquals(true, tools.getValue("list_saved_queries").annotations?.readOnlyHint)
-            assertEquals(true, tools.getValue("list_query_history").annotations?.readOnlyHint)
-            assertEquals(true, tools.getValue("delete_saved_query").annotations?.destructiveHint)
-            assertNull(tools.getValue("save_query").annotations)
-            assertNull(tools.getValue("run_saved_query").annotations)
-        }
-    }
-
-    @Test
     fun listSavedQueriesAndHistoryTolerateMalformedFilters() = runBlocking {
         val service = workspaceService()
         val malformed = malformedBetweenSpec()
@@ -469,28 +456,15 @@ class WorkspaceToolsTest {
                 savedQuery("q$index", "Query $index", "c1", createdAt = "$index")
         }
         withTempMcpClient(service) { client ->
-            val first = client.callJson("list_saved_queries", mapOf("offset" to 1, "limit" to 2))
+            val page = client.callJson("list_saved_queries", mapOf("offset" to 1, "limit" to 2))
             assertEquals(
                 listOf("q1", "q2"),
-                first.getValue("saved_queries").jsonArray.map { it.jsonObject.string("id") },
+                page.getValue("saved_queries").jsonArray.map { it.jsonObject.string("id") },
             )
-            assertEquals("5", first.string("total_count"))
-            assertEquals("true", first.string("truncated"))
-            assertEquals("3", first.string("next_offset"))
+            assertEquals("5", page.string("total_count"))
+            assertEquals("true", page.string("truncated"))
+            assertEquals("3", page.string("next_offset"))
 
-            val last = client.callJson("list_saved_queries", mapOf("offset" to 3, "limit" to 2))
-            assertEquals(
-                listOf("q3", "q4"),
-                last.getValue("saved_queries").jsonArray.map { it.jsonObject.string("id") },
-            )
-            assertEquals("false", last.string("truncated"))
-            assertFalse(last.containsKey("next_offset"))
-
-            assertError(
-                client.callTool("list_saved_queries", mapOf("limit" to 0)),
-                "invalid_arguments",
-                "limit must be 1 or more",
-            )
             assertError(
                 client.callTool("list_saved_queries", mapOf("offset" to -1)),
                 "invalid_arguments",

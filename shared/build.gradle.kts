@@ -19,7 +19,10 @@ kotlin { jvmToolchain(25) }
 kover {
     currentProject {
         instrumentation { disabledForTestTasks.add("integrationTest") }
-        sources { excludedSourceSets.add("integrationTest") }
+        sources {
+            excludedSourceSets.add("integrationTest")
+            excludedSourceSets.add("testFixtures")
+        }
     }
 }
 
