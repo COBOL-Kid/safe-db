@@ -29,7 +29,6 @@ private class VisualizationPlanner(
     private val types = sample.columns.associate { it.name to classifyColumn(it.dataType) }
     private val warnings = linkedSetOf<String>()
     private val seriesSortKeys = mutableMapOf<String, String>()
-    private val exactPlainY = mutableMapOf<String, String>()
     private val autoDecimalFormat by lazy { createGroupedAutoDecimalFormat() }
 
     fun apply(): VisualizationPreview {
@@ -159,7 +158,6 @@ private class VisualizationPlanner(
                 val seriesKey = if (config.series != null) seriesBucket.key else measure.alias
                 val seriesLabel = if (config.series != null) seriesBucket.label else measure.label
                 val id = "${xBucket.key}|$seriesKey|${measure.alias}"
-                exactPlainY[id] = plain(value)
                 marks +=
                     VisualizationMark(
                         id = id,
@@ -168,6 +166,7 @@ private class VisualizationPlanner(
                         xValue = xBucket.ordinal,
                         y = value.toDouble(),
                         formattedY = formatVisualizationNumber(value, measure.numberFormat),
+                        plainY = plain(value),
                         seriesKey = seriesKey,
                         seriesLabel = seriesLabel,
                         measureAlias = measure.alias,
@@ -275,7 +274,6 @@ private class VisualizationPlanner(
         val measure = config.values.single()
         val value = aggregate(records, measure) ?: return emptyList()
         val id = "kpi:${measure.alias}"
-        exactPlainY[id] = plain(value)
         return listOf(
             VisualizationMark(
                 id = id,
@@ -283,6 +281,7 @@ private class VisualizationPlanner(
                 xLabel = measure.label,
                 y = value.toDouble(),
                 formattedY = formatVisualizationNumber(value, measure.numberFormat),
+                plainY = plain(value),
                 seriesKey = measure.alias,
                 seriesLabel = measure.label,
                 measureAlias = measure.alias,
@@ -428,59 +427,47 @@ private class VisualizationPlanner(
     }
 
     private fun exportResult(type: ChartType, marks: List<VisualizationMark>): QueryResult {
-        val includeSeries = config.series != null
-        if (type == ChartType.Scatter) {
-            val includeSize = config.size != null
-            val columns = buildList {
-                add(ResultColumn(config.x?.label ?: "X", "decimal"))
-                add(ResultColumn(config.values.single().label, "decimal"))
-                if (includeSeries) add(ResultColumn("Series", "text"))
-                if (includeSize) add(ResultColumn("Size", "decimal"))
-                add(ResultColumn("Source rows", "integer"))
-            }
-            val rows = marks.map { mark ->
-                buildList {
-                    add(ResultCell.FloatCell(mark.xValue ?: 0.0))
-                    add(ResultCell.FloatCell(mark.y))
-                    if (includeSeries) add(ResultCell.text(mark.seriesLabel))
-                    if (includeSize) {
-                        add(mark.size?.let(ResultCell::FloatCell) ?: ResultCell.Null)
-                    }
-                    add(ResultCell.IntegerCell(mark.sourceRowIndices.size.toLong()))
-                }
-            }
-            return QueryResult(columns, rows, rows.size, sample.truncated, warnings.toList())
-        }
+        val columnSpecs = visualizationTableColumns(type, config)
         val allAuto = config.values.all { it.numberFormat.kind == NumberFormatKind.Auto }
-        val columns = buildList {
-            add(ResultColumn(config.x?.label ?: "Category", "text"))
-            if (includeSeries) add(ResultColumn("Series", "text"))
-            add(ResultColumn("Measure", "text"))
-            add(
-                ResultColumn(
-                    "Value",
-                    when {
-                        type == ChartType.Histogram -> "integer"
-                        allAuto -> "decimal"
-                        else -> "text"
-                    },
-                ),
-            )
-            add(ResultColumn("Source rows", "integer"))
+        val columns = columnSpecs.map { spec ->
+            val dataType =
+                when (spec.kind) {
+                    VisualizationTableColumnKind.ScatterX,
+                    VisualizationTableColumnKind.ScatterY,
+                    VisualizationTableColumnKind.Size -> "decimal"
+                    VisualizationTableColumnKind.Category,
+                    VisualizationTableColumnKind.Series,
+                    VisualizationTableColumnKind.Measure -> "text"
+                    VisualizationTableColumnKind.Value ->
+                        when {
+                            type == ChartType.Histogram -> "integer"
+                            allAuto -> "decimal"
+                            else -> "text"
+                        }
+                    VisualizationTableColumnKind.SourceRows -> "integer"
+                }
+            ResultColumn(spec.label, dataType)
         }
         val rows = marks.map { mark ->
-            val valueCell =
-                when {
-                    type == ChartType.Histogram -> ResultCell.IntegerCell(mark.y.toLong())
-                    allAuto -> ResultCell.text(exactPlainY[mark.id] ?: mark.y.toString())
-                    else -> ResultCell.text(mark.formattedY)
+            columnSpecs.map { spec ->
+                when (spec.kind) {
+                    VisualizationTableColumnKind.ScatterX ->
+                        ResultCell.FloatCell(mark.xValue ?: 0.0)
+                    VisualizationTableColumnKind.ScatterY -> ResultCell.FloatCell(mark.y)
+                    VisualizationTableColumnKind.Category -> ResultCell.text(mark.xLabel)
+                    VisualizationTableColumnKind.Series -> ResultCell.text(mark.seriesLabel)
+                    VisualizationTableColumnKind.Size ->
+                        mark.size?.let(ResultCell::FloatCell) ?: ResultCell.Null
+                    VisualizationTableColumnKind.Measure -> ResultCell.text(mark.measureLabel)
+                    VisualizationTableColumnKind.Value ->
+                        when {
+                            type == ChartType.Histogram -> ResultCell.IntegerCell(mark.y.toLong())
+                            allAuto -> ResultCell.text(mark.plainY ?: mark.y.toString())
+                            else -> ResultCell.text(mark.formattedY)
+                        }
+                    VisualizationTableColumnKind.SourceRows ->
+                        ResultCell.IntegerCell(mark.sourceRowIndices.size.toLong())
                 }
-            buildList {
-                add(ResultCell.text(mark.xLabel))
-                if (includeSeries) add(ResultCell.text(mark.seriesLabel))
-                add(ResultCell.text(mark.measureLabel))
-                add(valueCell)
-                add(ResultCell.IntegerCell(mark.sourceRowIndices.size.toLong()))
             }
         }
         return QueryResult(columns, rows, rows.size, sample.truncated, warnings.toList())

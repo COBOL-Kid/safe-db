@@ -8,10 +8,12 @@ import com.safedb.explore.PivotRowKind
 import com.safedb.explore.VisualizationConfig
 import com.safedb.explore.VisualizationMark
 import com.safedb.explore.VisualizationPreview
+import com.safedb.explore.VisualizationTableColumnKind
 import com.safedb.explore.WorksheetRowKind
 import com.safedb.explore.WorksheetTableProjection
 import com.safedb.explore.displayColumnLabels
 import com.safedb.explore.pivotCellLineageKey
+import com.safedb.explore.visualizationTableColumns
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
 import com.safedb.ui.chart.CategoryLabelEntry
@@ -25,8 +27,8 @@ import com.safedb.ui.chart.chartPlotInsets
 import com.safedb.ui.chart.compactNumber
 import com.safedb.ui.chart.estimatedBarLabelHeight
 import com.safedb.ui.chart.estimatedBarLabelWidth
-import com.safedb.ui.chart.layoutHorizontalCategoryLabels
 import com.safedb.ui.chart.legendSeriesLabel
+import com.safedb.ui.chart.selectHorizontalCategoryLabels
 import com.safedb.ui.chart.visualizationGeometry
 import java.io.OutputStream
 import java.nio.charset.StandardCharsets
@@ -393,11 +395,12 @@ internal fun buildChartSection(
 
     val horizontal =
         chartType == ChartType.Bar && config.barOrientation == BarOrientation.Horizontal
+    val labelLineHeight = 12f
     val insets =
         chartPlotInsets(
             preview = preview,
             config = config,
-            lineHeight = 12f,
+            lineHeight = labelLineHeight,
             gapPx = 6f,
             clearance = PlotClearance(top = 20f, bottom = 22f),
             measureLabelWidth = ::estimatedLabelWidth,
@@ -519,23 +522,13 @@ internal fun buildChartSection(
     val categoryTicks =
         if (horizontal) {
             val band = plot.height / centered.size.coerceAtLeast(1)
-            val step = categoryLabelStep(centered.maxOfOrNull { it.naturalWidth } ?: 0f, band)
+            val step = categoryLabelStep(labelLineHeight + 2f, band)
             centered
                 .filterIndexed { index, _ -> index % step == 0 }
                 .map { entry -> HtmlAxisTick(pos = entry.center.rounded(), label = entry.text) }
         } else {
-            layoutHorizontalCategoryLabels(
-                    entries = centered,
-                    plotLeft = plot.left,
-                    plotWidth = plot.width,
-                    canvasWidth = width.toFloat(),
-                    gapPx = 6f,
-                    measureFitted = { text, _ -> estimatedLabelWidth(text) },
-                    measuredWidth = { it },
-                )
-                .map { placed ->
-                    HtmlAxisTick(pos = placed.entry.center.rounded(), label = placed.entry.text)
-                }
+            selectHorizontalCategoryLabels(entries = centered, plotLeft = plot.left, gapPx = 6f)
+                .map { entry -> HtmlAxisTick(pos = entry.center.rounded(), label = entry.text) }
         }
     val secondaryValueTicks = geometry.secondaryValueAxis?.let(::axisTicks).orEmpty()
     val shownLegend = if (multiSeries) preview.series.take(LegendEntryLimit) else emptyList()
@@ -561,68 +554,38 @@ internal fun buildChartSection(
     )
 }
 
-private data class VisualizationTableColumn(
-    val label: String,
-    val cell: (VisualizationMark) -> HtmlCell,
-)
-
 internal fun buildVisualizationTableSection(
     preview: VisualizationPreview,
     config: VisualizationConfig,
 ): HtmlTableSection {
-    val includeSeries = config.series != null
-    val isScatter = preview.chartType == ChartType.Scatter
-    val includeSize = isScatter && config.size != null
-    val columns = buildList {
-        if (isScatter) {
-            add(
-                VisualizationTableColumn(config.x?.label ?: "X") { mark ->
-                    finiteNumericCell(
-                        mark.xLabel.ifBlank { mark.xValue?.toString().orEmpty() },
-                        mark.xValue,
-                    )
-                },
-            )
-            add(
-                VisualizationTableColumn(config.values.firstOrNull()?.label ?: "Y") { mark ->
-                    finiteNumericCell(mark.formattedY, mark.y)
-                },
-            )
-            if (includeSeries) {
-                add(VisualizationTableColumn("Series") { mark -> HtmlCell(mark.seriesLabel) })
-            }
-            if (includeSize) {
-                add(
-                    VisualizationTableColumn("Size") { mark ->
-                        finiteNumericCell(mark.size?.toString().orEmpty(), mark.size)
+    val columnSpecs = visualizationTableColumns(preview.chartType, config)
+    val rows =
+        preview.marks.map { mark ->
+            HtmlTableRow(
+                cells =
+                    columnSpecs.map { spec ->
+                        when (spec.kind) {
+                            VisualizationTableColumnKind.ScatterX ->
+                                finiteNumericCell(
+                                    mark.xLabel.ifBlank { mark.xValue?.toString().orEmpty() },
+                                    mark.xValue,
+                                )
+                            VisualizationTableColumnKind.ScatterY,
+                            VisualizationTableColumnKind.Value ->
+                                finiteNumericCell(mark.formattedY, mark.y)
+                            VisualizationTableColumnKind.Category -> HtmlCell(mark.xLabel)
+                            VisualizationTableColumnKind.Series -> HtmlCell(mark.seriesLabel)
+                            VisualizationTableColumnKind.Size ->
+                                finiteNumericCell(mark.size?.toString().orEmpty(), mark.size)
+                            VisualizationTableColumnKind.Measure -> HtmlCell(mark.measureLabel)
+                            VisualizationTableColumnKind.SourceRows ->
+                                sourceRowCountCell(mark.sourceRowIndices.size)
+                        }
                     },
-                )
-            }
-        } else {
-            add(
-                VisualizationTableColumn(config.x?.label ?: "Category") { mark ->
-                    HtmlCell(mark.xLabel)
-                },
-            )
-            if (includeSeries) {
-                add(VisualizationTableColumn("Series") { mark -> HtmlCell(mark.seriesLabel) })
-            }
-            add(VisualizationTableColumn("Measure") { mark -> HtmlCell(mark.measureLabel) })
-            add(
-                VisualizationTableColumn("Value") { mark ->
-                    finiteNumericCell(mark.formattedY, mark.y)
-                },
             )
         }
-        add(
-            VisualizationTableColumn("Source rows") { mark ->
-                sourceRowCountCell(mark.sourceRowIndices.size)
-            },
-        )
-    }
-    val rows = preview.marks.map { mark -> HtmlTableRow(cells = columns.map { it.cell(mark) }) }
     return HtmlTableSection(
-        columns = columnsWithNumericFlags(columns.map { it.label }, rows),
+        columns = columnsWithNumericFlags(columnSpecs.map { it.label }, rows),
         rows = rows,
         sortable = true,
     )

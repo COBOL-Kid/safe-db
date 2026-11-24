@@ -154,6 +154,7 @@ data class VisualizationMark(
     val xValue: Double? = null,
     val y: Double,
     val formattedY: String,
+    val plainY: String? = null,
     val seriesKey: String,
     val seriesLabel: String,
     val measureAlias: String,
@@ -168,3 +169,61 @@ data class VisualizationSeries(
     val label: String,
     val axis: ValueAxis = ValueAxis.Primary,
 )
+
+enum class VisualizationTableColumnKind {
+    ScatterX,
+    ScatterY,
+    Category,
+    Series,
+    Size,
+    Measure,
+    Value,
+    SourceRows,
+}
+
+data class VisualizationTableColumnSpec(
+    val label: String,
+    val kind: VisualizationTableColumnKind,
+)
+
+fun visualizationTableColumns(
+    chartType: ChartType?,
+    config: VisualizationConfig,
+): List<VisualizationTableColumnSpec> {
+    val includeSeries = config.series != null
+    return buildList {
+        if (chartType == ChartType.Scatter) {
+            add(
+                VisualizationTableColumnSpec(
+                    config.x?.label ?: "X",
+                    VisualizationTableColumnKind.ScatterX,
+                ),
+            )
+            add(
+                VisualizationTableColumnSpec(
+                    config.values.firstOrNull()?.label ?: "Y",
+                    VisualizationTableColumnKind.ScatterY,
+                ),
+            )
+            if (includeSeries) {
+                add(VisualizationTableColumnSpec("Series", VisualizationTableColumnKind.Series))
+            }
+            if (config.size != null) {
+                add(VisualizationTableColumnSpec("Size", VisualizationTableColumnKind.Size))
+            }
+        } else {
+            add(
+                VisualizationTableColumnSpec(
+                    config.x?.label ?: "Category",
+                    VisualizationTableColumnKind.Category,
+                ),
+            )
+            if (includeSeries) {
+                add(VisualizationTableColumnSpec("Series", VisualizationTableColumnKind.Series))
+            }
+            add(VisualizationTableColumnSpec("Measure", VisualizationTableColumnKind.Measure))
+            add(VisualizationTableColumnSpec("Value", VisualizationTableColumnKind.Value))
+        }
+        add(VisualizationTableColumnSpec("Source rows", VisualizationTableColumnKind.SourceRows))
+    }
+}

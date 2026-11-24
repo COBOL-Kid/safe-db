@@ -101,15 +101,15 @@ class AppStateTest {
         val state = AppState()
         state.requestNewConnectionForm()
         assertEquals(AppRoute.Connections, state.route.value)
-        assertEquals(true, state.openNewConnectionForm.value)
+        assertEquals(ConnectionFormRequest.New, state.connectionFormRequest.value)
 
-        state.consumeNewConnectionFormRequest()
-        assertEquals(false, state.openNewConnectionForm.value)
+        state.consumeConnectionFormRequest()
+        assertNull(state.connectionFormRequest.value)
         assertEquals(AppRoute.Connections, state.route.value)
 
         state.requestNewConnectionForm()
         state.navigate(AppRoute.Home)
-        assertEquals(false, state.openNewConnectionForm.value)
+        assertNull(state.connectionFormRequest.value)
         assertEquals(AppRoute.Home, state.route.value)
     }
 
@@ -118,21 +118,19 @@ class AppStateTest {
         val state = AppState()
         state.requestEditConnection("c1")
         assertEquals(AppRoute.Connections, state.route.value)
-        assertEquals("c1", state.editConnectionId.value)
-        assertEquals(false, state.openNewConnectionForm.value)
+        assertEquals(ConnectionFormRequest.Edit("c1"), state.connectionFormRequest.value)
 
-        state.consumeEditConnectionRequest()
-        assertNull(state.editConnectionId.value)
+        state.consumeConnectionFormRequest()
+        assertNull(state.connectionFormRequest.value)
         assertEquals(AppRoute.Connections, state.route.value)
 
         state.requestEditConnection("c2")
         state.requestNewConnectionForm()
-        assertNull(state.editConnectionId.value)
-        assertEquals(true, state.openNewConnectionForm.value)
+        assertEquals(ConnectionFormRequest.New, state.connectionFormRequest.value)
 
         state.requestEditConnection("c3")
         state.navigate(AppRoute.Home)
-        assertNull(state.editConnectionId.value)
+        assertNull(state.connectionFormRequest.value)
         assertEquals(AppRoute.Home, state.route.value)
     }
 

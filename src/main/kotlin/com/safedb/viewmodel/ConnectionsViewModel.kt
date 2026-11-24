@@ -68,18 +68,18 @@ class ConnectionsViewModel(
             val saved =
                 if (editing) {
                     service.updateConnection(def, password)
-                    // Only re-probe in place for password-only updates; credential-material edits
-                    // trigger onConnectionChanged, which clears the active connection immediately.
-                    if (password != null && !credentialMaterialChanged) {
+                    // Credential-material edits clear the active connection via
+                    // onConnectionChanged;
+                    // password-only updates re-probe the active connection in place.
+                    if (credentialMaterialChanged) {
+                        onConnectionChanged(def.id)
+                    } else if (password != null) {
                         onCredentialsUpdated(def)
                     }
                     def
                 } else {
                     createConnection(def, password ?: "")
                 }
-            if (editing && credentialMaterialChanged) {
-                onConnectionChanged(saved.id)
-            }
             load()
             onComplete(Result.success(saved))
         } catch (error: CancellationException) {

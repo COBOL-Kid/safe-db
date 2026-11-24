@@ -95,27 +95,10 @@ pid_process_alive() {
   return 0
 }
 
-# Post-launch wait state. Prints running, starting, or dead.
-# starting means the recorded pid is still alive but has not exec'd the token yet.
-# Does not delete the pid file and does not signal.
-launch_pid_state() {
+pidfile_process_alive() {
   local pid_file="$1"
-  local token="${2:-}"
-  local pid
-  if [[ -z "$token" || ! -f "$pid_file" ]]; then
-    printf '%s\n' dead
-    return 0
-  fi
-  pid="$(<"$pid_file")"
-  if pid_identity_ok "$pid" "$token"; then
-    printf '%s\n' running
-    return 0
-  fi
-  if pid_process_alive "$pid"; then
-    printf '%s\n' starting
-    return 0
-  fi
-  printf '%s\n' dead
+  [[ -f "$pid_file" ]] || return 1
+  pid_process_alive "$(<"$pid_file")"
 }
 
 check_prereqs() {
@@ -149,6 +132,31 @@ is_group_alive() {
   ps -o stat= -g "$pgid" 2>/dev/null | grep -qEv '^[[:space:]]*(Z|$)'
 }
 
+STOP_TERM_POLLS=20
+
+is_stop_target_alive() {
+  local pid="$1"
+  local kill_group="$2"
+  if [[ "$kill_group" == "true" ]]; then
+    is_group_alive "$pid" || pid_process_alive "$pid"
+  else
+    pid_process_alive "$pid"
+  fi
+}
+
+wait_stop_target_dead() {
+  local pid="$1"
+  local kill_group="$2"
+  local attempts="$3"
+  local interval="$4"
+  local i=0
+  while is_stop_target_alive "$pid" "$kill_group" && ((i < attempts)); do
+    sleep "$interval"
+    ((i += 1))
+  done
+  ! is_stop_target_alive "$pid" "$kill_group"
+}
+
 stop_pidfile() {
   local pid_file="$1"
   local token="${2:-}"
@@ -161,37 +169,22 @@ stop_pidfile() {
     rm -f -- "$pid_file"
     return 0
   fi
-  local i=0
-  if [[ "$kill_group" == "true" ]]; then
-    if is_group_alive "$pid"; then
+  if is_stop_target_alive "$pid" "$kill_group"; then
+    if [[ "$kill_group" == "true" ]]; then
       kill -TERM -- "-$pid" 2>/dev/null || true
-      while is_group_alive "$pid" && ((i < 20)); do
-        sleep 0.2
-        ((i += 1))
-      done
-      if is_group_alive "$pid"; then
+    else
+      pkill -TERM -P "$pid" 2>/dev/null || true
+      kill -TERM "$pid" 2>/dev/null || true
+    fi
+    if ! wait_stop_target_dead "$pid" "$kill_group" "$STOP_TERM_POLLS" 0.2; then
+      if [[ "$kill_group" == "true" ]]; then
         kill -KILL -- "-$pid" 2>/dev/null || true
+      else
+        pkill -KILL -P "$pid" 2>/dev/null || true
+        kill -KILL "$pid" 2>/dev/null || true
       fi
+      wait_stop_target_dead "$pid" "$kill_group" 20 0.1 || return 0
     fi
-  elif kill -0 "$pid" 2>/dev/null; then
-    pkill -TERM -P "$pid" 2>/dev/null || true
-    kill -TERM "$pid" 2>/dev/null || true
-    while kill -0 "$pid" 2>/dev/null && ((i < 20)); do
-      sleep 0.2
-      ((i += 1))
-    done
-    if kill -0 "$pid" 2>/dev/null; then
-      pkill -KILL -P "$pid" 2>/dev/null || true
-      kill -KILL "$pid" 2>/dev/null || true
-    fi
-  fi
-  # Keep the pid file when the matched process or its group is still alive.
-  if [[ "$kill_group" == "true" ]]; then
-    if is_group_alive "$pid" || kill -0 "$pid" 2>/dev/null; then
-      return 0
-    fi
-  elif kill -0 "$pid" 2>/dev/null; then
-    return 0
   fi
   rm -f -- "$pid_file"
 }
@@ -223,7 +216,7 @@ cmd_up() {
     echo $! >"$XVFB_PID_FILE"
     local i=0
     until xdotool getdisplaygeometry >/dev/null 2>&1; do
-      if [[ "$(launch_pid_state "$XVFB_PID_FILE" Xvfb)" == "dead" ]]; then
+      if ! pidfile_process_alive "$XVFB_PID_FILE"; then
         echo "Xvfb exited unexpectedly. Log ($XVFB_LOG):" >&2
         cat "$XVFB_LOG" >&2 || true
         exit 1
@@ -265,7 +258,7 @@ cmd_up() {
     if [[ -n "$win_id" ]]; then
       break
     fi
-    if [[ "$(launch_pid_state "$APP_PID_FILE" runAgentGui)" == "dead" ]]; then
+    if ! pidfile_process_alive "$APP_PID_FILE"; then
       echo "Safe-DB failed to start. Last 40 lines of $APP_LOG:" >&2
       tail -n 40 "$APP_LOG" >&2 || true
       exit 1

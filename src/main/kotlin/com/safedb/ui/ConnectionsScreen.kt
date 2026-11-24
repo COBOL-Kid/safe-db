@@ -39,6 +39,7 @@ import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.safedb.ConnectionFormRequest
 import com.safedb.model.ConnectionDef
 import com.safedb.model.displayName
 import com.safedb.ui.components.AppCard
@@ -57,47 +58,50 @@ import com.safedb.ui.theme.ScreenHeaderHorizontalPadding
 import com.safedb.ui.theme.TitleHeaderVerticalPadding
 import com.safedb.viewmodel.ConnectionsViewModel
 
+internal sealed interface ConnectionFormMode {
+    data object New : ConnectionFormMode
+
+    data class Edit(val connection: ConnectionDef) : ConnectionFormMode
+}
+
 @Composable
 fun ConnectionsScreen(
     viewModel: ConnectionsViewModel,
     onDeleted: (String) -> Unit,
     onConnectionChanged: (String) -> Unit,
     onSelectConnection: (ConnectionDef) -> Unit = {},
-    openNewConnectionForm: Boolean = false,
-    onOpenNewConnectionFormConsumed: () -> Unit = {},
-    editConnectionId: String? = null,
-    onEditConnectionConsumed: () -> Unit = {},
+    connectionFormRequest: ConnectionFormRequest? = null,
+    onConnectionFormRequestConsumed: () -> Unit = {},
     activeConnectionId: String? = null,
     defaultConnectionId: String? = null,
 ) {
-    var showConnectionForm by remember { mutableStateOf(false) }
-    var editingConnection by remember { mutableStateOf<ConnectionDef?>(null) }
+    var formMode by remember { mutableStateOf<ConnectionFormMode?>(null) }
     val connections by viewModel.connections.collectAsState()
     val loading by viewModel.loading.collectAsState()
-    LaunchedEffect(openNewConnectionForm) {
-        if (openNewConnectionForm) {
-            showConnectionForm = true
-            editingConnection = null
-            onOpenNewConnectionFormConsumed()
-        }
-    }
-    LaunchedEffect(editConnectionId, connections, loading) {
-        val targetId = editConnectionId ?: return@LaunchedEffect
-        val target = connections.firstOrNull { it.id == targetId }
-        if (target != null) {
-            showConnectionForm = false
-            editingConnection = target
-            onEditConnectionConsumed()
-        } else if (!loading) {
-            onEditConnectionConsumed()
+    LaunchedEffect(connectionFormRequest, connections, loading) {
+        when (val request = connectionFormRequest) {
+            null -> Unit
+            ConnectionFormRequest.New -> {
+                formMode = ConnectionFormMode.New
+                onConnectionFormRequestConsumed()
+            }
+            is ConnectionFormRequest.Edit -> {
+                val target = connections.firstOrNull { it.id == request.connectionId }
+                if (target != null) {
+                    formMode = ConnectionFormMode.Edit(target)
+                    onConnectionFormRequestConsumed()
+                } else if (!loading) {
+                    onConnectionFormRequestConsumed()
+                }
+            }
         }
     }
     ConnectionsScreenContent(
         viewModel = viewModel,
-        showConnectionForm = showConnectionForm,
-        editingConnection = editingConnection,
-        onShowConnectionFormChange = { showConnectionForm = it },
-        onEditingConnectionChange = { editingConnection = it },
+        connections = connections,
+        loading = loading,
+        formMode = formMode,
+        onFormModeChange = { formMode = it },
         onDeleted = onDeleted,
         onConnectionChanged = onConnectionChanged,
         onSelectConnection = onSelectConnection,
@@ -109,18 +113,16 @@ fun ConnectionsScreen(
 @Composable
 internal fun ConnectionsScreenContent(
     viewModel: ConnectionsViewModel,
-    showConnectionForm: Boolean,
-    editingConnection: ConnectionDef?,
-    onShowConnectionFormChange: (Boolean) -> Unit,
-    onEditingConnectionChange: (ConnectionDef?) -> Unit,
+    connections: List<ConnectionDef>,
+    loading: Boolean,
+    formMode: ConnectionFormMode?,
+    onFormModeChange: (ConnectionFormMode?) -> Unit,
     onDeleted: (String) -> Unit,
     onConnectionChanged: (String) -> Unit,
     onSelectConnection: (ConnectionDef) -> Unit = {},
     activeConnectionId: String? = null,
     defaultConnectionId: String? = null,
 ) {
-    val connections by viewModel.connections.collectAsState()
-    val loading by viewModel.loading.collectAsState()
     val error by viewModel.error.collectAsState()
     val deleteError by viewModel.deleteError.collectAsState()
     var pendingDelete by remember { mutableStateOf<ConnectionDef?>(null) }
@@ -154,41 +156,36 @@ internal fun ConnectionsScreenContent(
         ) {
             Column {
                 Text(
-                    when {
-                        editingConnection != null -> "Edit Connection"
-                        showConnectionForm -> "New Connection"
-                        else -> "Connections"
+                    when (formMode) {
+                        is ConnectionFormMode.Edit -> "Edit Connection"
+                        ConnectionFormMode.New -> "New Connection"
+                        null -> "Connections"
                     },
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    when {
-                        editingConnection != null ->
+                    when (formMode) {
+                        is ConnectionFormMode.Edit ->
                             "Update connection details and driver properties."
-                        showConnectionForm ->
+                        ConnectionFormMode.New ->
                             "Connect to a database. Credentials are stored in your OS keychain."
-                        else -> "Manage your database connections."
+                        null -> "Manage your database connections."
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp),
                 )
             }
-            if (showConnectionForm || editingConnection != null) {
+            if (formMode != null) {
                 Text(
                     "Cancel",
                     style = MaterialTheme.typography.labelLarge,
                     color = SafeDbTheme.colors.actionPrimary,
-                    modifier =
-                        Modifier.clickable {
-                                onShowConnectionFormChange(false)
-                                onEditingConnectionChange(null)
-                            }
-                            .padding(8.dp),
+                    modifier = Modifier.clickable { onFormModeChange(null) }.padding(8.dp),
                 )
             } else {
-                PrimaryButton(onClick = { onShowConnectionFormChange(true) }) {
+                PrimaryButton(onClick = { onFormModeChange(ConnectionFormMode.New) }) {
                     Icon(
                         Icons.Filled.Add,
                         contentDescription = null,
@@ -202,19 +199,16 @@ internal fun ConnectionsScreenContent(
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
         when {
-            showConnectionForm || editingConnection != null ->
+            formMode != null ->
                 Box(
                     modifier = Modifier.fillMaxSize().padding(24.dp),
                     contentAlignment = Alignment.TopCenter,
                 ) {
                     ConnectionForm(
                         connectionsViewModel = viewModel,
-                        existingConnection = editingConnection,
+                        existingConnection = (formMode as? ConnectionFormMode.Edit)?.connection,
                         onConnectionChanged = onConnectionChanged,
-                        onSaved = { _, _ ->
-                            onShowConnectionFormChange(false)
-                            onEditingConnectionChange(null)
-                        },
+                        onSaved = { _, _ -> onFormModeChange(null) },
                         modifier = Modifier.widthIn(max = 1_020.dp),
                     )
                 }
@@ -232,7 +226,7 @@ internal fun ConnectionsScreenContent(
                     title = "No connections yet",
                     subtitle = "Add a connection to start exploring your data.",
                 ) {
-                    PrimaryButton(onClick = { onShowConnectionFormChange(true) }) {
+                    PrimaryButton(onClick = { onFormModeChange(ConnectionFormMode.New) }) {
                         Text("Add Connection")
                     }
                 }
@@ -262,7 +256,7 @@ internal fun ConnectionsScreenContent(
                                 isSelected = connection.id == activeConnectionId,
                                 isDefault = connection.id == defaultConnectionId,
                                 onSelect = { onSelectConnection(connection) },
-                                onEdit = { onEditingConnectionChange(connection) },
+                                onEdit = { onFormModeChange(ConnectionFormMode.Edit(connection)) },
                                 onDelete = { pendingDelete = connection },
                             )
                         }

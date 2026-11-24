@@ -28,7 +28,6 @@ import com.safedb.model.ResultColumn
 import com.safedb.model.TableRef
 import com.safedb.ui.chart.BarLabelFontSizePx
 import com.safedb.ui.chart.LegendEntryLimit
-import com.safedb.ui.chart.categoryLabelIndices
 import com.safedb.ui.chart.categoryLabelStep
 import com.safedb.ui.chart.contrastingBarLabelColor
 import com.safedb.ui.chart.toCssHex
@@ -432,39 +431,50 @@ class HtmlReportWriterTest {
     }
 
     @Test
-    fun horizontalCategoryTicksFollowLabelStepNotFixedGap() {
-        val labels = (0 until 8).map { index -> "c%02d%s".format(index, "x".repeat(21)) }
-        val sample =
+    fun horizontalCategoryTicksFollowVerticalLineHeightStep() {
+        val sparseLabels = (0 until 8).map { index -> "c%02d%s".format(index, "x".repeat(21)) }
+        val sparseSample =
             QueryResult(
                 columns = listOf(ResultColumn("t0__status", "varchar")),
-                rows = labels.map { listOf(ResultCell.text(it)) },
-                rowCount = labels.size,
+                rows = sparseLabels.map { listOf(ResultCell.text(it)) },
+                rowCount = sparseLabels.size,
                 truncated = false,
                 warnings = emptyList(),
             )
-        val config =
+        val sparseConfig =
             VisualizationConfig(
                 chartType = ChartType.Bar,
                 x = VisualizationField("t0__status", "Status"),
                 values = listOf(VisualizationMeasure("count", MeasureFn.Count)),
                 barOrientation = BarOrientation.Horizontal,
             )
-        val preview = applyVisualization(sample, config, session().baseSpec.tables)
+        val sparsePreview =
+            applyVisualization(sparseSample, sparseConfig, session().baseSpec.tables)
+        val sparseChart = buildChartSection(sparsePreview, sparseConfig)
+        val sparseOrdered = sparsePreview.marks.distinctBy { it.xKey }.map { it.xLabel }
+        val sparseBand = (sparseChart.plot[3] - sparseChart.plot[1]).toFloat() / sparseOrdered.size
+        assertTrue(sparseBand > 14f)
+        assertEquals(sparseOrdered, sparseChart.categoryTicks.map { it.label })
 
-        val chart = buildChartSection(preview, config)
-
-        val orderedLabels = preview.marks.distinctBy { it.xKey }.map { it.xLabel }
-        val plotHeight = (chart.plot[3] - chart.plot[1]).toFloat()
-        val band = plotHeight / orderedLabels.size
-        val maxLabelWidth = orderedLabels.maxOf { it.length * 7f + 4f }
-        val step = categoryLabelStep(maxLabelWidth, band)
-        val stride = orderedLabels.indices.filter { it % step == 0 }
-        val centers =
-            orderedLabels.indices.map { index -> chart.plot[1].toFloat() + (index + 0.5f) * band }
-        assertTrue(step > 1, "Expected the shared label step to skip categories, was $step")
-        assertTrue(band > 16f, "Band must exceed the old 16px gap")
-        assertTrue(stride != categoryLabelIndices(centers, 16f))
-        assertEquals(stride.map { orderedLabels[it] }, chart.categoryTicks.map { it.label })
+        val denseLabels = (0 until 40).map { index -> "c%02d".format(index) }
+        val denseSample =
+            QueryResult(
+                columns = listOf(ResultColumn("t0__status", "varchar")),
+                rows = denseLabels.map { listOf(ResultCell.text(it)) },
+                rowCount = denseLabels.size,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val denseConfig = sparseConfig.copy(topN = 50)
+        val densePreview = applyVisualization(denseSample, denseConfig, session().baseSpec.tables)
+        val denseChart = buildChartSection(densePreview, denseConfig)
+        val denseOrdered = densePreview.marks.distinctBy { it.xKey }.map { it.xLabel }
+        val denseBand = (denseChart.plot[3] - denseChart.plot[1]).toFloat() / denseOrdered.size
+        val step = categoryLabelStep(14f, denseBand)
+        val stride = denseOrdered.indices.filter { it % step == 0 }
+        assertTrue(denseBand < 14f, "Expected dense bands under 14px, was $denseBand")
+        assertTrue(step > 1, "Expected vertical step to skip crowded categories, was $step")
+        assertEquals(stride.map { denseOrdered[it] }, denseChart.categoryTicks.map { it.label })
     }
 
     @Test

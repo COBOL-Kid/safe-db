@@ -97,8 +97,7 @@ class SecretsTest {
         val result = SecretsManager.passwordForDefinition(connectionDef("missing-password"))
         assertTrue(result.isFailure)
         val error = assertIs<PasswordNotFoundException>(result.exceptionOrNull())
-        assertTrue(error.isDisabledOverride)
-        assertFalse(error.isMemoryStore)
+        assertEquals(MissingPasswordReason.DisabledOverride, error.reason)
         val message = error.message!!
         assertTrue(message.contains("Password not found"))
         assertTrue(message.contains("SAFEDB_KEYCHAIN_BACKEND=disabled"))
@@ -116,8 +115,7 @@ class SecretsTest {
         val result = SecretsManager.passwordForDefinition(def)
         assertTrue(result.isFailure)
         val error = assertIs<PasswordNotFoundException>(result.exceptionOrNull())
-        assertTrue(error.isMemoryStore)
-        assertFalse(error.isDisabledOverride)
+        assertEquals(MissingPasswordReason.MemoryStore, error.reason)
         val message = error.message!!
         assertTrue(message.contains("memory only for this session"))
         assertTrue(message.contains("Edit the connection to re-enter the password"))
@@ -184,8 +182,7 @@ class SecretsTest {
         val missing = SecretsManager.passwordForDefinition(def)
         assertTrue(missing.isFailure)
         val error = assertIs<PasswordNotFoundException>(missing.exceptionOrNull())
-        assertFalse(error.isMemoryStore)
-        assertFalse(error.isDisabledOverride)
+        assertEquals(MissingPasswordReason.NotStored, error.reason)
     }
 
     @Test

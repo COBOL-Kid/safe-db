@@ -37,6 +37,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -75,6 +76,8 @@ private enum class ValueAxisSide {
     Top,
     Bottom,
 }
+
+private data class MeasuredBarLabel(val layout: TextLayoutResult, val topLeft: Offset)
 
 @Composable
 internal fun VisualizationChart(
@@ -312,6 +315,73 @@ private fun PlotChart(
         remember(preview, config, size, insets) {
             visualizationGeometry(preview, config, size.width, size.height, insets)
         }
+    val barLabels =
+        remember(preview, config, geometry, horizontalBars, seriesPalette, textMeasurer) {
+            if (
+                !config.showLabels ||
+                    (preview.chartType != ChartType.Bar && preview.chartType != ChartType.Histogram)
+            ) {
+                emptyMap()
+            } else {
+                val barLabelFontSize =
+                    chooseBarLabelFontSizeSp(maxPossible = geometry.regions.size) { candidateSp ->
+                        val style =
+                            DataMono.copy(
+                                fontSize = candidateSp.sp,
+                                lineHeight = (candidateSp + 2f).sp,
+                            )
+                        geometry.regions.count { region ->
+                            val mark = marksById[region.markId] ?: return@count false
+                            val measured =
+                                textMeasurer.measure(
+                                    barValueLabelText(mark, config),
+                                    style,
+                                )
+                            barLabelCenter(
+                                bounds = region.bounds,
+                                labelWidth = measured.size.width.toFloat(),
+                                labelHeight = measured.size.height.toFloat(),
+                                horizontalBars = horizontalBars,
+                            ) != null
+                        }
+                    }
+                val baseBarLabelStyle =
+                    DataMono.copy(
+                        fontSize = barLabelFontSize.sp,
+                        lineHeight = (barLabelFontSize + 2f).sp,
+                    )
+                buildMap {
+                    geometry.regions.forEach { region ->
+                        val mark = marksById[region.markId] ?: return@forEach
+                        val color =
+                            seriesPalette[seriesIndex[mark.seriesKey]?.rem(seriesPalette.size) ?: 0]
+                        val label =
+                            textMeasurer.measure(
+                                barValueLabelText(mark, config),
+                                baseBarLabelStyle.copy(color = contrastingBarLabelColor(color)),
+                            )
+                        val center =
+                            barLabelCenter(
+                                bounds = region.bounds,
+                                labelWidth = label.size.width.toFloat(),
+                                labelHeight = label.size.height.toFloat(),
+                                horizontalBars = horizontalBars,
+                            ) ?: return@forEach
+                        put(
+                            mark.id,
+                            MeasuredBarLabel(
+                                layout = label,
+                                topLeft =
+                                    Offset(
+                                        center.x - label.size.width / 2f,
+                                        center.y - label.size.height / 2f,
+                                    ),
+                            ),
+                        )
+                    }
+                }
+            }
+        }
 
     Box(modifier = modifier) {
         Canvas(
@@ -443,38 +513,6 @@ private fun PlotChart(
                 when (preview.chartType) {
                     ChartType.Bar,
                     ChartType.Histogram -> {
-                        val barLabelFontSize =
-                            if (config.showLabels) {
-                                chooseBarLabelFontSizeSp(maxPossible = geometry.regions.size) {
-                                    candidateSp ->
-                                    val style =
-                                        DataMono.copy(
-                                            fontSize = candidateSp.sp,
-                                            lineHeight = (candidateSp + 2f).sp,
-                                        )
-                                    geometry.regions.count { region ->
-                                        val mark = marksById[region.markId] ?: return@count false
-                                        val measured =
-                                            textMeasurer.measure(
-                                                barValueLabelText(mark, config),
-                                                style,
-                                            )
-                                        barLabelCenter(
-                                            bounds = region.bounds,
-                                            labelWidth = measured.size.width.toFloat(),
-                                            labelHeight = measured.size.height.toFloat(),
-                                            horizontalBars = horizontalBars,
-                                        ) != null
-                                    }
-                                }
-                            } else {
-                                DataMono.fontSize.value
-                            }
-                        val baseBarLabelStyle =
-                            DataMono.copy(
-                                fontSize = barLabelFontSize.sp,
-                                lineHeight = (barLabelFontSize + 2f).sp,
-                            )
                         geometry.regions.forEach { region ->
                             val mark = marksById[region.markId] ?: return@forEach
                             val color =
@@ -488,32 +526,8 @@ private fun PlotChart(
                                     region.bounds.size,
                                     style = Stroke(2f),
                                 )
-                            if (config.showLabels) {
-                                val labelText = barValueLabelText(mark, config)
-                                val label =
-                                    textMeasurer.measure(
-                                        labelText,
-                                        baseBarLabelStyle.copy(
-                                            color = contrastingBarLabelColor(color),
-                                        ),
-                                    )
-                                val center =
-                                    barLabelCenter(
-                                        bounds = region.bounds,
-                                        labelWidth = label.size.width.toFloat(),
-                                        labelHeight = label.size.height.toFloat(),
-                                        horizontalBars = horizontalBars,
-                                    )
-                                if (center != null) {
-                                    drawText(
-                                        label,
-                                        topLeft =
-                                            Offset(
-                                                center.x - label.size.width / 2f,
-                                                center.y - label.size.height / 2f,
-                                            ),
-                                    )
-                                }
+                            barLabels[mark.id]?.let { label ->
+                                drawText(label.layout, topLeft = label.topLeft)
                             }
                         }
                     }

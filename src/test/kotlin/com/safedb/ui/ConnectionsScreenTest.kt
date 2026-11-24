@@ -5,8 +5,10 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.text.AnnotatedString
 import com.safedb.AppState
+import com.safedb.ConnectionFormRequest
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
+import com.safedb.secrets.MissingPasswordReason
 import com.safedb.secrets.PasswordNotFoundException
 import com.safedb.service.FakeSafeDbServiceSupport
 import com.safedb.ui.components.CommandPalette
@@ -72,7 +74,7 @@ class ConnectionsScreenTest {
             val viewModel = ConnectionsViewModel(service, scope)
             runBlocking { viewModel.load() }
             val selected = mutableListOf<ConnectionDef>()
-            var editing: ConnectionDef? = null
+            var formMode: ConnectionFormMode? = null
 
             withComposeScene(
                 width = 800,
@@ -81,10 +83,10 @@ class ConnectionsScreenTest {
                     SafeDbTheme(isDark = false) {
                         ConnectionsScreenContent(
                             viewModel = viewModel,
-                            showConnectionForm = false,
-                            editingConnection = editing,
-                            onShowConnectionFormChange = {},
-                            onEditingConnectionChange = { editing = it },
+                            connections = listOf(alpha, beta),
+                            loading = false,
+                            formMode = formMode,
+                            onFormModeChange = { formMode = it },
                             onDeleted = {},
                             onConnectionChanged = {},
                             onSelectConnection = { selected += it },
@@ -97,7 +99,7 @@ class ConnectionsScreenTest {
                 scene.click(scene.requireContaining("Beta DB").boundsInRoot.center)
                 scene.settle()
                 assertEquals(listOf(beta), selected)
-                assertNull(editing)
+                assertNull(formMode)
 
                 // Clicking Edit icon opens edit without firing onSelectConnection.
                 val editButton = scene.requireExact("Edit Alpha DB")
@@ -105,7 +107,7 @@ class ConnectionsScreenTest {
                 assertTrue(editButton.boundsInRoot.height >= 40f)
                 scene.click(editButton.boundsInRoot.center)
                 scene.settle()
-                assertEquals(alpha, editing)
+                assertEquals(ConnectionFormMode.Edit(alpha), formMode)
                 assertEquals(listOf(beta), selected)
 
                 // Clicking Delete icon opens confirm dialog without firing onSelectConnection.
@@ -154,8 +156,8 @@ class ConnectionsScreenTest {
                             viewModel = viewModel,
                             onDeleted = {},
                             onConnectionChanged = {},
-                            editConnectionId = alpha.id,
-                            onEditConnectionConsumed = { consumed = true },
+                            connectionFormRequest = ConnectionFormRequest.Edit(alpha.id),
+                            onConnectionFormRequestConsumed = { consumed = true },
                         )
                     }
                 },
@@ -193,7 +195,7 @@ class ConnectionsScreenTest {
             PasswordNotFoundException(
                 "Password not found for this connection because credentials are held in " +
                     "memory only for this session. Edit the connection to re-enter the password.",
-                isMemoryStore = true,
+                reason = MissingPasswordReason.MemoryStore,
             )
         val service =
             object : FakeSafeDbServiceSupport() {
@@ -220,8 +222,8 @@ class ConnectionsScreenTest {
                             viewModel = viewModel,
                             onDeleted = {},
                             onConnectionChanged = {},
-                            editConnectionId = alpha.id,
-                            onEditConnectionConsumed = {},
+                            connectionFormRequest = ConnectionFormRequest.Edit(alpha.id),
+                            onConnectionFormRequestConsumed = {},
                         )
                     }
                 },
@@ -262,7 +264,7 @@ class ConnectionsScreenTest {
             testFailure =
                 PasswordNotFoundException(
                     "Password not found for this connection because SAFEDB_KEYCHAIN_BACKEND=disabled is overriding the persisted credential store.",
-                    isDisabledOverride = true,
+                    reason = MissingPasswordReason.DisabledOverride,
                 )
             withComposeScene(
                 width = 1000,
@@ -273,8 +275,8 @@ class ConnectionsScreenTest {
                             viewModel = viewModel,
                             onDeleted = {},
                             onConnectionChanged = {},
-                            editConnectionId = alpha.id,
-                            onEditConnectionConsumed = {},
+                            connectionFormRequest = ConnectionFormRequest.Edit(alpha.id),
+                            onConnectionFormRequestConsumed = {},
                         )
                     }
                 },
@@ -298,8 +300,8 @@ class ConnectionsScreenTest {
                             viewModel = viewModel,
                             onDeleted = {},
                             onConnectionChanged = {},
-                            editConnectionId = alpha.id,
-                            onEditConnectionConsumed = {},
+                            connectionFormRequest = ConnectionFormRequest.Edit(alpha.id),
+                            onConnectionFormRequestConsumed = {},
                         )
                     }
                 },

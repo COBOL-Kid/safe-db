@@ -71,6 +71,7 @@ import com.safedb.connection.DIALECTS
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.model.TransportSecurityMode
+import com.safedb.secrets.MissingPasswordReason
 import com.safedb.secrets.PasswordNotFoundException
 import com.safedb.ui.components.BannerKind
 import com.safedb.ui.components.MessageBanner
@@ -126,14 +127,19 @@ fun ConnectionForm(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: PasswordNotFoundException) {
-                if (!error.isDisabledOverride && form.isEditing && !form.passwordChangeEnabled) {
-                    val message =
-                        if (error.isMemoryStore) {
-                            "Password not found because credentials are held in memory only for this session. Enter the password above to test or save."
-                        } else {
-                            "Password not found for this connection. Enter the password above to test or save."
-                        }
-                    form.requirePasswordReentry(message)
+                if (form.isEditing && !form.passwordChangeEnabled) {
+                    when (error.reason) {
+                        MissingPasswordReason.DisabledOverride ->
+                            form.testError = error.message ?: error.toString()
+                        MissingPasswordReason.MemoryStore ->
+                            form.requirePasswordReentry(
+                                "Password not found because credentials are held in memory only for this session. Enter the password above to test or save.",
+                            )
+                        MissingPasswordReason.NotStored ->
+                            form.requirePasswordReentry(
+                                "Password not found for this connection. Enter the password above to test or save.",
+                            )
+                    }
                 } else {
                     form.testError = error.message ?: error.toString()
                 }

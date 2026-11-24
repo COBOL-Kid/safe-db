@@ -10,10 +10,15 @@ import kotlinx.serialization.json.Json
 
 const val ENV_BACKEND = "SAFEDB_KEYCHAIN_BACKEND"
 
+enum class MissingPasswordReason {
+    DisabledOverride,
+    MemoryStore,
+    NotStored,
+}
+
 class PasswordNotFoundException(
     message: String,
-    val isDisabledOverride: Boolean = false,
-    val isMemoryStore: Boolean = false,
+    val reason: MissingPasswordReason = MissingPasswordReason.NotStored,
 ) : IllegalStateException(message)
 
 enum class RequestedBackend {
@@ -115,8 +120,7 @@ object SecretsManager {
                 ?: return Result.failure(
                     PasswordNotFoundException(
                         message = passwordNotFoundMessage(),
-                        isDisabledOverride = activeLabel == "disabled",
-                        isMemoryStore = activeLabel == "memory",
+                        reason = missingPasswordReason(),
                     ),
                 )
         val record = runCatching {
@@ -156,16 +160,23 @@ object SecretsManager {
 
     fun lockCredentials() = CredentialSession.lockCredentials()
 
-    fun passwordNotFoundMessage(): String =
+    private fun missingPasswordReason(): MissingPasswordReason =
         when (activeLabel) {
-            "disabled" ->
+            "disabled" -> MissingPasswordReason.DisabledOverride
+            "memory" -> MissingPasswordReason.MemoryStore
+            else -> MissingPasswordReason.NotStored
+        }
+
+    fun passwordNotFoundMessage(): String =
+        when (missingPasswordReason()) {
+            MissingPasswordReason.DisabledOverride ->
                 "Password not found for this connection because $ENV_BACKEND=disabled is " +
                     "overriding the persisted credential store. Unset $ENV_BACKEND so the " +
                     "saved password can be read; do not add the connection again."
-            "memory" ->
+            MissingPasswordReason.MemoryStore ->
                 "Password not found for this connection because credentials are held in " +
                     "memory only for this session. Edit the connection to re-enter the password."
-            else ->
+            MissingPasswordReason.NotStored ->
                 "Password not found for this connection. Delete and add the connection again to store the password."
         }
 

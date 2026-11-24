@@ -59,10 +59,11 @@ val testAssertConveyorSite =
 val testAgentGuiReset =
     tasks.register<Exec>("testAgentGuiReset") {
         group = "verification"
-        description = "Tests agent_gui.sh reset wipe boundaries and symlink safety."
+        description =
+            "Tests agent_gui.sh reset boundaries, PID guards, window matching, and CLI checks."
         workingDir = projectDir
         commandLine("bash", "scripts/test_agent_gui_reset.sh")
-        onlyIf { !System.getProperty("os.name").startsWith("Windows", ignoreCase = true) }
+        onlyIf { System.getProperty("os.name").startsWith("Linux", ignoreCase = true) }
     }
 
 tasks.named("check") {

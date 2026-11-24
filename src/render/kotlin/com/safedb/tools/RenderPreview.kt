@@ -79,6 +79,7 @@ import com.safedb.query.sql.SqlParseResult
 import com.safedb.query.sql.parseSqlToSpec
 import com.safedb.service.FakeSafeDbServiceSupport
 import com.safedb.ui.AppShellContent
+import com.safedb.ui.ConnectionFormMode
 import com.safedb.ui.ConnectionsScreenContent
 import com.safedb.ui.ExploreWindowContent
 import com.safedb.ui.RecipeLibraryDialog
@@ -545,10 +546,10 @@ private fun renderConnectionsForm(
             ) {
                 ConnectionsScreenContent(
                     viewModel = viewModel.connections,
-                    showConnectionForm = editing == null,
-                    editingConnection = editing,
-                    onShowConnectionFormChange = {},
-                    onEditingConnectionChange = {},
+                    connections = viewModel.connections.connections.collectAsState().value,
+                    loading = viewModel.connections.loading.collectAsState().value,
+                    formMode = editing?.let(ConnectionFormMode::Edit) ?: ConnectionFormMode.New,
+                    onFormModeChange = {},
                     onDeleted = {},
                     onConnectionChanged = {},
                 )
