@@ -573,20 +573,56 @@ internal data class PlacedCategoryLabel<T>(
     val measured: T,
 )
 
+private const val MAX_HORIZONTAL_CATEGORY_LABEL_GAP = 160f
+
+private fun uniformHorizontalCategoryLabels(
+    ordered: List<CategoryLabelEntry>,
+    plotLeft: Float,
+    canvasWidth: Float,
+    gapPx: Float,
+): List<CategoryLabelEntry> {
+    if (ordered.size <= 1) return ordered
+    val maxWidth = (MAX_HORIZONTAL_CATEGORY_LABEL_GAP - gapPx).coerceAtLeast(0f)
+    val step =
+        (1 until ordered.size).firstOrNull { candidate ->
+            var previousRight = Float.NEGATIVE_INFINITY
+            var fits = true
+            var index = 0
+            while (index < ordered.size) {
+                val entry = ordered[index]
+                val width = min(entry.naturalWidth, maxWidth)
+                val left = clampLabelX(entry.center - width / 2f, width, plotLeft, canvasWidth)
+                if (index > 0 && previousRight + gapPx > left) {
+                    fits = false
+                    break
+                }
+                previousRight = left + width
+                index += candidate
+            }
+            fits
+        } ?: ordered.size
+    return ordered.filterIndexed { index, _ -> index % step == 0 }
+}
+
 // Decimates horizontal category labels in spatial order so clustered scatter points collapse to one
-// label before edge clamping or HTML tick emission.
+// label before edge clamping or HTML tick emission, or by uniform stride for evenly spaced axes.
 internal fun selectHorizontalCategoryLabels(
     entries: List<CategoryLabelEntry>,
     plotLeft: Float,
     gapPx: Float,
+    canvasWidth: Float = Float.POSITIVE_INFINITY,
+    evenlySpaced: Boolean = false,
 ): List<CategoryLabelEntry> {
     if (entries.isEmpty()) return emptyList()
     val ordered = entries.sortedBy { it.center }
+    if (evenlySpaced) {
+        return uniformHorizontalCategoryLabels(ordered, plotLeft, canvasWidth, gapPx)
+    }
     val widest = ordered.maxOf { it.naturalWidth }
     val selected =
         categoryLabelIndices(
             ordered.map { it.center },
-            min(widest + gapPx, 160f),
+            min(widest + gapPx, MAX_HORIZONTAL_CATEGORY_LABEL_GAP),
             minX = plotLeft,
         )
     return selected.map { ordered[it] }
@@ -603,8 +639,16 @@ internal fun <T> layoutHorizontalCategoryLabels(
     gapPx: Float,
     measureFitted: (text: String, maxWidth: Float) -> T,
     measuredWidth: (T) -> Float,
+    evenlySpaced: Boolean = false,
 ): List<PlacedCategoryLabel<T>> {
-    val selectedEntries = selectHorizontalCategoryLabels(entries, plotLeft, gapPx)
+    val selectedEntries =
+        selectHorizontalCategoryLabels(
+            entries = entries,
+            plotLeft = plotLeft,
+            gapPx = gapPx,
+            canvasWidth = canvasWidth,
+            evenlySpaced = evenlySpaced,
+        )
     if (selectedEntries.isEmpty()) return emptyList()
     val selectedCenters = selectedEntries.map { it.center }
     val nominals = selectedCenters.mapIndexed { position, x ->

@@ -693,8 +693,8 @@ class ChartMathTest {
         assertEquals(1, singlePlaced.size)
         assertEquals(canvasWidth - plotLeft, singlePlaced.single().maxWidth)
 
-        // Dense 20-bin histogram: every placed label fits inside [plotLeft, canvasWidth] with at
-        // least gapPx clearance between consecutive fitted labels.
+        // Dense 20-bin histogram: uniform stride and every placed label fits inside
+        // [plotLeft, canvasWidth] with at least gapPx clearance between consecutive fitted labels.
         val histogramEntries =
             List(20) { index ->
                 val text = "${index * 50} – ${(index + 1) * 50}"
@@ -716,9 +716,9 @@ class ChartMathTest {
                 gapPx = gapPx,
                 measureFitted = { text, maxWidth -> min(histWidths.getValue(text), maxWidth) },
                 measuredWidth = { it },
+                evenlySpaced = true,
             )
-        assertEquals("bin-0", histPlaced[0].entry.xKey)
-        assertEquals("bin-3", histPlaced[1].entry.xKey)
+        assertEquals((0 until 20 step 2).map { "bin-$it" }, histPlaced.map { it.entry.xKey })
         assertEquals(52f, histPlaced[0].measured)
         histPlaced.forEach { placed ->
             assertTrue(placed.drawX >= plotLeft)
@@ -727,6 +727,122 @@ class ChartMathTest {
         histPlaced.zipWithNext().forEach { (left, right) ->
             assertTrue(left.drawX + left.measured + gapPx <= right.drawX)
         }
+    }
+
+    @Test
+    fun uniformHorizontalCategoryLabelsKeepConstantStrideAcrossNarrowAndWideFirstBins() {
+        val plotLeft = 60f
+        val plotWidth = 780f
+        val canvasWidth = 880f
+        val gapPx = 6f
+
+        // 1. Bin-size-500 histogram with shorter "0 – 500" first bin and wider upper-tail bins.
+        val bin500Band = plotWidth / 20f
+        val bin500Entries =
+            List(20) { index ->
+                val lower = index * 500
+                val upper = (index + 1) * 500
+                val text = "$lower – $upper"
+                val natural =
+                    when {
+                        upper < 1000 -> 52f
+                        lower < 1000 -> 66f
+                        upper < 10_000 -> 72f
+                        else -> 78f
+                    }
+                CategoryLabelEntry(
+                    xKey = "$lower",
+                    text = text,
+                    center = plotLeft + (index + 0.5f) * bin500Band,
+                    naturalWidth = natural,
+                )
+            }
+        val bin500Widths = bin500Entries.associate { it.text to it.naturalWidth }
+        val bin500Placed =
+            layoutHorizontalCategoryLabels(
+                entries = bin500Entries,
+                plotLeft = plotLeft,
+                plotWidth = plotWidth,
+                canvasWidth = canvasWidth,
+                gapPx = gapPx,
+                measureFitted = { text, maxWidth -> min(bin500Widths.getValue(text), maxWidth) },
+                measuredWidth = { it },
+                evenlySpaced = true,
+            )
+        val bin500Indices = bin500Placed.map { it.entry.xKey.toInt() / 500 }
+        val bin500Deltas = bin500Indices.zipWithNext { a, b -> b - a }.distinct()
+        assertEquals(listOf(2), bin500Deltas)
+        bin500Placed.zipWithNext().forEach { (left, right) ->
+            assertTrue(left.drawX + left.measured + gapPx <= right.drawX)
+        }
+
+        // 2. Wide-first-bin histogram where left-edge clamping forces stride 3 across the whole
+        // axis rather than jumping 3 on the first gap and 2 thereafter.
+        val wideFirstBand = 40f
+        val wideFirstEntries =
+            List(15) { index ->
+                val lower = 10_000 + index * 500
+                CategoryLabelEntry(
+                    xKey = "$index",
+                    text = "$lower – ${lower + 500}",
+                    center = plotLeft + (index + 0.5f) * wideFirstBand,
+                    naturalWidth = 70f,
+                )
+            }
+        val wideFirstPlaced =
+            layoutHorizontalCategoryLabels(
+                entries = wideFirstEntries,
+                plotLeft = plotLeft,
+                plotWidth = wideFirstEntries.size * wideFirstBand,
+                canvasWidth = plotLeft + wideFirstEntries.size * wideFirstBand + 20f,
+                gapPx = gapPx,
+                measureFitted = { _, maxWidth -> min(70f, maxWidth) },
+                measuredWidth = { it },
+                evenlySpaced = true,
+            )
+        assertEquals(listOf("0", "3", "6", "9", "12"), wideFirstPlaced.map { it.entry.xKey })
+        wideFirstPlaced.zipWithNext().forEach { (left, right) ->
+            assertTrue(left.drawX + left.measured + gapPx <= right.drawX)
+        }
+
+        // 3. Right-edge clamping and tiny-canvas fallback never overlap or throw.
+        val clampedEntries =
+            List(5) { index ->
+                CategoryLabelEntry(
+                    xKey = "c-$index",
+                    text = "1000$index",
+                    center = 100f + index * 40f,
+                    naturalWidth = 72f,
+                )
+            }
+        val clampedPlaced =
+            layoutHorizontalCategoryLabels(
+                entries = clampedEntries,
+                plotLeft = 70f,
+                plotWidth = 200f,
+                canvasWidth = 270f,
+                gapPx = gapPx,
+                measureFitted = { _, maxWidth -> min(72f, maxWidth) },
+                measuredWidth = { it },
+                evenlySpaced = true,
+            )
+        assertEquals(listOf("c-0", "c-3"), clampedPlaced.map { it.entry.xKey })
+        clampedPlaced.zipWithNext().forEach { (left, right) ->
+            assertTrue(left.drawX + left.measured + gapPx <= right.drawX)
+        }
+
+        val tinyPlaced =
+            layoutHorizontalCategoryLabels(
+                entries = clampedEntries,
+                plotLeft = 60f,
+                plotWidth = 20f,
+                canvasWidth = 80f,
+                gapPx = gapPx,
+                measureFitted = { _, maxWidth -> min(72f, maxWidth) },
+                measuredWidth = { it },
+                evenlySpaced = true,
+            )
+        assertEquals(listOf("c-0"), tinyPlaced.map { it.entry.xKey })
     }
 
     @Test

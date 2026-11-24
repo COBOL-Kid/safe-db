@@ -480,6 +480,7 @@ private fun PlotChart(
             }
         val categoryLabels =
             remember(
+                preview.chartType,
                 categoryMarks,
                 geometry,
                 horizontalBars,
@@ -534,6 +535,7 @@ private fun PlotChart(
                                 measureFittedLabel(textMeasurer, text, labelStyle, maxWidth)
                             },
                             measuredWidth = { it.size.width.toFloat() },
+                            evenlySpaced = preview.chartType != ChartType.Scatter,
                         )
                         .map { placed ->
                             MeasuredCategoryLabel(

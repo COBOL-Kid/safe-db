@@ -526,7 +526,13 @@ internal fun buildChartSection(
                 .filterIndexed { index, _ -> index % step == 0 }
                 .map { entry -> HtmlAxisTick(pos = entry.center.rounded(), label = entry.text) }
         } else {
-            selectHorizontalCategoryLabels(entries = centered, plotLeft = plot.left, gapPx = 6f)
+            selectHorizontalCategoryLabels(
+                    entries = centered,
+                    plotLeft = plot.left,
+                    gapPx = 6f,
+                    canvasWidth = width.toFloat(),
+                    evenlySpaced = chartType != ChartType.Scatter,
+                )
                 .map { entry ->
                     val drawX =
                         clampLabelX(

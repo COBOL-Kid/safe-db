@@ -7,6 +7,7 @@ import com.safedb.explore.ExploreSession
 import com.safedb.explore.MeasureFn
 import com.safedb.explore.NumberFormatKind
 import com.safedb.explore.PivotDimension
+import com.safedb.explore.PivotGrouping
 import com.safedb.explore.PivotMeasure
 import com.safedb.explore.PivotNumberFormat
 import com.safedb.explore.ValueAxis
@@ -1090,6 +1091,57 @@ class HtmlReportWriterTest {
                     .chart,
             )
         assertEquals(truncatedChart.plot[2], longChart.plot[2])
+    }
+
+    @Test
+    fun histogramCategoryTicksSkipEvenlyAtBinSize500() {
+        val tables = session().baseSpec.tables
+        for (binCount in listOf(18, 20)) {
+            val sample =
+                QueryResult(
+                    columns = listOf(ResultColumn("t0__amount", "decimal")),
+                    rows =
+                        List(binCount) { index -> listOf(ResultCell.float(index * 500.0 + 250.0)) },
+                    rowCount = binCount,
+                    truncated = false,
+                    warnings = emptyList(),
+                )
+            val config =
+                VisualizationConfig(
+                    chartType = ChartType.Histogram,
+                    x =
+                        VisualizationField(
+                            "t0__amount",
+                            "line_total",
+                            grouping = PivotGrouping.NumberBin("500"),
+                        ),
+                )
+            val preview = applyVisualization(sample, config, tables)
+            val chart = buildChartSection(preview, config)
+            val lowers = chart.categoryTicks.map { it.label.substringBefore(" – ").toInt() }
+            val deltas = lowers.zipWithNext { a, b -> b - a }.distinct()
+
+            assertEquals(0, lowers.first(), "Expected first bin at 0 for $binCount bins")
+            assertTrue(lowers.size >= 5, "Expected multiple ticks for $binCount bins")
+            assertEquals(
+                1,
+                deltas.size,
+                "Expected uniform bin-label stride for $binCount bins, got $lowers",
+            )
+            chart.categoryTicks.forEach { tick ->
+                val halfWidth = (tick.label.length * 7.0 + 4.0) / 2.0
+                assertTrue(tick.pos - halfWidth >= chart.plot[0] - 0.1)
+                assertTrue(tick.pos + halfWidth <= chart.width + 0.1)
+            }
+            chart.categoryTicks.zipWithNext().forEach { (left, right) ->
+                val leftRight = left.pos + (left.label.length * 7.0 + 4.0) / 2.0
+                val rightLeft = right.pos - (right.label.length * 7.0 + 4.0) / 2.0
+                assertTrue(
+                    leftRight + 5.8 <= rightLeft,
+                    "Expected >= 6px gap between ${left.label} and ${right.label}",
+                )
+            }
+        }
     }
 
     private fun pivotConfig() =
