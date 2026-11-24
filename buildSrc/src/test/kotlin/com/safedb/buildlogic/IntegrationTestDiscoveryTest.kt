@@ -249,7 +249,10 @@ class IntegrationTestDiscoveryTest {
                     listOf(
                         mcpReport("McpPackagedStdioIntegrationTest"),
                         mcpReport("McpMySqlIntegrationTest"),
-                        mcpReport("McpPackagedDialectsIntegrationTest", name = "packagedJarQueriesMysql()"),
+                        mcpReport(
+                            "McpPackagedDialectsIntegrationTest",
+                            name = "packagedJarQueriesMysql()",
+                        ),
                         mcpReport(
                             "McpPackagedDialectsIntegrationTest",
                             name = "packagedJarQueriesPostgres()",
@@ -314,9 +317,18 @@ class IntegrationTestDiscoveryTest {
                 reports =
                     listOf(
                         mcpReport("McpPackagedStdioIntegrationTest"),
-                        mcpReport("McpPackagedDialectsIntegrationTest", name = "packagedJarQueriesMssql()"),
-                        mcpReport("McpPackagedDialectsIntegrationTest", name = "packagedJarQueriesOracle()"),
-                        mcpReport("McpPackagedDialectsIntegrationTest", name = "packagedJarQueriesDb2()"),
+                        mcpReport(
+                            "McpPackagedDialectsIntegrationTest",
+                            name = "packagedJarQueriesMssql()",
+                        ),
+                        mcpReport(
+                            "McpPackagedDialectsIntegrationTest",
+                            name = "packagedJarQueriesOracle()",
+                        ),
+                        mcpReport(
+                            "McpPackagedDialectsIntegrationTest",
+                            name = "packagedJarQueriesDb2()",
+                        ),
                     ),
                 requireMysql = false,
                 requireMssql = true,

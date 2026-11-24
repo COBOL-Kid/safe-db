@@ -73,14 +73,9 @@ internal fun collectCompiledTestClasses(classesDir: File): Set<String> {
     if (!classesDir.isDirectory) return emptySet()
     return classesDir
         .walkTopDown()
-        .filter { file ->
-            file.isFile && file.name.endsWith("Test.class") && '$' !in file.name
-        }
+        .filter { file -> file.isFile && file.name.endsWith("Test.class") && '$' !in file.name }
         .map { file ->
-            file.relativeTo(classesDir)
-                .path
-                .replace(File.separatorChar, '.')
-                .removeSuffix(".class")
+            file.relativeTo(classesDir).path.replace(File.separatorChar, '.').removeSuffix(".class")
         }
         .toSet()
 }
@@ -102,7 +97,9 @@ internal fun verifyUnitTestClassDiscovery(
     val factory = DocumentBuilderFactory.newInstance()
     for (report in reports) {
         val document =
-            factory.newDocumentBuilder().parse(ByteArrayInputStream(report.toByteArray(Charsets.UTF_8)))
+            factory
+                .newDocumentBuilder()
+                .parse(ByteArrayInputStream(report.toByteArray(Charsets.UTF_8)))
         val testcases = document.getElementsByTagName("testcase")
         for (index in 0 until testcases.length) {
             val testcase = testcases.item(index)
