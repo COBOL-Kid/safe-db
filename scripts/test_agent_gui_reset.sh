@@ -5,8 +5,21 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/safedb-agent-gui-reset-test.XXXXXX")"
 SLEEP_PIDS=()
+GROUP_PIDS=()
 cleanup_test() {
-  local pid
+  local pid pgid i
+  for pgid in "${GROUP_PIDS[@]}"; do
+    if [[ "$pgid" =~ ^[1-9][0-9]+$ ]] && declare -F is_group_alive >/dev/null && is_group_alive "$pgid"; then
+      builtin kill -TERM -- "-$pgid" 2>/dev/null || true
+      for ((i = 0; i < 20; i++)); do
+        is_group_alive "$pgid" || break
+        sleep 0.05
+      done
+      if is_group_alive "$pgid"; then
+        builtin kill -KILL -- "-$pgid" 2>/dev/null || true
+      fi
+    fi
+  done
   for pid in "${SLEEP_PIDS[@]}"; do
     if [[ -n "$pid" ]] && builtin kill -0 "$pid" 2>/dev/null; then
       builtin kill "$pid" 2>/dev/null || true
@@ -122,6 +135,36 @@ start_sleep() {
   else
     wait_for_cmdline_token "$LAST_SLEEP_PID" sleep
   fi
+}
+
+# Double-fork a setsid session leader with a child so it mirrors cmd_up / cmd_down separation.
+start_session_group() {
+  local token="$1"
+  local leader_file="$2"
+  local child_file="$3"
+  rm -f -- "$leader_file" "$child_file"
+  (
+    (
+      exec setsid bash -c '
+        sleep 30 &
+        printf "%s\n" "$!" >"$1"
+        printf "%s\n" "$$" >"$2"
+        exec -a "$3" sleep 30
+      ' _ "$child_file" "$leader_file" "$token"
+    ) >/dev/null 2>&1 </dev/null &
+  )
+  local i
+  for ((i = 0; i < 50; i++)); do
+    if [[ -s "$leader_file" && -s "$child_file" ]]; then
+      break
+    fi
+    sleep 0.05
+  done
+  [[ -s "$leader_file" && -s "$child_file" ]] || fail "session group did not record pids"
+  LAST_GROUP_LEADER="$(<"$leader_file")"
+  LAST_GROUP_CHILD="$(<"$child_file")"
+  GROUP_PIDS+=("$LAST_GROUP_LEADER")
+  wait_for_cmdline_token "$LAST_GROUP_LEADER" "$token"
 }
 
 assert_kill_targets_only() {
@@ -342,5 +385,167 @@ fi
 assert_missing "$XVFB_PID_FILE"
 assert_no_kill "already-running mismatch"
 builtin kill -0 "$starting_pid" || fail "already-running check killed sleep"
+
+# Kill boundary: stop_pidfile with kill_group=true terminates a live setsid group and child.
+reset_kill_log
+start_session_group runAgentGui "$TEST_ROOT/grp-leader.pid" "$TEST_ROOT/grp-child.pid"
+leader_pgid="$(ps -o pgid= -p "$LAST_GROUP_LEADER" | tr -d '[:space:]')"
+child_pgid="$(ps -o pgid= -p "$LAST_GROUP_CHILD" | tr -d '[:space:]')"
+[[ "$leader_pgid" == "$LAST_GROUP_LEADER" ]] ||
+  fail "expected leader $LAST_GROUP_LEADER to lead its own pgid, got '$leader_pgid'"
+[[ "$child_pgid" == "$LAST_GROUP_LEADER" ]] ||
+  fail "expected child $LAST_GROUP_CHILD in pgid $LAST_GROUP_LEADER, got '$child_pgid'"
+start_sleep
+other_group_pid="$LAST_SLEEP_PID"
+printf '%s\n' "$LAST_GROUP_LEADER" >"$APP_PID_FILE"
+is_pid_running "$APP_PID_FILE" runAgentGui || fail "session group leader was not reported running"
+stop_pidfile "$APP_PID_FILE" runAgentGui true
+for ((i = 0; i < 50; i++)); do
+  if ! builtin kill -0 "$LAST_GROUP_LEADER" 2>/dev/null &&
+    ! builtin kill -0 "$LAST_GROUP_CHILD" 2>/dev/null; then
+    break
+  fi
+  sleep 0.1
+done
+if builtin kill -0 "$LAST_GROUP_LEADER" 2>/dev/null || builtin kill -0 "$LAST_GROUP_CHILD" 2>/dev/null; then
+  fail "session group leader or child survived stop_pidfile kill_group=true"
+fi
+assert_missing "$APP_PID_FILE"
+builtin kill -0 "$other_group_pid" || fail "unrelated sleep died during group stop"
+assert_kill_targets_only "$LAST_GROUP_LEADER" "matched process group"
+grep -q -- "-$LAST_GROUP_LEADER" "$KILL_LOG" ||
+  fail "expected negative PGID signal -$LAST_GROUP_LEADER in KILL_LOG: $(<"$KILL_LOG")"
+
+# launch_pid_state matrix: running, empty token -> dead, missing pidfile -> dead, exited pid -> dead.
+reset_kill_log
+start_sleep Xvfb
+running_pid="$LAST_SLEEP_PID"
+printf '%s\n' "$running_pid" >"$XVFB_PID_FILE"
+launch_state="$(launch_pid_state "$XVFB_PID_FILE" Xvfb)"
+[[ "$launch_state" == "running" ]] || fail "launch_pid_state running reported '$launch_state'"
+assert_exists "$XVFB_PID_FILE"
+launch_state="$(launch_pid_state "$XVFB_PID_FILE" "")"
+[[ "$launch_state" == "dead" ]] || fail "launch_pid_state empty token reported '$launch_state'"
+assert_exists "$XVFB_PID_FILE"
+rm -f -- "$XVFB_PID_FILE"
+launch_state="$(launch_pid_state "$XVFB_PID_FILE" Xvfb)"
+[[ "$launch_state" == "dead" ]] || fail "launch_pid_state missing pidfile reported '$launch_state'"
+(exit 0) &
+exited_pid=$!
+wait "$exited_pid"
+printf '%s\n' "$exited_pid" >"$XVFB_PID_FILE"
+launch_state="$(launch_pid_state "$XVFB_PID_FILE" Xvfb)"
+[[ "$launch_state" == "dead" ]] || fail "launch_pid_state exited pid reported '$launch_state'"
+assert_exists "$XVFB_PID_FILE"
+assert_no_kill "launch_pid_state matrix"
+
+# pick_window_match: exact title wins over earlier substring match; substring fallback otherwise.
+FAKE_BIN="$TEST_ROOT/fake-bin"
+mkdir -p "$FAKE_BIN"
+cat >"$FAKE_BIN/xdotool" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+cmd="${1:-}"
+shift || true
+case "$cmd" in
+  search)
+    if [[ -z "${FAKE_XDOTOOL_IDS:-}" ]]; then
+      exit 1
+    fi
+    printf '%s\n' "$FAKE_XDOTOOL_IDS"
+    ;;
+  getwindowname)
+    wid="${1:-}"
+    case "$wid" in
+      101) printf '%s\n' "Explore - Safe-DB" ;;
+      202) printf '%s\n' "Safe-DB" ;;
+      301) printf '%s\n' "Explore - Safe-DB" ;;
+      302) printf '%s\n' "Export - Safe-DB" ;;
+      *) exit 1 ;;
+    esac
+    ;;
+  *)
+    exit 1
+    ;;
+esac
+EOF
+chmod +x "$FAKE_BIN/xdotool"
+
+exact_wid="$(
+  PATH="$FAKE_BIN:$PATH" FAKE_XDOTOOL_IDS=$'101\n202' \
+    pick_window_match "Safe-DB" --onlyvisible
+)"
+[[ "$exact_wid" == "202" ]] || fail "pick_window_match exact preference returned '$exact_wid', expected '202'"
+
+fallback_wid="$(
+  PATH="$FAKE_BIN:$PATH" FAKE_XDOTOOL_IDS=$'301\n302' \
+    pick_window_match "Explore" --onlyvisible
+)"
+[[ "$fallback_wid" == "301" ]] || fail "pick_window_match substring fallback returned '$fallback_wid', expected '301'"
+
+missing_wid="$(
+  PATH="$FAKE_BIN:$PATH" FAKE_XDOTOOL_IDS="" \
+    pick_window_match "Missing" --onlyvisible
+)"
+[[ -z "$missing_wid" ]] || fail "pick_window_match no-match returned '$missing_wid', expected empty"
+
+# 8. Override inside $shots_dir: wiped cleanly, no Not removing line, app.log preserved.
+c8="$TEST_ROOT/case8"
+setup_state "$c8"
+mkdir -p "$c8/shots/nested-data"
+printf 'nested\n' >"$c8/shots/nested-data/item.db"
+out="$(remove_agent_gui_reset_targets "$c8" "$c8/shots" "$c8/shots/nested-data")"
+assert_missing "$c8/shots/nested-data"
+assert_missing "$c8/shots"
+assert_missing "$c8/data"
+assert_exists "$c8/app.log"
+assert_not_contains "$out" "Not removing" "case 8"
+
+# 9. Override using .. traversal escaping $state/data: managed wiped, outside target kept, printed.
+c9="$TEST_ROOT/case9"
+c9_escaped="$TEST_ROOT/case9-escaped"
+setup_state "$c9"
+mkdir -p "$c9_escaped"
+printf 'keep\n' >"$c9_escaped/marker"
+out="$(remove_agent_gui_reset_targets "$c9" "$c9/shots" "$c9/data/../../case9-escaped")"
+assert_missing "$c9/data"
+assert_missing "$c9/shots"
+assert_exists "$c9_escaped/marker"
+assert_contains "$out" "Not removing" "case 9"
+
+# SAFEDB_AGENT_GUI_DATA_DIR initialization: whitespace-only falls back to $STATE_DIR/data; explicit overrides.
+whitespace_data_dir="$(
+  SAFEDB_AGENT_GUI_DATA_DIR="   " bash -c '
+    source "$1"
+    printf "%s\n" "$DATA_DIR"
+  ' _ "$REPO_ROOT/scripts/agent_gui.sh"
+)"
+[[ "$whitespace_data_dir" == "$REPO_ROOT/build/agent-gui/data" ]] ||
+  fail "whitespace SAFEDB_AGENT_GUI_DATA_DIR resolved to '$whitespace_data_dir'"
+
+custom_data_dir="$(
+  SAFEDB_AGENT_GUI_DATA_DIR="$TEST_ROOT/custom-data" bash -c '
+    source "$1"
+    printf "%s\n" "$DATA_DIR"
+  ' _ "$REPO_ROOT/scripts/agent_gui.sh"
+)"
+[[ "$custom_data_dir" == "$TEST_ROOT/custom-data" ]] ||
+  fail "explicit SAFEDB_AGENT_GUI_DATA_DIR resolved to '$custom_data_dir'"
+
+# Pre-display CLI argument validation exits 2.
+for cli_case in \
+  "unknown-cmd" \
+  "up:--bogus" \
+  "scroll:side:3" \
+  "scroll:down:3:100" \
+  "type:a:b"; do
+  IFS=':' read -r -a cli_args <<<"$cli_case"
+  set +e
+  "$REPO_ROOT/scripts/agent_gui.sh" "${cli_args[@]}" >/dev/null 2>&1
+  cli_status=$?
+  set -e
+  [[ "$cli_status" -eq 2 ]] ||
+    fail "CLI validation for (${cli_args[*]}) exited $cli_status instead of 2"
+done
 
 echo "agent_gui reset tests passed"
