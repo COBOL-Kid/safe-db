@@ -29,8 +29,10 @@ internal fun ExploreDrillDialog(
         title = {
             Column {
                 Text("Source rows", style = MaterialTheme.typography.titleMedium)
+                val samplePhrase =
+                    if (result.truncated) "truncated Explore sample" else "Explore sample"
                 Text(
-                    "${result.rowCount} matching row${if (result.rowCount == 1) "" else "s"} from the Explore sample",
+                    "${result.rowCount} matching row${if (result.rowCount == 1) "" else "s"} from the $samplePhrase",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -38,7 +40,7 @@ internal fun ExploreDrillDialog(
         },
         text = {
             ResultsTable(
-                result = result,
+                result = result.copy(truncated = false),
                 tables = tables,
                 modifier = Modifier.width(860.dp).height(480.dp),
             )

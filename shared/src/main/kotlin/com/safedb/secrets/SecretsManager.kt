@@ -10,6 +10,12 @@ import kotlinx.serialization.json.Json
 
 const val ENV_BACKEND = "SAFEDB_KEYCHAIN_BACKEND"
 
+class PasswordNotFoundException(
+    message: String,
+    val isDisabledOverride: Boolean = false,
+    val isMemoryStore: Boolean = false,
+) : IllegalStateException(message)
+
 enum class RequestedBackend {
     Auto,
     Disabled,
@@ -105,7 +111,14 @@ object SecretsManager {
                         "Could not read credentials (${unwrapCredentialError(error).message ?: error}).",
                     ),
                 )
-            } ?: return Result.failure(IllegalStateException(passwordNotFoundMessage()))
+            }
+                ?: return Result.failure(
+                    PasswordNotFoundException(
+                        message = passwordNotFoundMessage(),
+                        isDisabledOverride = activeLabel == "disabled",
+                        isMemoryStore = activeLabel == "memory",
+                    ),
+                )
         val record = runCatching {
             json.decodeFromString<BoundCredential>(raw)
         }

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -147,26 +148,45 @@ internal fun VisualizationConfigPanel(
 
     Surface(modifier = modifier, color = SafeDbTheme.colors.workspacePanel) {
         VisualizationConfigScroller {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Build chart", style = MaterialTheme.typography.titleSmall)
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Text(
-                        if (config.isConfigured()) visualizationConfigSummary(config)
-                        else "Start with a suggestion or choose fields",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
+                        "Build chart",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f),
                     )
+                    TextButton(
+                        onClick = { templatesOpen = true },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                    ) {
+                        Text("Templates")
+                    }
+                    TextButton(
+                        onClick = onReset,
+                        enabled = config.isConfigured(),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                    ) {
+                        Text("Reset")
+                    }
+                    IconButton(onClick = onHide, modifier = Modifier.size(36.dp)) {
+                        Icon(
+                            Icons.Default.ChevronLeft,
+                            contentDescription = "Hide Visualization sidebar",
+                        )
+                    }
                 }
-                TextButton(onClick = { templatesOpen = true }) { Text("Templates") }
-                TextButton(onClick = onReset, enabled = config.isConfigured()) { Text("Reset") }
-                IconButton(onClick = onHide) {
-                    Icon(
-                        Icons.Default.ChevronLeft,
-                        contentDescription = "Hide Visualization sidebar",
-                    )
-                }
+                Text(
+                    if (config.isConfigured()) visualizationConfigSummary(config)
+                    else "Start with a suggestion or choose fields",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
 
             if (!config.isConfigured()) {
@@ -361,6 +381,7 @@ internal fun VisualizationConfigPanel(
                             (filter as? PivotFilter.Members)?.let {
                                 memberOptionsFor(it.column).size
                             },
+                            showPinned = false,
                         ),
                         onRemove = {
                             onConfigChange(config.copy(filters = config.filters - filter))
@@ -385,6 +406,7 @@ internal fun VisualizationConfigPanel(
                                             id = UUID.randomUUID().toString(),
                                             column = field.column,
                                             label = field.label,
+                                            pinned = false,
                                         ),
                             ),
                         )

@@ -7,6 +7,7 @@ import androidx.compose.ui.text.AnnotatedString
 import com.safedb.AppState
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
+import com.safedb.secrets.PasswordNotFoundException
 import com.safedb.service.FakeSafeDbServiceSupport
 import com.safedb.ui.components.CommandPalette
 import com.safedb.ui.theme.SafeDbTheme
@@ -170,6 +171,149 @@ class ConnectionsScreenTest {
                 assertNotNull(scene.findExact("Keep saved password"))
                 val passwordField = scene.requireExact("Password")
                 assertEquals(true, passwordField.config.getOrNull(SemanticsProperties.Focused))
+            }
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun editConnectionTestBannerSitsAboveFooterWithoutClippingAndMissingPasswordOpensEntry() {
+        val alpha =
+            ConnectionDef(
+                id = "c1",
+                name = "Alpha DB",
+                dialect = Dialect.Postgres,
+                host = "localhost",
+                port = 5432,
+                database = "alpha",
+                username = "reader",
+            )
+        var testFailure: PasswordNotFoundException? =
+            PasswordNotFoundException(
+                "Password not found for this connection because credentials are held in " +
+                    "memory only for this session. Edit the connection to re-enter the password.",
+                isMemoryStore = true,
+            )
+        val service =
+            object : FakeSafeDbServiceSupport() {
+                override suspend fun listConnections(): List<ConnectionDef> = listOf(alpha)
+
+                override suspend fun testConnection(def: ConnectionDef, password: String?): String {
+                    if (password == null) {
+                        testFailure?.let { throw it }
+                    }
+                    return "PostgreSQL 16.7 on x86_64-pc-linux-gnu"
+                }
+            }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        try {
+            val viewModel = ConnectionsViewModel(service, scope)
+            runBlocking { viewModel.load() }
+
+            withComposeScene(
+                width = 1000,
+                height = 760,
+                content = {
+                    SafeDbTheme(isDark = false) {
+                        ConnectionsScreen(
+                            viewModel = viewModel,
+                            onDeleted = {},
+                            onConnectionChanged = {},
+                            editConnectionId = alpha.id,
+                            onEditConnectionConsumed = {},
+                        )
+                    }
+                },
+            ) { scene ->
+                scene.settle()
+
+                // Missing password in memory store switches directly into focused password entry.
+                scene.click(scene.requireExact("Test Connection").boundsInRoot.center)
+                scene.settle()
+
+                val passwordField = scene.requireExact("Password")
+                assertEquals(true, passwordField.config.getOrNull(SemanticsProperties.Focused))
+                assertNull(scene.findExact("Keep saved password"))
+                val missingBanner =
+                    scene.requireContaining("Enter the password above to test or save.")
+                assertNull(scene.findContaining("Edit the connection"))
+                val testButton = scene.requireExact("Test Connection")
+                assertTrue(missingBanner.boundsInRoot.bottom <= testButton.boundsInRoot.top - 12f)
+                assertTrue(missingBanner.boundsInRoot.height >= 14f)
+
+                // Re-entering password and testing shows the unclipped success banner above footer.
+                passwordField.config[SemanticsActions.SetText]
+                    .action!!
+                    .invoke(AnnotatedString("pw"))
+                scene.settle()
+                scene.click(testButton.boundsInRoot.center)
+                scene.settle()
+
+                val successBanner = scene.requireContaining("Connected - PostgreSQL 16.7")
+                val refreshedButton = scene.requireExact("Test Connection")
+                assertTrue(
+                    successBanner.boundsInRoot.bottom <= refreshedButton.boundsInRoot.top - 12f,
+                )
+                assertTrue(successBanner.boundsInRoot.height >= 14f)
+            }
+
+            // Disabled keychain backend override keeps "Saved password" and preserves env guidance.
+            testFailure =
+                PasswordNotFoundException(
+                    "Password not found for this connection because SAFEDB_KEYCHAIN_BACKEND=disabled is overriding the persisted credential store.",
+                    isDisabledOverride = true,
+                )
+            withComposeScene(
+                width = 1000,
+                height = 760,
+                content = {
+                    SafeDbTheme(isDark = false) {
+                        ConnectionsScreen(
+                            viewModel = viewModel,
+                            onDeleted = {},
+                            onConnectionChanged = {},
+                            editConnectionId = alpha.id,
+                            onEditConnectionConsumed = {},
+                        )
+                    }
+                },
+            ) { scene ->
+                scene.settle()
+                scene.click(scene.requireExact("Test Connection").boundsInRoot.center)
+                scene.settle()
+
+                assertNotNull(scene.findContaining("Saved password"))
+                assertNotNull(scene.findContaining("SAFEDB_KEYCHAIN_BACKEND=disabled"))
+            }
+
+            // Keychain missing password outside memory/disabled modes also opens password entry.
+            testFailure = PasswordNotFoundException("Password not found for this connection.")
+            withComposeScene(
+                width = 1000,
+                height = 760,
+                content = {
+                    SafeDbTheme(isDark = false) {
+                        ConnectionsScreen(
+                            viewModel = viewModel,
+                            onDeleted = {},
+                            onConnectionChanged = {},
+                            editConnectionId = alpha.id,
+                            onEditConnectionConsumed = {},
+                        )
+                    }
+                },
+            ) { scene ->
+                scene.settle()
+                scene.click(scene.requireExact("Test Connection").boundsInRoot.center)
+                scene.settle()
+
+                assertNotNull(
+                    scene.findContaining(
+                        "Password not found for this connection. Enter the password above to test or save.",
+                    ),
+                )
+                assertNull(scene.findExact("Keep saved password"))
             }
         } finally {
             scope.cancel()

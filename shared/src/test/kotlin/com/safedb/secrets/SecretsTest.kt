@@ -18,6 +18,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -95,7 +96,10 @@ class SecretsTest {
         SecretsManager.initStore("disabled")
         val result = SecretsManager.passwordForDefinition(connectionDef("missing-password"))
         assertTrue(result.isFailure)
-        val message = result.exceptionOrNull()!!.message!!
+        val error = assertIs<PasswordNotFoundException>(result.exceptionOrNull())
+        assertTrue(error.isDisabledOverride)
+        assertFalse(error.isMemoryStore)
+        val message = error.message!!
         assertTrue(message.contains("Password not found"))
         assertTrue(message.contains("SAFEDB_KEYCHAIN_BACKEND=disabled"))
         assertTrue(message.contains("Unset SAFEDB_KEYCHAIN_BACKEND"))
@@ -111,7 +115,10 @@ class SecretsTest {
         val def = connectionDef("missing-memory-password")
         val result = SecretsManager.passwordForDefinition(def)
         assertTrue(result.isFailure)
-        val message = result.exceptionOrNull()!!.message!!
+        val error = assertIs<PasswordNotFoundException>(result.exceptionOrNull())
+        assertTrue(error.isMemoryStore)
+        assertFalse(error.isDisabledOverride)
+        val message = error.message!!
         assertTrue(message.contains("memory only for this session"))
         assertTrue(message.contains("Edit the connection to re-enter the password"))
         assertFalse(message.contains("SAFEDB_KEYCHAIN_BACKEND"))
@@ -174,7 +181,11 @@ class SecretsTest {
         assertEquals("file", SecretsManager.activeBackendLabel())
 
         SecretsManager.deletePassword(def.id).getOrThrow()
-        assertTrue(SecretsManager.passwordForDefinition(def).isFailure)
+        val missing = SecretsManager.passwordForDefinition(def)
+        assertTrue(missing.isFailure)
+        val error = assertIs<PasswordNotFoundException>(missing.exceptionOrNull())
+        assertFalse(error.isMemoryStore)
+        assertFalse(error.isDisabledOverride)
     }
 
     @Test

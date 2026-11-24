@@ -43,6 +43,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.safedb.explore.BarOrientation
 import com.safedb.explore.ChartType
 import com.safedb.explore.VisualizationConfig
@@ -55,6 +56,7 @@ import com.safedb.ui.chart.barLabelCenter
 import com.safedb.ui.chart.barValueLabelText
 import com.safedb.ui.chart.categoryLabelStep
 import com.safedb.ui.chart.chartPlotInsets
+import com.safedb.ui.chart.chooseBarLabelFontSizeSp
 import com.safedb.ui.chart.clampLabelX
 import com.safedb.ui.chart.compactNumber
 import com.safedb.ui.chart.contrastingBarLabelColor
@@ -249,7 +251,7 @@ private fun PlotChart(
     var hovered by remember(preview) { mutableStateOf<VisualizationMark?>(null) }
     var pointerX by remember { mutableStateOf(0f) }
     // Default cache of 8 thrashes once a chart has more than a handful of distinct labels.
-    val textMeasurer = rememberTextMeasurer(cacheSize = 64)
+    val textMeasurer = rememberTextMeasurer(cacheSize = 128)
     val axisColor = MaterialTheme.colorScheme.outline
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
     val gridColor = MaterialTheme.colorScheme.outlineVariant
@@ -440,7 +442,39 @@ private fun PlotChart(
 
                 when (preview.chartType) {
                     ChartType.Bar,
-                    ChartType.Histogram ->
+                    ChartType.Histogram -> {
+                        val barLabelFontSize =
+                            if (config.showLabels) {
+                                chooseBarLabelFontSizeSp(maxPossible = geometry.regions.size) {
+                                    candidateSp ->
+                                    val style =
+                                        DataMono.copy(
+                                            fontSize = candidateSp.sp,
+                                            lineHeight = (candidateSp + 2f).sp,
+                                        )
+                                    geometry.regions.count { region ->
+                                        val mark = marksById[region.markId] ?: return@count false
+                                        val measured =
+                                            textMeasurer.measure(
+                                                barValueLabelText(mark, config),
+                                                style,
+                                            )
+                                        barLabelCenter(
+                                            bounds = region.bounds,
+                                            labelWidth = measured.size.width.toFloat(),
+                                            labelHeight = measured.size.height.toFloat(),
+                                            horizontalBars = horizontalBars,
+                                        ) != null
+                                    }
+                                }
+                            } else {
+                                DataMono.fontSize.value
+                            }
+                        val baseBarLabelStyle =
+                            DataMono.copy(
+                                fontSize = barLabelFontSize.sp,
+                                lineHeight = (barLabelFontSize + 2f).sp,
+                            )
                         geometry.regions.forEach { region ->
                             val mark = marksById[region.markId] ?: return@forEach
                             val color =
@@ -459,7 +493,9 @@ private fun PlotChart(
                                 val label =
                                     textMeasurer.measure(
                                         labelText,
-                                        DataMono.copy(color = contrastingBarLabelColor(color)),
+                                        baseBarLabelStyle.copy(
+                                            color = contrastingBarLabelColor(color),
+                                        ),
                                     )
                                 val center =
                                     barLabelCenter(
@@ -480,6 +516,7 @@ private fun PlotChart(
                                 }
                             }
                         }
+                    }
                     ChartType.Line -> {
                         marksBySeries.forEach { (key, marks) ->
                             val color =

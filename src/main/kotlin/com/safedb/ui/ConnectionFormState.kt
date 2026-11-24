@@ -58,6 +58,12 @@ class ConnectionFormState(val original: ConnectionDef? = null) {
     var passwordChangeEnabled by mutableStateOf(original == null)
         private set
 
+    var savedPasswordMissing by mutableStateOf(false)
+        private set
+
+    var passwordFocusRequest by mutableStateOf(0)
+        private set
+
     var showPassword by mutableStateOf(false)
     var transportMode by
         mutableStateOf(original?.transportSecurity?.mode ?: TransportSecurityMode.Disabled)
@@ -137,11 +143,23 @@ class ConnectionFormState(val original: ConnectionDef? = null) {
         password = ""
         passwordChangeEnabled = true
         showPassword = false
+        passwordFocusRequest += 1
         resetResultState()
     }
 
+    fun requirePasswordReentry(message: String) {
+        savedPasswordMissing = true
+        password = ""
+        passwordChangeEnabled = true
+        showPassword = false
+        testResult = null
+        formError = null
+        testError = message
+        passwordFocusRequest += 1
+    }
+
     fun keepSavedPassword() {
-        if (!isEditing) return
+        if (!isEditing || savedPasswordMissing) return
         password = ""
         passwordChangeEnabled = false
         showPassword = false

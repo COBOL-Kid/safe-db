@@ -845,6 +845,30 @@ class ChartMathTest {
         )
     }
 
+    @Test
+    fun chooseBarLabelFontSizeSpKeepsLargestSizeWhenAllFitAndStepsDownForNarrowGroupedBars() {
+        // Wide bars fit all 10 labels at 12sp -> keep 12sp without downgrading.
+        assertEquals(
+            12f,
+            chooseBarLabelFontSizeSp(maxPossible = 10) { size -> if (size <= 12f) 10 else 0 },
+        )
+
+        // Grouped bars where 5-char labels fit only at 10sp -> step down to 10sp.
+        assertEquals(
+            10f,
+            chooseBarLabelFontSizeSp(maxPossible = 10) { size ->
+                when (size) {
+                    12f -> 7
+                    11f -> 8
+                    else -> 10
+                }
+            },
+        )
+
+        // Tiny slivers that fit at no candidate size -> keep default 12sp rather than shrinking.
+        assertEquals(12f, chooseBarLabelFontSizeSp(maxPossible = 4) { 0 })
+    }
+
     private fun preview(type: ChartType) =
         VisualizationPreview(
             chartType = type,

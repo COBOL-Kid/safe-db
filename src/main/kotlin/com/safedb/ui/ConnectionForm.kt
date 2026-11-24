@@ -1,6 +1,7 @@
 package com.safedb.ui
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -69,6 +71,7 @@ import com.safedb.connection.DIALECTS
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.model.TransportSecurityMode
+import com.safedb.secrets.PasswordNotFoundException
 import com.safedb.ui.components.BannerKind
 import com.safedb.ui.components.MessageBanner
 import com.safedb.ui.components.PrimaryButton
@@ -122,6 +125,18 @@ fun ConnectionForm(
                     )
             } catch (error: CancellationException) {
                 throw error
+            } catch (error: PasswordNotFoundException) {
+                if (!error.isDisabledOverride && form.isEditing && !form.passwordChangeEnabled) {
+                    val message =
+                        if (error.isMemoryStore) {
+                            "Password not found because credentials are held in memory only for this session. Enter the password above to test or save."
+                        } else {
+                            "Password not found for this connection. Enter the password above to test or save."
+                        }
+                    form.requirePasswordReentry(message)
+                } else {
+                    form.testError = error.message ?: error.toString()
+                }
             } catch (error: Exception) {
                 form.testError = error.message ?: error.toString()
             } finally {
@@ -171,42 +186,60 @@ fun ConnectionForm(
         shadowElevation = 0.dp,
     ) {
         Column(Modifier.fillMaxSize()) {
-            Column(
-                modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp),
-            ) {
-                ConnectionStringInput(form)
-                OrDetailsDivider()
-                BoxWithConstraints(Modifier.fillMaxWidth()) {
-                    if (maxWidth < 780.dp) {
-                        Column(verticalArrangement = Arrangement.spacedBy(22.dp)) {
-                            MainConnectionFields(form)
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                            AdvancedConnectionFields(form)
-                        }
-                    } else {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(24.dp),
-                        ) {
-                            Box(Modifier.weight(1.15f)) { MainConnectionFields(form) }
-                            VerticalDivider(
-                                modifier = Modifier.fillMaxHeight(),
-                                color = MaterialTheme.colorScheme.outlineVariant,
-                            )
-                            Box(Modifier.weight(0.95f)) { AdvancedConnectionFields(form) }
+            val scrollState = rememberScrollState()
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.fillMaxSize().verticalScroll(scrollState).padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(18.dp),
+                ) {
+                    ConnectionStringInput(form)
+                    OrDetailsDivider()
+                    BoxWithConstraints(Modifier.fillMaxWidth()) {
+                        if (maxWidth < 780.dp) {
+                            Column(verticalArrangement = Arrangement.spacedBy(22.dp)) {
+                                MainConnectionFields(form)
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                                AdvancedConnectionFields(form)
+                            }
+                        } else {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(24.dp),
+                            ) {
+                                Box(Modifier.weight(1.15f)) { MainConnectionFields(form) }
+                                VerticalDivider(
+                                    modifier = Modifier.fillMaxHeight(),
+                                    color = MaterialTheme.colorScheme.outlineVariant,
+                                )
+                                Box(Modifier.weight(0.95f)) { AdvancedConnectionFields(form) }
+                            }
                         }
                     }
-                }
 
-                form.parseWarnings.forEach { warning ->
-                    MessageBanner(text = warning, kind = BannerKind.WARNING)
+                    form.parseWarnings.forEach { warning ->
+                        MessageBanner(text = warning, kind = BannerKind.WARNING)
+                    }
                 }
-                form.testResult?.let {
-                    MessageBanner(text = "Connected - $it", kind = BannerKind.SUCCESS)
+                VerticalScrollbar(
+                    adapter = rememberScrollbarAdapter(scrollState),
+                    modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+                )
+            }
+
+            if (form.testResult != null || form.testError != null || form.formError != null) {
+                Column(
+                    modifier =
+                        Modifier.fillMaxWidth()
+                            .padding(horizontal = 20.dp)
+                            .padding(top = 8.dp, bottom = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    form.testResult?.let {
+                        MessageBanner(text = "Connected - $it", kind = BannerKind.SUCCESS)
+                    }
+                    form.testError?.let { MessageBanner(text = it, kind = BannerKind.ERROR) }
+                    form.formError?.let { MessageBanner(text = it, kind = BannerKind.ERROR) }
                 }
-                form.testError?.let { MessageBanner(text = it, kind = BannerKind.ERROR) }
-                form.formError?.let { MessageBanner(text = it, kind = BannerKind.ERROR) }
             }
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -365,10 +398,8 @@ private fun MainConnectionFields(form: ConnectionFormState) {
 @Composable
 private fun PasswordField(form: ConnectionFormState) {
     val passwordFocusRequester = remember { FocusRequester() }
-    var focusPasswordOnEnable by remember(form.connectionId) { mutableStateOf(false) }
-    LaunchedEffect(form.passwordChangeEnabled, focusPasswordOnEnable) {
-        if (form.passwordChangeEnabled && focusPasswordOnEnable) {
-            focusPasswordOnEnable = false
+    LaunchedEffect(form.passwordFocusRequest) {
+        if (form.passwordChangeEnabled && form.passwordFocusRequest > 0) {
             passwordFocusRequester.requestFocus()
         }
     }
@@ -385,10 +416,7 @@ private fun PasswordField(form: ConnectionFormState) {
                 trailingIcon = {
                     PlainTextAction(
                         "Change",
-                        onClick = {
-                            focusPasswordOnEnable = true
-                            form.enablePasswordChange()
-                        },
+                        onClick = form::enablePasswordChange,
                     )
                 },
             )
@@ -430,7 +458,7 @@ private fun PasswordField(form: ConnectionFormState) {
                     )
                 },
             )
-            if (form.isEditing) {
+            if (form.isEditing && !form.savedPasswordMissing) {
                 PlainTextAction("Keep saved password", onClick = form::keepSavedPassword)
             }
         }

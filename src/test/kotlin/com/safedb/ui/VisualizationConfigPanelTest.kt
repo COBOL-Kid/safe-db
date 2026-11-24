@@ -9,6 +9,7 @@ import com.safedb.explore.BarArrangement
 import com.safedb.explore.BarOrientation
 import com.safedb.explore.ChartType
 import com.safedb.explore.MeasureFn
+import com.safedb.explore.PivotFilter
 import com.safedb.explore.PivotGrouping
 import com.safedb.explore.ValueAxis
 import com.safedb.explore.VisualizationConfig
@@ -20,6 +21,7 @@ import com.safedb.model.ResultColumn
 import com.safedb.ui.theme.SafeDbTheme
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -403,6 +405,98 @@ class VisualizationConfigPanelTest {
             assertNull(scene.findExact("Top categories"))
             assertNull(scene.findContaining("Show value labels"))
             assertNotNull(scene.findContaining("value sort"))
+        }
+    }
+
+    @Test
+    fun visualizationSidebarShowsFullSubtitleAtRailWidthAndOmitsPinnedFilterTag() {
+        val sample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__category", "varchar"),
+                        ResultColumn("t0__amount", "decimal"),
+                    ),
+                rows = listOf(listOf(ResultCell.text("Services"), ResultCell.float(100.0))),
+                rowCount = 1,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val fields = buildExploreFieldOptions(sample, emptyList())
+        var config by
+            mutableStateOf(
+                VisualizationConfig(
+                    values = listOf(VisualizationMeasure.countRows()),
+                    filters =
+                        listOf(
+                            PivotFilter.Members(
+                                id = "legacy-pinned",
+                                column = "t0__amount",
+                                label = "amount",
+                                pinned = true,
+                            ),
+                        ),
+                ),
+            )
+
+        withComposeScene(
+            width = 320,
+            height = 900,
+            content = {
+                SafeDbTheme(isDark = false) {
+                    VisualizationConfigPanel(
+                        config = VisualizationConfig(),
+                        sample = sample,
+                        tables = emptyList(),
+                        fields = fields,
+                        memberOptionsFor = { emptyList() },
+                        onConfigChange = {},
+                        onApplyTemplate = {},
+                        onReset = {},
+                        onHide = {},
+                    )
+                }
+            },
+        ) { scene ->
+            val subtitle = scene.requireExact("Start with a suggestion or choose fields")
+            val templates = scene.requireExact("Templates")
+            assertTrue(subtitle.boundsInRoot.width > 180f)
+            assertTrue(subtitle.boundsInRoot.top >= templates.boundsInRoot.bottom - 1f)
+        }
+
+        withComposeScene(
+            width = 320,
+            height = 900,
+            content = {
+                SafeDbTheme(isDark = false) {
+                    VisualizationConfigPanel(
+                        config = config,
+                        sample = sample,
+                        tables = emptyList(),
+                        fields = fields,
+                        memberOptionsFor = { emptyList() },
+                        onConfigChange = { config = it },
+                        onApplyTemplate = { config = it },
+                        onReset = {},
+                        onHide = {},
+                    )
+                }
+            },
+        ) { scene ->
+            // Pre-existing pinned=true filter does not show "Pinned" in Visualization.
+            assertNotNull(scene.findContaining("All values"))
+            assertNull(scene.findContaining("Pinned"))
+
+            // Newly added Visualization filter defaults to pinned=false.
+            scene.click(scene.requireContaining("Add filter").boundsInRoot.center)
+            scene.settle()
+            scene.click(scene.requireContaining("category").boundsInRoot.center)
+            scene.settle()
+
+            val added = config.filters.last() as PivotFilter.Members
+            assertEquals("t0__category", added.column)
+            assertFalse(added.pinned)
+            assertNull(scene.findContaining("Pinned"))
         }
     }
 }

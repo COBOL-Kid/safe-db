@@ -161,7 +161,11 @@ internal fun moveDimension(
     }
 }
 
-internal fun filterSupportingText(filter: PivotFilter, memberCount: Int? = null): String =
+internal fun filterSupportingText(
+    filter: PivotFilter,
+    memberCount: Int? = null,
+    showPinned: Boolean = true,
+): String =
     when (filter) {
         is PivotFilter.Members -> {
             val selection =
@@ -170,7 +174,7 @@ internal fun filterSupportingText(filter: PivotFilter, memberCount: Int? = null)
                     memberCount != null && filter.includedKeys.size == memberCount -> "All values"
                     else -> "${filter.includedKeys.size} selected"
                 }
-            if (filter.pinned) "$selection · Pinned" else selection
+            if (showPinned && filter.pinned) "$selection · Pinned" else selection
         }
         is PivotFilter.Label -> "${labelFilterOpLabel(filter.op)} \"${filter.value}\""
         is PivotFilter.Value -> valueFilterSupportingText(filter)

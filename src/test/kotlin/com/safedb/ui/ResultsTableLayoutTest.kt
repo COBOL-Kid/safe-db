@@ -4,8 +4,11 @@ import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
 import com.safedb.model.ResultColumn
 import com.safedb.model.TableRef
+import com.safedb.ui.theme.SafeDbTheme
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ResultsTableLayoutTest {
@@ -174,5 +177,48 @@ class ResultsTableLayoutTest {
         assertEquals(RESULT_TABLE_WIDTH_SAMPLE_ROWS, scannedIndices.size)
         assertTrue(scannedIndices.all { it < RESULT_TABLE_WIDTH_SAMPLE_ROWS })
         assertEquals(listOf(72, 72), columns.map { it.widthDp })
+    }
+
+    @Test
+    fun drillDialogMovesTruncatedStatusOutOfInnerResultsTable() {
+        val baseResult =
+            QueryResult(
+                columns = listOf(ResultColumn("id", "int")),
+                rows = listOf(listOf(ResultCell.IntegerCell(1))),
+                rowCount = 1,
+                truncated = true,
+                warnings = emptyList(),
+            )
+
+        withComposeScene(
+            width = 960,
+            height = 700,
+            content = {
+                SafeDbTheme(isDark = false) {
+                    ExploreDrillDialog(result = baseResult, onExport = {}, onDismiss = {})
+                }
+            },
+        ) { scene ->
+            assertNotNull(scene.findExact("1 matching row from the truncated Explore sample"))
+            assertNotNull(scene.findExact("1 row"))
+            assertNull(scene.findExact("Truncated"))
+        }
+
+        withComposeScene(
+            width = 960,
+            height = 700,
+            content = {
+                SafeDbTheme(isDark = false) {
+                    ExploreDrillDialog(
+                        result = baseResult.copy(truncated = false),
+                        onExport = {},
+                        onDismiss = {},
+                    )
+                }
+            },
+        ) { scene ->
+            assertNotNull(scene.findExact("1 matching row from the Explore sample"))
+            assertNull(scene.findExact("Truncated"))
+        }
     }
 }

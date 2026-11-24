@@ -653,9 +653,30 @@ internal fun tooltipAlignsToStart(pointerX: Float, plotCenterX: Float): Boolean 
     pointerX > plotCenterX
 
 internal const val BarLabelFontSizePx = 10
+internal val BarLabelFontSizeCandidates = listOf(12f, 11f, BarLabelFontSizePx.toFloat())
 internal const val BarLabelEmWidthFactor = 0.62f
 internal const val BarLabelHorizontalPadding = 4f
 internal const val BarLabelVerticalPadding = 2f
+
+internal fun chooseBarLabelFontSizeSp(
+    candidates: List<Float> = BarLabelFontSizeCandidates,
+    maxPossible: Int? = null,
+    fittingCount: (Float) -> Int,
+): Float {
+    var bestSize = candidates.first()
+    var bestCount = fittingCount(bestSize)
+    if (maxPossible != null && bestCount >= maxPossible) return bestSize
+    for (index in 1 until candidates.size) {
+        val size = candidates[index]
+        val count = fittingCount(size)
+        if (count > bestCount) {
+            bestSize = size
+            bestCount = count
+            if (maxPossible != null && bestCount >= maxPossible) return bestSize
+        }
+    }
+    return bestSize
+}
 
 internal fun estimatedBarLabelWidth(label: String): Float =
     label.length * BarLabelFontSizePx * BarLabelEmWidthFactor

@@ -7,6 +7,7 @@ import com.safedb.explore.ExplorePivotLayout
 import com.safedb.explore.ExploreSortTarget
 import com.safedb.explore.MeasureFn
 import com.safedb.explore.PivotDimension
+import com.safedb.explore.PivotFilter
 import com.safedb.explore.PivotMeasure
 import com.safedb.explore.PivotShowAs
 import com.safedb.explore.ShowAsMode
@@ -340,6 +341,30 @@ class ExploreUiModelTest {
         assertEquals(
             "Gross Revenue",
             customLabeled.forChartType(ChartType.Line, fields).values.single().label,
+        )
+    }
+
+    @Test
+    fun filterSupportingTextHidesPinnedBadgeWhenDisabled() {
+        val allPinned = PivotFilter.Members("f1", "col_bool", "col_bool", pinned = true)
+        val onePinned =
+            PivotFilter.Members(
+                "f2",
+                "col_bool",
+                "col_bool",
+                includedKeys = setOf("true"),
+                pinned = true,
+            )
+
+        assertEquals("All values · Pinned", filterSupportingText(allPinned, memberCount = 2))
+        assertEquals(
+            "All values",
+            filterSupportingText(allPinned, memberCount = 2, showPinned = false),
+        )
+        assertEquals("1 selected · Pinned", filterSupportingText(onePinned, memberCount = 2))
+        assertEquals(
+            "1 selected",
+            filterSupportingText(onePinned, memberCount = 2, showPinned = false),
         )
     }
 

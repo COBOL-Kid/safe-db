@@ -395,6 +395,26 @@ class ConnectionFormStateTest {
         assertNull(state.validateForm())
     }
 
+    @Test
+    fun requirePasswordReentryOpensPasswordEntryAndLocksKeepSaved() {
+        val state = ConnectionFormState(sampleConnection())
+        val initialFocusRequest = state.passwordFocusRequest
+
+        state.requirePasswordReentry("Enter the password above to test or save.")
+
+        assertTrue(state.savedPasswordMissing)
+        assertTrue(state.passwordChangeEnabled)
+        assertEquals("", state.password)
+        assertFalse(state.showPassword)
+        assertEquals("Enter the password above to test or save.", state.testError)
+        assertEquals(initialFocusRequest + 1, state.passwordFocusRequest)
+
+        state.updatePassword("secret")
+        state.keepSavedPassword()
+        assertTrue(state.passwordChangeEnabled)
+        assertEquals("secret", state.password)
+    }
+
     private fun sampleConnection() =
         ConnectionDef(
             id = "c1",
