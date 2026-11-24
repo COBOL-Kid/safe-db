@@ -172,10 +172,24 @@ class ApplyVisualizationTest {
                 ),
             )
         assertEquals(
-            listOf("0 – 250", "250 – 500", "1000 – 1250", "4750 – 5000"),
+            List(20) { index -> "${index * 250} – ${(index + 1) * 250}" },
             explicitSize.marks.map { it.xLabel },
         )
-        assertEquals(listOf(2.0, 2.0, 1.0, 1.0), explicitSize.marks.map { it.y })
+        assertEquals(
+            mapOf(
+                "0 – 250" to 2.0,
+                "250 – 500" to 2.0,
+                "1000 – 1250" to 1.0,
+                "4750 – 5000" to 1.0,
+            ),
+            explicitSize.marks.filter { it.y > 0.0 }.associate { it.xLabel to it.y },
+        )
+        val emptyExplicitMarks = explicitSize.marks.filter { it.y == 0.0 }
+        assertEquals(16, emptyExplicitMarks.size)
+        assertTrue(
+            emptyExplicitMarks.all { it.formattedY == "0" && it.sourceRowIndices.isEmpty() },
+        )
+        assertTrue(explicitSize.warnings.isEmpty())
 
         val explicitStart =
             applyVisualization(
@@ -191,6 +205,8 @@ class ApplyVisualizationTest {
             )
         assertEquals("17 – 267", explicitStart.marks.first().xLabel)
         assertEquals(3.0, explicitStart.marks.first().y)
+        assertEquals(20, explicitStart.marks.size)
+        assertEquals("4767 – 5017", explicitStart.marks.last().xLabel)
 
         val autoBins =
             applyVisualization(
@@ -202,10 +218,10 @@ class ApplyVisualizationTest {
             )
         // rough = (4900 - 17.1) / 5 = 976.58 -> nice step 1000, aligned to 0.
         assertEquals(
-            listOf("0 – 1000", "1000 – 2000", "4000 – 5000"),
+            listOf("0 – 1000", "1000 – 2000", "2000 – 3000", "3000 – 4000", "4000 – 5000"),
             autoBins.marks.map { it.xLabel },
         )
-        assertEquals(listOf(4.0, 1.0, 1.0), autoBins.marks.map { it.y })
+        assertEquals(listOf(4.0, 1.0, 0.0, 0.0, 1.0), autoBins.marks.map { it.y })
 
         val signedSample =
             QueryResult(
@@ -228,6 +244,54 @@ class ApplyVisualizationTest {
             signedBins.marks.map { it.xLabel },
         )
         assertEquals(listOf(2.0, 2.0, 1.0), signedBins.marks.map { it.y })
+    }
+
+    @Test
+    fun histogramOmitsEmptyBinsWithWarningWhenSpanExceedsCap() {
+        val boundarySample =
+            QueryResult(
+                columns = listOf(ResultColumn("v", "decimal")),
+                rows = listOf(0.0, 499.0).map { listOf(ResultCell.float(it)) },
+                rowCount = 2,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val boundaryPreview =
+            applyVisualization(
+                boundarySample,
+                VisualizationConfig(
+                    chartType = ChartType.Histogram,
+                    x = VisualizationField("v", grouping = PivotGrouping.NumberBin("1")),
+                ),
+            )
+        assertEquals(500, boundaryPreview.marks.size)
+        assertEquals("0 – 1", boundaryPreview.marks.first().xLabel)
+        assertEquals("499 – 500", boundaryPreview.marks.last().xLabel)
+        assertTrue(boundaryPreview.warnings.isEmpty())
+
+        val overflowSample =
+            QueryResult(
+                columns = listOf(ResultColumn("v", "decimal")),
+                rows = listOf(0.0, 10_000.0).map { listOf(ResultCell.float(it)) },
+                rowCount = 2,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val overflowPreview =
+            applyVisualization(
+                overflowSample,
+                VisualizationConfig(
+                    chartType = ChartType.Histogram,
+                    x = VisualizationField("v", grouping = PivotGrouping.NumberBin("10")),
+                ),
+            )
+        assertEquals(listOf("0 – 10", "10000 – 10010"), overflowPreview.marks.map { it.xLabel })
+        assertEquals(listOf(1.0, 1.0), overflowPreview.marks.map { it.y })
+        assertTrue(
+            overflowPreview.warnings.any {
+                it.contains("Empty bins omitted") && it.contains("500")
+            },
+        )
     }
 
     @Test

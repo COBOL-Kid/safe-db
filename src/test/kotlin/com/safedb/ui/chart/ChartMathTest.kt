@@ -985,6 +985,61 @@ class ChartMathTest {
         assertEquals(12f, chooseBarLabelFontSizeSp(maxPossible = 4) { 0 })
     }
 
+    @Test
+    fun histogramGeometryWithEmptyIntermediateBinKeepsEvenCentersAndUniformLabels() {
+        val marks =
+            List(14) { index ->
+                val lower = index * 500
+                val count = if (index == 8) 0.0 else 5.0
+                VisualizationMark(
+                    id = "bin:$lower",
+                    xKey = "$lower",
+                    xLabel = "$lower – ${lower + 500}",
+                    xValue = lower.toDouble(),
+                    y = count,
+                    formattedY = count.toInt().toString(),
+                    seriesKey = "count",
+                    seriesLabel = "Count",
+                    measureAlias = "count",
+                    measureLabel = "Count",
+                    sourceRowIndices = if (count == 0.0) emptyList() else listOf(index),
+                )
+            }
+        val preview = VisualizationPreview(ChartType.Histogram, "Histogram", marks)
+        val config = VisualizationConfig(chartType = ChartType.Histogram)
+        val geometry = visualizationGeometry(preview, config, width = 880f, height = 400f)
+
+        val centers = marks.map { geometry.categoryCenters.getValue(it.xKey) }
+        val centerDeltas = centers.zipWithNext { a, b -> b - a }
+        assertTrue(centerDeltas.all { kotlin.math.abs(it - centerDeltas.first()) < 0.01f })
+
+        val emptyRegion = geometry.regions[8]
+        assertEquals(0f, emptyRegion.bounds.height)
+        assertFalse(emptyRegion.contains(Offset(emptyRegion.bounds.center.x, geometry.plot.bottom)))
+
+        val entries = marks.map { item ->
+            CategoryLabelEntry(
+                xKey = item.xKey,
+                text = item.xLabel,
+                center = geometry.categoryCenters.getValue(item.xKey),
+                naturalWidth = 72f,
+            )
+        }
+        val placed =
+            layoutHorizontalCategoryLabels(
+                entries = entries,
+                plotLeft = geometry.plot.left,
+                plotWidth = geometry.plot.width,
+                canvasWidth = 880f,
+                gapPx = 6f,
+                measureFitted = { _, maxWidth -> min(72f, maxWidth) },
+                measuredWidth = { it },
+                evenlySpaced = true,
+            )
+        val labelIndices = placed.map { it.entry.xKey.toInt() / 500 }
+        assertEquals(listOf(0, 2, 4, 6, 8, 10, 12), labelIndices)
+    }
+
     private fun preview(type: ChartType) =
         VisualizationPreview(
             chartType = type,

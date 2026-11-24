@@ -1144,6 +1144,75 @@ class HtmlReportWriterTest {
         }
     }
 
+    @Test
+    fun histogramWithEmptyIntermediateBinPreservesUniformTickStrideAtBinSize500() {
+        val tables = session().baseSpec.tables
+        for (missingBinIndex in listOf(7, 8)) {
+            val rows =
+                (0 until 27)
+                    .filter { it != missingBinIndex }
+                    .map { index -> listOf(ResultCell.float(index * 500.0 + 250.0)) }
+            val sample =
+                QueryResult(
+                    columns = listOf(ResultColumn("t0__amount", "decimal")),
+                    rows = rows,
+                    rowCount = rows.size,
+                    truncated = false,
+                    warnings = emptyList(),
+                )
+            val config =
+                VisualizationConfig(
+                    chartType = ChartType.Histogram,
+                    x =
+                        VisualizationField(
+                            "t0__amount",
+                            "line_total",
+                            grouping = PivotGrouping.NumberBin("500"),
+                        ),
+                    showLabels = true,
+                )
+            val preview = applyVisualization(sample, config, tables)
+            assertEquals(27, preview.marks.size)
+            val emptyMark = preview.marks[missingBinIndex]
+            assertEquals(
+                "${missingBinIndex * 500} – ${(missingBinIndex + 1) * 500}",
+                emptyMark.xLabel,
+            )
+            assertEquals(0.0, emptyMark.y)
+            assertTrue(emptyMark.sourceRowIndices.isEmpty())
+
+            val chart = buildChartSection(preview, config)
+            assertEquals(27, chart.shapes.size)
+            val emptyShape = chart.shapes[missingBinIndex]
+            assertEquals(0.0, emptyShape.h)
+            assertNull(emptyShape.d)
+            assertNull(emptyShape.label)
+
+            val lowers = chart.categoryTicks.map { it.label.substringBefore(" – ").toInt() }
+            val deltas = lowers.zipWithNext { a, b -> b - a }.distinct()
+            assertEquals(0, lowers.first())
+            assertTrue(lowers.size >= 5, "Expected multiple ticks, got $lowers")
+            assertEquals(
+                listOf(2000),
+                deltas,
+                "Expected uniform 2000-step label stride when bin $missingBinIndex is empty, got $lowers",
+            )
+            chart.categoryTicks.forEach { tick ->
+                val halfWidth = (tick.label.length * 7.0 + 4.0) / 2.0
+                assertTrue(tick.pos - halfWidth >= chart.plot[0] - 0.1)
+                assertTrue(tick.pos + halfWidth <= chart.width + 0.1)
+            }
+            chart.categoryTicks.zipWithNext().forEach { (left, right) ->
+                val leftRight = left.pos + (left.label.length * 7.0 + 4.0) / 2.0
+                val rightLeft = right.pos - (right.label.length * 7.0 + 4.0) / 2.0
+                assertTrue(
+                    leftRight + 5.8 <= rightLeft,
+                    "Expected >= 6px gap between ${left.label} and ${right.label}",
+                )
+            }
+        }
+    }
+
     private fun pivotConfig() =
         ExploreConfig(
             rowDimensions = listOf(PivotDimension(column = "t0__status")),

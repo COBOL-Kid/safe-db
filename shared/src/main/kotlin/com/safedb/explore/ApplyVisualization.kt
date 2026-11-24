@@ -8,6 +8,7 @@ import com.safedb.model.classifyColumn
 import com.safedb.model.isNumeric
 import com.safedb.model.isTemporal
 import java.math.BigDecimal
+import java.math.BigInteger
 import java.math.MathContext
 import java.math.RoundingMode
 import java.util.Locale
@@ -246,14 +247,28 @@ private class VisualizationPlanner(
                 )
         val size = requested?.takeIf { it > BigDecimal.ZERO } ?: computed
         val start = configured?.start?.trim()?.toBigDecimalOrNull() ?: BigDecimal.ZERO
-        val groups = linkedMapOf<BigDecimal, MutableList<ChartRecord>>()
+        val groups = linkedMapOf<BigInteger, MutableList<ChartRecord>>()
         values.forEach { (record, value) ->
-            val index = value.subtract(start).divide(size, 0, RoundingMode.FLOOR)
-            val lower = start.add(index.multiply(size))
-            groups.getOrPut(lower, ::mutableListOf) += record
+            val index = value.subtract(start).divide(size, 0, RoundingMode.FLOOR).toBigInteger()
+            groups.getOrPut(index, ::mutableListOf) += record
         }
-        return groups.toSortedMap().map { (lower, grouped) ->
+        val minIndex = groups.keys.min()
+        val maxIndex = groups.keys.max()
+        val binSpan = maxIndex.subtract(minIndex).add(BigInteger.ONE)
+        val indices =
+            if (binSpan <= MAX_CONTIGUOUS_HISTOGRAM_BINS.toBigInteger()) {
+                List(binSpan.toInt()) { offset ->
+                    minIndex.add(BigInteger.valueOf(offset.toLong()))
+                }
+            } else {
+                warnings +=
+                    "Empty bins omitted because the range spans more than $MAX_CONTIGUOUS_HISTOGRAM_BINS bins."
+                groups.keys.sorted()
+            }
+        return indices.map { index ->
+            val lower = start.add(BigDecimal(index).multiply(size))
             val upper = lower.add(size)
+            val grouped = groups[index].orEmpty()
             val label = "${plain(lower)} – ${plain(upper)}"
             VisualizationMark(
                 id = "bin:${plain(lower)}",
@@ -491,6 +506,8 @@ private class VisualizationPlanner(
 
     private fun ChartRecord.cell(column: String): ResultCell = sampleIndex.cell(row, column)
 }
+
+private const val MAX_CONTIGUOUS_HISTOGRAM_BINS = 500
 
 private data class ChartRecord(val index: Int, val row: List<ResultCell>)
 
