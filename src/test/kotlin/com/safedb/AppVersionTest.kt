@@ -11,6 +11,6 @@ class AppVersionTest {
         val version = loadAppVersion()
         assertTrue(version.isNotBlank())
         assertFalse(version.contains("\${"))
-        assertEquals("1.1.3", version)
+        assertEquals("1.1.4", version)
     }
 }

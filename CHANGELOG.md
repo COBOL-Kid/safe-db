@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.1.4
+
+Desktop app, MCP server (`safe-db-mcp` / `@safe-db/mcp`), and shared query engine. Version is `1.1.4` in `build.gradle.kts`; the MCP fat JAR is `safe-db-mcp-1.1.4-all.jar`; npm packages are stamped 1.1.4 at assemble time.
 
 - Refreshed the app icon and added a Liquid Glass icon (`Assets.car` / `CFBundleIconName = SafeDB`) for macOS 26+ ([#120](https://github.com/COBOL-Kid/safe-db/pull/120)).
 - The sidebar footer title now shows the connection status label to match its indicator dot ([#119](https://github.com/COBOL-Kid/safe-db/pull/119)).
