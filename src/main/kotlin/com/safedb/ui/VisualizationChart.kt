@@ -45,7 +45,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.safedb.explore.BarOrientation
 import com.safedb.explore.ChartType
 import com.safedb.explore.VisualizationConfig
 import com.safedb.explore.VisualizationMark
@@ -117,12 +116,9 @@ internal fun VisualizationChart(
                 )
             }
             if (preview.series.size > 1) {
-                val horizontalBars =
-                    preview.chartType == ChartType.Bar &&
-                        config.barOrientation == BarOrientation.Horizontal
                 VisualizationLegend(
                     preview = preview,
-                    horizontalBars = horizontalBars,
+                    horizontalBars = config.isHorizontalBar(preview.chartType),
                     modifier = Modifier.padding(top = 8.dp),
                 )
             }
@@ -252,7 +248,7 @@ private fun PlotChart(
 ) {
     var size by remember { mutableStateOf(androidx.compose.ui.geometry.Size.Zero) }
     var hovered by remember(preview) { mutableStateOf<VisualizationMark?>(null) }
-    var pointerX by remember { mutableStateOf(0f) }
+    var tooltipAtStart by remember { mutableStateOf(false) }
     // Default cache of 8 thrashes once a chart has more than a handful of distinct labels.
     val textMeasurer = rememberTextMeasurer(cacheSize = 128)
     val axisColor = MaterialTheme.colorScheme.outline
@@ -268,8 +264,7 @@ private fun PlotChart(
     val marksById = remember(preview) { preview.marks.associateBy { it.id } }
     val marksBySeries = remember(preview) { preview.marks.groupBy { it.seriesKey } }
     val categoryMarks = remember(preview) { preview.marks.distinctBy { it.xKey } }
-    val horizontalBars =
-        preview.chartType == ChartType.Bar && config.barOrientation == BarOrientation.Horizontal
+    val horizontalBars = config.isHorizontalBar(preview.chartType)
     val density = LocalDensity.current
     val gapPx = with(density) { 6.dp.toPx() }
     val minGutter = with(density) { 44.dp.toPx() }
@@ -316,13 +311,14 @@ private fun PlotChart(
             visualizationGeometry(preview, config, size.width, size.height, insets)
         }
     val barLabels =
-        remember(preview, config, geometry, horizontalBars, seriesPalette, textMeasurer) {
+        remember(preview, config, geometry, horizontalBars, textMeasurer) {
             if (
                 !config.showLabels ||
                     (preview.chartType != ChartType.Bar && preview.chartType != ChartType.Histogram)
             ) {
                 emptyMap()
             } else {
+                val layoutsBySize = mutableMapOf<Float, Map<String, MeasuredBarLabel>>()
                 val barLabelFontSize =
                     chooseBarLabelFontSizeSp(maxPossible = geometry.regions.size) { candidateSp ->
                         val style =
@@ -330,56 +326,38 @@ private fun PlotChart(
                                 fontSize = candidateSp.sp,
                                 lineHeight = (candidateSp + 2f).sp,
                             )
-                        geometry.regions.count { region ->
-                            val mark = marksById[region.markId] ?: return@count false
-                            val measured =
-                                textMeasurer.measure(
-                                    barValueLabelText(mark, config),
-                                    style,
-                                )
-                            barLabelCenter(
-                                bounds = region.bounds,
-                                labelWidth = measured.size.width.toFloat(),
-                                labelHeight = measured.size.height.toFloat(),
-                                horizontalBars = horizontalBars,
-                            ) != null
-                        }
-                    }
-                val baseBarLabelStyle =
-                    DataMono.copy(
-                        fontSize = barLabelFontSize.sp,
-                        lineHeight = (barLabelFontSize + 2f).sp,
-                    )
-                buildMap {
-                    geometry.regions.forEach { region ->
-                        val mark = marksById[region.markId] ?: return@forEach
-                        val color =
-                            seriesPalette[seriesIndex[mark.seriesKey]?.rem(seriesPalette.size) ?: 0]
-                        val label =
-                            textMeasurer.measure(
-                                barValueLabelText(mark, config),
-                                baseBarLabelStyle.copy(color = contrastingBarLabelColor(color)),
-                            )
-                        val center =
-                            barLabelCenter(
-                                bounds = region.bounds,
-                                labelWidth = label.size.width.toFloat(),
-                                labelHeight = label.size.height.toFloat(),
-                                horizontalBars = horizontalBars,
-                            ) ?: return@forEach
-                        put(
-                            mark.id,
-                            MeasuredBarLabel(
-                                layout = label,
-                                topLeft =
-                                    Offset(
-                                        center.x - label.size.width / 2f,
-                                        center.y - label.size.height / 2f,
+                        val measured = buildMap {
+                            geometry.regions.forEach { region ->
+                                val mark = marksById[region.markId] ?: return@forEach
+                                val layout =
+                                    textMeasurer.measure(
+                                        barValueLabelText(mark, config),
+                                        style,
+                                    )
+                                val center =
+                                    barLabelCenter(
+                                        bounds = region.bounds,
+                                        labelWidth = layout.size.width.toFloat(),
+                                        labelHeight = layout.size.height.toFloat(),
+                                        horizontalBars = horizontalBars,
+                                    ) ?: return@forEach
+                                put(
+                                    mark.id,
+                                    MeasuredBarLabel(
+                                        layout = layout,
+                                        topLeft =
+                                            Offset(
+                                                center.x - layout.size.width / 2f,
+                                                center.y - layout.size.height / 2f,
+                                            ),
                                     ),
-                            ),
-                        )
+                                )
+                            }
+                        }
+                        layoutsBySize[candidateSp] = measured
+                        measured.size
                     }
-                }
+                layoutsBySize[barLabelFontSize].orEmpty()
             }
         }
 
@@ -389,7 +367,10 @@ private fun PlotChart(
                 Modifier.fillMaxSize()
                     .onPointerEvent(PointerEventType.Move) { event ->
                         val position = event.changes.firstOrNull()?.position
-                        if (position != null) pointerX = position.x
+                        if (position != null) {
+                            tooltipAtStart =
+                                tooltipAlignsToStart(position.x, geometry.plot.center.x)
+                        }
                         hovered =
                             position
                                 ?.let { pointer ->
@@ -527,7 +508,11 @@ private fun PlotChart(
                                     style = Stroke(2f),
                                 )
                             barLabels[mark.id]?.let { label ->
-                                drawText(label.layout, topLeft = label.topLeft)
+                                drawText(
+                                    label.layout,
+                                    color = contrastingBarLabelColor(color),
+                                    topLeft = label.topLeft,
+                                )
                             }
                         }
                     }
@@ -627,9 +612,7 @@ private fun PlotChart(
         }
         hovered?.let { mark ->
             // Sit on the opposite side of the plot from the pointer so it never covers the mark.
-            val alignment =
-                if (tooltipAlignsToStart(pointerX, geometry.plot.center.x)) Alignment.TopStart
-                else Alignment.TopEnd
+            val alignment = if (tooltipAtStart) Alignment.TopStart else Alignment.TopEnd
             Surface(
                 modifier = Modifier.align(alignment).padding(12.dp).widthIn(max = 280.dp),
                 color = MaterialTheme.colorScheme.inverseSurface,

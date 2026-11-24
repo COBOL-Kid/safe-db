@@ -71,8 +71,6 @@ import com.safedb.connection.DIALECTS
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.model.TransportSecurityMode
-import com.safedb.secrets.MissingPasswordReason
-import com.safedb.secrets.PasswordNotFoundException
 import com.safedb.ui.components.BannerKind
 import com.safedb.ui.components.MessageBanner
 import com.safedb.ui.components.PrimaryButton
@@ -109,14 +107,13 @@ fun ConnectionForm(
     DisposableEffect(Unit) { onDispose { mounted = false } }
 
     fun handleTest() {
+        form.resetResultState()
         val validationError = form.validateForm()
         if (validationError != null) {
             form.testError = validationError
             return
         }
         form.testing = true
-        form.testResult = null
-        form.testError = null
         scope.launch {
             try {
                 form.testResult =
@@ -126,25 +123,8 @@ fun ConnectionForm(
                     )
             } catch (error: CancellationException) {
                 throw error
-            } catch (error: PasswordNotFoundException) {
-                if (form.isEditing && !form.passwordChangeEnabled) {
-                    when (error.reason) {
-                        MissingPasswordReason.DisabledOverride ->
-                            form.testError = error.message ?: error.toString()
-                        MissingPasswordReason.MemoryStore ->
-                            form.requirePasswordReentry(
-                                "Password not found because credentials are held in memory only for this session. Enter the password above to test or save.",
-                            )
-                        MissingPasswordReason.NotStored ->
-                            form.requirePasswordReentry(
-                                "Password not found for this connection. Enter the password above to test or save.",
-                            )
-                    }
-                } else {
-                    form.testError = error.message ?: error.toString()
-                }
             } catch (error: Exception) {
-                form.testError = error.message ?: error.toString()
+                form.handleTestError(error)
             } finally {
                 form.testing = false
             }
@@ -152,13 +132,13 @@ fun ConnectionForm(
     }
 
     fun handleSave() {
+        form.resetResultState()
         val validationError = form.validateForm()
         if (validationError != null) {
             form.formError = validationError
             return
         }
         form.saving = true
-        form.formError = null
         val def = form.buildDef()
         val password = form.passwordForOperation()
         val editing = form.isEditing

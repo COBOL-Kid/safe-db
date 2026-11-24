@@ -532,11 +532,7 @@ private fun ExploreStaleSampleWarning(
             text = banner.text,
             kind = BannerKind.WARNING,
             action =
-                if (
-                    staleness != SampleStaleness.ConnectionChanged &&
-                        banner.showRefreshAction &&
-                        onRefreshSample != null
-                ) {
+                if (banner.showRefreshAction && onRefreshSample != null) {
                     { PrimaryButton(onClick = onRefreshSample) { Text("Refresh sample") } }
                 } else null,
         )

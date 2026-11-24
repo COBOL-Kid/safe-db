@@ -53,12 +53,17 @@ Environment:
 EOF
 }
 
+is_safe_pid() {
+  local pid="$1"
+  [[ "$pid" =~ ^[1-9][0-9]*$ && "$pid" != "1" ]]
+}
+
 # Refuse a pid file that is not a live process whose cmdline contains the expected token.
 pid_identity_ok() {
   local pid="$1"
   local token="${2:-}"
   [[ -n "$token" ]] || return 1
-  [[ "$pid" =~ ^[1-9][0-9]+$ ]] || return 1
+  is_safe_pid "$pid" || return 1
   local cmdline_file="/proc/${pid}/cmdline"
   [[ -r "$cmdline_file" ]] || return 1
   local cmdline
@@ -84,7 +89,7 @@ is_pid_running() {
 pid_process_alive() {
   local pid="$1"
   local stat state
-  [[ "$pid" =~ ^[1-9][0-9]+$ ]] || return 1
+  is_safe_pid "$pid" || return 1
   [[ -d "/proc/$pid" ]] || return 1
   if [[ -r "/proc/$pid/stat" ]]; then
     stat="$(<"/proc/$pid/stat")"
@@ -207,7 +212,7 @@ cmd_up() {
   check_prereqs "$use_vnc"
   mkdir -p "$STATE_DIR" "$SHOTS_DIR" "$DATA_DIR"
 
-  trap cmd_down EXIT
+  trap 'trap "" INT TERM HUP; cmd_down' EXIT
   trap 'exit 1' INT TERM HUP
 
   if ! is_pid_running "$XVFB_PID_FILE" Xvfb; then
@@ -254,7 +259,7 @@ cmd_up() {
   local win_id=""
   local elapsed=0
   while ((elapsed < 120)); do
-    win_id="$(xdotool search --onlyvisible --name "Safe-DB" 2>/dev/null | head -n 1 || true)"
+    win_id="$(pick_window_match "Safe-DB" --onlyvisible)"
     if [[ -n "$win_id" ]]; then
       break
     fi

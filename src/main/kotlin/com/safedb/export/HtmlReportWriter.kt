@@ -1,6 +1,5 @@
 package com.safedb.export
 
-import com.safedb.explore.BarOrientation
 import com.safedb.explore.ChartType
 import com.safedb.explore.ExplorePreviewResult
 import com.safedb.explore.ExploreSession
@@ -393,8 +392,7 @@ internal fun buildChartSection(
         )
     }
 
-    val horizontal =
-        chartType == ChartType.Bar && config.barOrientation == BarOrientation.Horizontal
+    val horizontal = config.isHorizontalBar(chartType)
     val labelLineHeight = 12f
     val insets =
         chartPlotInsets(

@@ -6,6 +6,8 @@ import com.safedb.model.DriverProperty
 import com.safedb.model.TransportSecurity
 import com.safedb.model.TransportSecurityMode
 import com.safedb.model.displayName
+import com.safedb.secrets.MissingPasswordReason
+import com.safedb.secrets.PasswordNotFoundException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -413,6 +415,57 @@ class ConnectionFormStateTest {
         state.keepSavedPassword()
         assertTrue(state.passwordChangeEnabled)
         assertEquals("secret", state.password)
+    }
+
+    @Test
+    fun handleTestErrorCoversMissingPasswordBranchesAndClearsPriorResults() {
+        val disabledState = ConnectionFormState(sampleConnection())
+        disabledState.testResult = "stale ok"
+        disabledState.formError = "stale form error"
+        disabledState.resetResultState()
+        disabledState.handleTestError(
+            PasswordNotFoundException("Disabled backend", MissingPasswordReason.DisabledOverride),
+        )
+        assertFalse(disabledState.savedPasswordMissing)
+        assertFalse(disabledState.passwordChangeEnabled)
+        assertEquals("Disabled backend", disabledState.testError)
+        assertNull(disabledState.testResult)
+        assertNull(disabledState.formError)
+
+        val memoryState = ConnectionFormState(sampleConnection())
+        memoryState.testResult = "stale ok"
+        memoryState.formError = "stale form error"
+        memoryState.handleTestError(
+            PasswordNotFoundException("Memory store", MissingPasswordReason.MemoryStore),
+        )
+        assertTrue(memoryState.savedPasswordMissing)
+        assertTrue(memoryState.passwordChangeEnabled)
+        assertTrue(memoryState.testError!!.contains("memory only for this session"))
+        assertNull(memoryState.testResult)
+        assertNull(memoryState.formError)
+
+        val notStoredState = ConnectionFormState(sampleConnection())
+        notStoredState.handleTestError(
+            PasswordNotFoundException("Not stored", MissingPasswordReason.NotStored),
+        )
+        assertTrue(notStoredState.savedPasswordMissing)
+        assertTrue(notStoredState.passwordChangeEnabled)
+        assertEquals(
+            "Password not found for this connection. Enter the password above to test or save.",
+            notStoredState.testError,
+        )
+
+        val alreadyEditingPassword = ConnectionFormState(sampleConnection())
+        alreadyEditingPassword.enablePasswordChange()
+        alreadyEditingPassword.handleTestError(
+            PasswordNotFoundException("Explicit password error", MissingPasswordReason.NotStored),
+        )
+        assertFalse(alreadyEditingPassword.savedPasswordMissing)
+        assertEquals("Explicit password error", alreadyEditingPassword.testError)
+
+        val genericState = ConnectionFormState(sampleConnection())
+        genericState.handleTestError(IllegalStateException("Network timeout"))
+        assertEquals("Network timeout", genericState.testError)
     }
 
     private fun sampleConnection() =

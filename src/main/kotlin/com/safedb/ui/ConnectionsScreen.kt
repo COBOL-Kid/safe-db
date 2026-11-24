@@ -29,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -199,19 +200,23 @@ internal fun ConnectionsScreenContent(
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
         when {
-            formMode != null ->
+            formMode != null -> {
+                val editingConnection = (formMode as? ConnectionFormMode.Edit)?.connection
                 Box(
                     modifier = Modifier.fillMaxSize().padding(24.dp),
                     contentAlignment = Alignment.TopCenter,
                 ) {
-                    ConnectionForm(
-                        connectionsViewModel = viewModel,
-                        existingConnection = (formMode as? ConnectionFormMode.Edit)?.connection,
-                        onConnectionChanged = onConnectionChanged,
-                        onSaved = { _, _ -> onFormModeChange(null) },
-                        modifier = Modifier.widthIn(max = 1_020.dp),
-                    )
+                    key(editingConnection?.id) {
+                        ConnectionForm(
+                            connectionsViewModel = viewModel,
+                            existingConnection = editingConnection,
+                            onConnectionChanged = onConnectionChanged,
+                            onSaved = { _, _ -> onFormModeChange(null) },
+                            modifier = Modifier.widthIn(max = 1_020.dp),
+                        )
+                    }
                 }
+            }
             loading ->
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     androidx.compose.material3.CircularProgressIndicator()

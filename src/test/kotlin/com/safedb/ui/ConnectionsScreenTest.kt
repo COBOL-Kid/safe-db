@@ -1,5 +1,7 @@
 package com.safedb.ui
 
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
@@ -22,6 +24,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -395,6 +398,84 @@ class ConnectionsScreenTest {
             }
         } finally {
             viewModel.close()
+        }
+    }
+
+    @Test
+    fun switchingEditTargetCancelsPriorSaveCompletionFromClosingNewForm() {
+        val alpha =
+            ConnectionDef(
+                id = "c1",
+                name = "Alpha DB",
+                dialect = Dialect.Postgres,
+                host = "localhost",
+                port = 5432,
+                database = "alpha",
+                username = "reader",
+            )
+        val beta =
+            ConnectionDef(
+                id = "c2",
+                name = "Beta DB",
+                dialect = Dialect.MySql,
+                host = "localhost",
+                port = 3306,
+                database = "beta",
+                username = "reader",
+            )
+        val alphaSaveGate = CompletableDeferred<Unit>()
+        val service =
+            object : FakeSafeDbServiceSupport() {
+                override suspend fun listConnections(): List<ConnectionDef> = listOf(alpha, beta)
+
+                override suspend fun updateConnection(def: ConnectionDef, password: String?) {
+                    if (def.id == alpha.id) alphaSaveGate.await()
+                }
+            }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        try {
+            val viewModel = ConnectionsViewModel(service, scope)
+            runBlocking { viewModel.load() }
+            val formRequest =
+                mutableStateOf<ConnectionFormRequest?>(ConnectionFormRequest.Edit(alpha.id))
+
+            withComposeScene(
+                width = 1000,
+                height = 760,
+                content = {
+                    SafeDbTheme(isDark = false) {
+                        ConnectionsScreen(
+                            viewModel = viewModel,
+                            onDeleted = {},
+                            onConnectionChanged = {},
+                            connectionFormRequest = formRequest.value,
+                            onConnectionFormRequestConsumed = { formRequest.value = null },
+                        )
+                    }
+                },
+            ) { scene ->
+                scene.settle()
+                assertNotNull(scene.findContaining("Alpha DB"))
+
+                scene.click(scene.requireExact("Save Changes").boundsInRoot.center)
+                scene.settle()
+
+                formRequest.value = ConnectionFormRequest.Edit(beta.id)
+                Snapshot.sendApplyNotifications()
+                scene.settle()
+                scene.settle()
+                assertNotNull(scene.findContaining("Beta DB"))
+
+                alphaSaveGate.complete(Unit)
+                scene.settle()
+
+                assertNotNull(scene.findExact("Edit Connection"))
+                assertNotNull(scene.findContaining("Beta DB"))
+                assertNull(scene.findContaining("Alpha DB"))
+            }
+        } finally {
+            alphaSaveGate.complete(Unit)
+            scope.cancel()
         }
     }
 }

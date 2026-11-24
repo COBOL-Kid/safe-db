@@ -46,7 +46,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.safedb.explore.BarOrientation
 import com.safedb.explore.ChartType
 import com.safedb.explore.DateGroupUnit
 import com.safedb.explore.MeasureFn
@@ -103,8 +102,7 @@ internal fun VisualizationConfigPanel(
         if (config.chartType == ChartType.Auto) resolvedChartType else config.chartType
     val dualAxisEligible = config.supportsSecondaryAxis(effectiveType)
     val primaryCount = config.values.count { it.axis == ValueAxis.Primary }
-    val horizontalBars =
-        effectiveType == ChartType.Bar && config.barOrientation == BarOrientation.Horizontal
+    val horizontalBars = config.isHorizontalBar(effectiveType)
     val stackedDualAxisNote =
         config.isStackedBar(effectiveType) && config.series == null && config.hasMixedAxes()
 
@@ -225,7 +223,7 @@ internal fun VisualizationConfigPanel(
                             onRemove = { onConfigChange(config.copy(x = null)) },
                         )
                     }
-                    VisualizationFieldPicker(
+                    SearchableExploreFieldDropdown(
                         label = if (config.x == null) "Add X field" else "Replace X field",
                         fields = fields,
                         compatible = { field -> xCompatible(config.chartType, field) },
@@ -319,7 +317,7 @@ internal fun VisualizationConfigPanel(
                             onRemove = { onConfigChange(config.copy(series = null)) },
                         )
                     }
-                    VisualizationFieldPicker(
+                    SearchableExploreFieldDropdown(
                         label = if (config.series == null) "Add series" else "Replace series",
                         fields = fields,
                         compatible = {
@@ -348,7 +346,7 @@ internal fun VisualizationConfigPanel(
                             onRemove = { onConfigChange(config.copy(size = null)) },
                         )
                     }
-                    VisualizationFieldPicker(
+                    SearchableExploreFieldDropdown(
                         label = if (config.size == null) "Add size" else "Replace size",
                         fields = fields,
                         compatible = { it.category.isNumeric() },
@@ -379,7 +377,7 @@ internal fun VisualizationConfigPanel(
                         onClick = { editingFilter = filter },
                     )
                 }
-                VisualizationFieldPicker(
+                SearchableExploreFieldDropdown(
                     label = "Add filter",
                     fields =
                         fields.filterNot { field ->
@@ -558,11 +556,11 @@ private fun AggregationPicker(
 private fun SearchableExploreFieldDropdown(
     label: String,
     fields: List<ExploreFieldOption>,
-    enabled: Boolean = true,
     maxMenuHeight: Dp = 360.dp,
     compatible: (ExploreFieldOption) -> Boolean,
     incompatibleReason: (ExploreFieldOption) -> String,
     leadingContent: (@Composable (closeMenu: () -> Unit) -> Unit)? = null,
+    enabled: Boolean = fields.isNotEmpty() || leadingContent != null,
     onSelect: (ExploreFieldOption) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -663,24 +661,6 @@ private fun VisualizationValuePicker(
                 ),
             )
         },
-    )
-}
-
-@Composable
-private fun VisualizationFieldPicker(
-    label: String,
-    fields: List<ExploreFieldOption>,
-    compatible: (ExploreFieldOption) -> Boolean,
-    incompatibleReason: (ExploreFieldOption) -> String,
-    onSelect: (ExploreFieldOption) -> Unit,
-) {
-    SearchableExploreFieldDropdown(
-        label = label,
-        fields = fields,
-        enabled = fields.isNotEmpty(),
-        compatible = compatible,
-        incompatibleReason = incompatibleReason,
-        onSelect = onSelect,
     )
 }
 

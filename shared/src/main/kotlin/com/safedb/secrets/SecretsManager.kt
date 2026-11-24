@@ -177,7 +177,7 @@ object SecretsManager {
                 "Password not found for this connection because credentials are held in " +
                     "memory only for this session. Edit the connection to re-enter the password."
             MissingPasswordReason.NotStored ->
-                "Password not found for this connection. Delete and add the connection again to store the password."
+                "Password not found for this connection. Edit the connection to re-enter the password."
         }
 
     fun formatSaveCredentialError(err: Throwable): String {

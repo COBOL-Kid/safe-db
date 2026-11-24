@@ -183,6 +183,9 @@ class SecretsTest {
         assertTrue(missing.isFailure)
         val error = assertIs<PasswordNotFoundException>(missing.exceptionOrNull())
         assertEquals(MissingPasswordReason.NotStored, error.reason)
+        val message = error.message!!
+        assertTrue(message.contains("Edit the connection to re-enter the password."))
+        assertFalse(message.contains("Delete and add the connection again"))
     }
 
     @Test

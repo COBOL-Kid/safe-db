@@ -9,7 +9,7 @@ GROUP_PIDS=()
 cleanup_test() {
   local pid pgid i
   for pgid in "${GROUP_PIDS[@]}"; do
-    if [[ "$pgid" =~ ^[1-9][0-9]+$ ]] && declare -F is_group_alive >/dev/null && is_group_alive "$pgid"; then
+    if declare -F is_safe_pid >/dev/null && is_safe_pid "$pgid" && declare -F is_group_alive >/dev/null && is_group_alive "$pgid"; then
       builtin kill -TERM -- "-$pgid" 2>/dev/null || true
       for ((i = 0; i < 20; i++)); do
         is_group_alive "$pgid" || break
@@ -22,7 +22,7 @@ cleanup_test() {
   done
   for pid in "${SLEEP_PIDS[@]}"; do
     if [[ -n "$pid" ]] && builtin kill -0 "$pid" 2>/dev/null; then
-      builtin kill "$pid" 2>/dev/null || true
+      builtin kill -KILL "$pid" 2>/dev/null || true
     fi
   done
   for pid in "${SLEEP_PIDS[@]}"; do
@@ -343,6 +343,17 @@ test_cmd_reset_composition() {
 }
 
 test_pid_and_kill_boundaries() {
+  # is_safe_pid accepts single-digit PIDs >= 2 (fresh PID namespaces) and rejects 1/non-PIDs.
+  local good_pid bad_pid
+  for good_pid in 2 9 42; do
+    is_safe_pid "$good_pid" || fail "is_safe_pid rejected valid pid '$good_pid'"
+  done
+  for bad_pid in "" 0 1 01 -5 abc; do
+    if is_safe_pid "$bad_pid"; then
+      fail "is_safe_pid accepted unsafe pid '$bad_pid'"
+    fi
+  done
+
   # Pid 1 is not a signal target, even as a process group.
   reset_kill_log
   printf '1\n' >"$XVFB_PID_FILE"

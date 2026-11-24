@@ -17,6 +17,8 @@ import com.safedb.model.TransportSecurity
 import com.safedb.model.TransportSecurityMode
 import com.safedb.model.displayName
 import com.safedb.model.validateDriverProperties
+import com.safedb.secrets.MissingPasswordReason
+import com.safedb.secrets.PasswordNotFoundException
 import java.util.UUID
 
 data class DriverPropertyDraft(
@@ -149,13 +151,27 @@ class ConnectionFormState(val original: ConnectionDef? = null) {
 
     fun requirePasswordReentry(message: String) {
         savedPasswordMissing = true
-        password = ""
-        passwordChangeEnabled = true
-        showPassword = false
-        testResult = null
-        formError = null
+        enablePasswordChange()
         testError = message
-        passwordFocusRequest += 1
+    }
+
+    fun handleTestError(error: Throwable) {
+        if (error is PasswordNotFoundException && isEditing && !passwordChangeEnabled) {
+            when (error.reason) {
+                MissingPasswordReason.DisabledOverride ->
+                    testError = error.message ?: error.toString()
+                MissingPasswordReason.MemoryStore ->
+                    requirePasswordReentry(
+                        "Password not found because credentials are held in memory only for this session. Enter the password above to test or save.",
+                    )
+                MissingPasswordReason.NotStored ->
+                    requirePasswordReentry(
+                        "Password not found for this connection. Enter the password above to test or save.",
+                    )
+            }
+        } else {
+            testError = error.message ?: error.toString()
+        }
     }
 
     fun keepSavedPassword() {

@@ -29,6 +29,7 @@ private class VisualizationPlanner(
     private val types = sample.columns.associate { it.name to classifyColumn(it.dataType) }
     private val warnings = linkedSetOf<String>()
     private val seriesSortKeys = mutableMapOf<String, String>()
+    private val plainValues = mutableMapOf<String, String>()
     private val autoDecimalFormat by lazy { createGroupedAutoDecimalFormat() }
 
     fun apply(): VisualizationPreview {
@@ -158,6 +159,7 @@ private class VisualizationPlanner(
                 val seriesKey = if (config.series != null) seriesBucket.key else measure.alias
                 val seriesLabel = if (config.series != null) seriesBucket.label else measure.label
                 val id = "${xBucket.key}|$seriesKey|${measure.alias}"
+                plainValues[id] = plain(value)
                 marks +=
                     VisualizationMark(
                         id = id,
@@ -166,7 +168,6 @@ private class VisualizationPlanner(
                         xValue = xBucket.ordinal,
                         y = value.toDouble(),
                         formattedY = formatVisualizationNumber(value, measure.numberFormat),
-                        plainY = plain(value),
                         seriesKey = seriesKey,
                         seriesLabel = seriesLabel,
                         measureAlias = measure.alias,
@@ -274,6 +275,7 @@ private class VisualizationPlanner(
         val measure = config.values.single()
         val value = aggregate(records, measure) ?: return emptyList()
         val id = "kpi:${measure.alias}"
+        plainValues[id] = plain(value)
         return listOf(
             VisualizationMark(
                 id = id,
@@ -281,7 +283,6 @@ private class VisualizationPlanner(
                 xLabel = measure.label,
                 y = value.toDouble(),
                 formattedY = formatVisualizationNumber(value, measure.numberFormat),
-                plainY = plain(value),
                 seriesKey = measure.alias,
                 seriesLabel = measure.label,
                 measureAlias = measure.alias,
@@ -462,7 +463,7 @@ private class VisualizationPlanner(
                     VisualizationTableColumnKind.Value ->
                         when {
                             type == ChartType.Histogram -> ResultCell.IntegerCell(mark.y.toLong())
-                            allAuto -> ResultCell.text(mark.plainY ?: mark.y.toString())
+                            allAuto -> ResultCell.text(plainValues[mark.id] ?: mark.y.toString())
                             else -> ResultCell.text(mark.formattedY)
                         }
                     VisualizationTableColumnKind.SourceRows ->

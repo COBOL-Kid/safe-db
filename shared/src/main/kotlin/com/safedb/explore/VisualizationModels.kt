@@ -26,6 +26,9 @@ data class VisualizationConfig(
     fun isStackedBar(resolvedType: ChartType?): Boolean =
         resolvedType == ChartType.Bar && barArrangement == BarArrangement.Stacked
 
+    fun isHorizontalBar(resolvedType: ChartType?): Boolean =
+        resolvedType == ChartType.Bar && barOrientation == BarOrientation.Horizontal
+
     fun supportsSecondaryAxis(resolvedType: ChartType?): Boolean =
         series == null &&
             values.size > 1 &&
@@ -154,7 +157,6 @@ data class VisualizationMark(
     val xValue: Double? = null,
     val y: Double,
     val formattedY: String,
-    val plainY: String? = null,
     val seriesKey: String,
     val seriesLabel: String,
     val measureAlias: String,

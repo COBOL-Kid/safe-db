@@ -4,7 +4,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
-import com.safedb.explore.BarOrientation
 import com.safedb.explore.ChartType
 import com.safedb.explore.NumberFormatKind
 import com.safedb.explore.ValueAxis
@@ -65,8 +64,7 @@ internal fun chartPlotInsets(
     clearance: PlotClearance = PlotClearance(),
     measureLabelWidth: (String) -> Float,
 ): PlotInsets {
-    val horizontalBars =
-        preview.chartType == ChartType.Bar && config.barOrientation == BarOrientation.Horizontal
+    val horizontalBars = config.isHorizontalBar(preview.chartType)
     val valueAxis = visualizationValueAxis(preview, config)
     val secondaryAxis = visualizationSecondaryValueAxis(preview, config)
     val valueTickWidth = valueAxis.ticks.maxOfOrNull { measureLabelWidth(compactNumber(it)) } ?: 0f
@@ -238,12 +236,11 @@ private fun stackedValueSpans(
 }
 
 private object BarPlacer {
-    const val HORIZONTAL_STACKED_TOP_INSET = 0.15f
-    const val HORIZONTAL_STACKED_HEIGHT = 0.7f
+    const val HORIZONTAL_STACKED_INSET = 0.15f
     const val HORIZONTAL_GROUPED_TOP_INSET = 0.15f
     const val HORIZONTAL_GROUPED_SLOT_HEIGHT = 0.7f
     const val HORIZONTAL_GROUPED_BAR_HEIGHT = 0.82f
-    const val VERTICAL_STACKED_SIDE_INSET = 0.16f
+    const val VERTICAL_STACKED_INSET = 0.16f
     const val VERTICAL_GROUPED_LEFT_INSET = 0.14f
     const val VERTICAL_GROUPED_WIDTH_FACTOR = 0.72f
     const val VERTICAL_GROUPED_BAR_WIDTH = 0.86f
@@ -254,9 +251,7 @@ private object BarPlacer {
         categories: List<VisualizationMark>,
         marksByCategory: Map<String, List<VisualizationMark>>,
         plot: Rect,
-        markAxis: (VisualizationMark) -> NiceValueAxis,
-        xPosition: (Double, NiceValueAxis) -> Float,
-        yPosition: (Double, NiceValueAxis) -> Float,
+        valuePosition: (Double, VisualizationMark) -> Float,
         regions: MutableList<VisualizationHitRegion>,
         points: MutableMap<String, Offset>,
         categoryCenters: MutableMap<String, Float>,
@@ -264,7 +259,6 @@ private object BarPlacer {
         val categoryOrigin = if (horizontal) plot.top else plot.left
         val categoryExtent = if (horizontal) plot.height else plot.width
         val band = categoryExtent / categories.size.coerceAtLeast(1)
-        val valuePosition = if (horizontal) xPosition else yPosition
         categories.forEachIndexed { categoryIndex, category ->
             val marks = marksByCategory.getValue(category.xKey)
             categoryCenters[category.xKey] = categoryOrigin + (categoryIndex + 0.5f) * band
@@ -285,9 +279,8 @@ private object BarPlacer {
                         seriesIndex = seriesIndex,
                         markCount = marks.size,
                     )
-                val targetAxis = markAxis(mark)
-                val valueStart = valuePosition(start, targetAxis)
-                val valueEnd = valuePosition(end, targetAxis)
+                val valueStart = valuePosition(start, mark)
+                val valueEnd = valuePosition(end, mark)
                 val rect =
                     if (horizontal) {
                         Rect(
@@ -320,15 +313,9 @@ private object BarPlacer {
         markCount: Int,
     ): Pair<Float, Float> {
         val bandStart = categoryOrigin + categoryIndex * band
-        if (stacked && horizontal) {
-            val start = bandStart + band * HORIZONTAL_STACKED_TOP_INSET
-            return start to (start + band * HORIZONTAL_STACKED_HEIGHT)
-        }
         if (stacked) {
-            val start = bandStart + band * VERTICAL_STACKED_SIDE_INSET
-            val end =
-                categoryOrigin + (categoryIndex + 1) * band - band * VERTICAL_STACKED_SIDE_INSET
-            return start to end
+            val inset = if (horizontal) HORIZONTAL_STACKED_INSET else VERTICAL_STACKED_INSET
+            return (bandStart + band * inset) to (bandStart + band * (1f - inset))
         }
         val leadingInset =
             if (horizontal) HORIZONTAL_GROUPED_TOP_INSET else VERTICAL_GROUPED_LEFT_INSET
@@ -374,17 +361,17 @@ internal fun visualizationGeometry(
             val categories = preview.marks.distinctBy { it.xKey }
             val byCategory = preview.marks.groupBy { it.xKey }
             // Histograms stay vertical; only bar charts honor a horizontal orientation.
-            val horizontal =
-                config.barOrientation == BarOrientation.Horizontal && type == ChartType.Bar
+            val horizontal = config.isHorizontalBar(type)
             BarPlacer.place(
                 horizontal = horizontal,
                 stacked = stacked,
                 categories = categories,
                 marksByCategory = byCategory,
                 plot = plot,
-                markAxis = { markAxis(it) },
-                xPosition = { value, target -> xPositionFor(value, target) },
-                yPosition = { value, target -> yPositionFor(value, target) },
+                valuePosition = { value, mark ->
+                    val target = markAxis(mark)
+                    if (horizontal) xPositionFor(value, target) else yPositionFor(value, target)
+                },
                 regions = regions,
                 points = points,
                 categoryCenters = categoryCenters,
@@ -546,7 +533,7 @@ internal fun categoryLabelIndices(
     return selected
 }
 
-internal fun categoryLabelSpanMaxWidth(
+private fun categoryLabelSpanMaxWidth(
     center: Float,
     minX: Float,
     canvasWidth: Float,
@@ -608,7 +595,7 @@ internal fun selectHorizontalCategoryLabels(
 // Decimates and places horizontal category labels in spatial order so clustered scatter points
 // collapse to one label while dense edge labels stay clamped inside the plot without overlapping
 // their neighbors.
-internal inline fun <T> layoutHorizontalCategoryLabels(
+internal fun <T> layoutHorizontalCategoryLabels(
     entries: List<CategoryLabelEntry>,
     plotLeft: Float,
     plotWidth: Float,
