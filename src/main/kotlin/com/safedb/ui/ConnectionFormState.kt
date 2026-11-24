@@ -149,13 +149,14 @@ class ConnectionFormState(val original: ConnectionDef? = null) {
         resetResultState()
     }
 
-    fun requirePasswordReentry(message: String) {
+    private fun requirePasswordReentry(message: String) {
         savedPasswordMissing = true
         enablePasswordChange()
         testError = message
     }
 
     fun handleTestError(error: Throwable) {
+        resetResultState()
         if (error is PasswordNotFoundException && isEditing && !passwordChangeEnabled) {
             when (error.reason) {
                 MissingPasswordReason.DisabledOverride ->

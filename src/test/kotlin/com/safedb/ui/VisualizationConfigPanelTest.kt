@@ -8,6 +8,7 @@ import androidx.compose.ui.text.AnnotatedString
 import com.safedb.explore.BarArrangement
 import com.safedb.explore.BarOrientation
 import com.safedb.explore.ChartType
+import com.safedb.explore.ExploreMode
 import com.safedb.explore.MeasureFn
 import com.safedb.explore.PivotFilter
 import com.safedb.explore.PivotGrouping
@@ -15,16 +16,29 @@ import com.safedb.explore.ValueAxis
 import com.safedb.explore.VisualizationConfig
 import com.safedb.explore.VisualizationField
 import com.safedb.explore.VisualizationMeasure
+import com.safedb.model.ConnectionDef
+import com.safedb.model.Dialect
+import com.safedb.model.FilterGroup
 import com.safedb.model.QueryResult
+import com.safedb.model.QuerySpec
 import com.safedb.model.ResultCell
 import com.safedb.model.ResultColumn
+import com.safedb.model.TableRef
+import com.safedb.service.FakeSafeDbServiceSupport
 import com.safedb.ui.theme.SafeDbTheme
+import com.safedb.viewmodel.ExploreViewModel
+import com.safedb.viewmodel.RecipesViewModel
+import com.safedb.viewmodel.createExploreSession
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 
 class VisualizationConfigPanelTest {
     @Test
@@ -497,6 +511,82 @@ class VisualizationConfigPanelTest {
             assertEquals("t0__category", added.column)
             assertFalse(added.pinned)
             assertNull(scene.findContaining("Pinned"))
+        }
+    }
+
+    @Test
+    fun visualizationPaneRendersAllWarningsWhenMultipleWarningsCoOccur() {
+        val sample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__category", "varchar"),
+                        ResultColumn("t0__amount", "decimal"),
+                    ),
+                rows =
+                    listOf(
+                        listOf(ResultCell.text("Services"), ResultCell.float(3_600_000.0)),
+                        listOf(ResultCell.text("Hardware"), ResultCell.float(1_200_000.0)),
+                    ),
+                rowCount = 2,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val spec =
+            QuerySpec(
+                tables = listOf(TableRef("public", "orders", "t0")),
+                columns = emptyList(),
+                joins = emptyList(),
+                filters = FilterGroup.empty(),
+                limit = 100,
+            )
+        val connection =
+            ConnectionDef(
+                id = "c1",
+                name = "Local",
+                dialect = Dialect.Postgres,
+                host = "localhost",
+                port = 5432,
+                database = "app",
+                username = "reader",
+            )
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        try {
+            val viewModel = ExploreViewModel(createExploreSession(connection, spec, sample))
+            viewModel.selectMode(ExploreMode.Visualization)
+            viewModel.updateVisualization {
+                VisualizationConfig(
+                    chartType = ChartType.Line,
+                    x = VisualizationField("t0__category", "Category"),
+                    values =
+                        listOf(
+                            VisualizationMeasure("sum", MeasureFn.Sum, "t0__amount", "Sum amount"),
+                            VisualizationMeasure.countRows(),
+                        ),
+                )
+            }
+            val expectedWarnings = viewModel.visualizationPreview.warnings
+            assertEquals(2, expectedWarnings.size)
+
+            withComposeScene(
+                width = 1120,
+                height = 760,
+                content = {
+                    SafeDbTheme(isDark = false) {
+                        ExploreWindowContent(
+                            viewModel = viewModel,
+                            currentSpec = spec,
+                            onClose = {},
+                            recipesViewModel = RecipesViewModel(FakeSafeDbServiceSupport(), scope),
+                        )
+                    }
+                },
+            ) { scene ->
+                scene.settle()
+                expectedWarnings.forEach { warning -> assertNotNull(scene.findContaining(warning)) }
+            }
+        } finally {
+            scope.cancel()
         }
     }
 }

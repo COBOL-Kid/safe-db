@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -27,6 +28,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.PointerEventType
@@ -38,6 +41,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -77,6 +82,82 @@ private enum class ValueAxisSide {
 }
 
 private data class MeasuredBarLabel(val layout: TextLayoutResult, val topLeft: Offset)
+
+private data class MeasuredValueTick(
+    val layout: TextLayoutResult,
+    val topLeft: Offset,
+    val gridStart: Offset?,
+    val gridEnd: Offset?,
+)
+
+private data class MeasuredCategoryLabel(val layout: TextLayoutResult, val topLeft: Offset)
+
+private fun measureFittedLabel(
+    textMeasurer: TextMeasurer,
+    text: String,
+    style: TextStyle,
+    maxWidth: Float,
+): TextLayoutResult =
+    textMeasurer.measure(
+        text,
+        style,
+        overflow = TextOverflow.Ellipsis,
+        maxLines = 1,
+        constraints = Constraints(maxWidth = maxWidth.toInt().coerceAtLeast(0)),
+    )
+
+private fun measureValueTicks(
+    axis: NiceValueAxis,
+    side: ValueAxisSide,
+    drawGrid: Boolean,
+    plot: Rect,
+    canvasWidth: Float,
+    gapPx: Float,
+    textMeasurer: TextMeasurer,
+    labelStyle: TextStyle,
+): List<MeasuredValueTick> {
+    val horizontalAxis = side == ValueAxisSide.Bottom || side == ValueAxisSide.Top
+    val maxLabelWidth =
+        if (side == ValueAxisSide.Right) max(canvasWidth - plot.right - gapPx, 0f)
+        else valueTickMaxWidth(horizontalAxis, plot, gapPx)
+    return axis.ticks.map { value ->
+        val fraction = axis.fraction(value).toFloat().coerceIn(0f, 1f)
+        val label =
+            measureFittedLabel(textMeasurer, compactNumber(value), labelStyle, maxLabelWidth)
+        if (horizontalAxis) {
+            val x = plot.left + plot.width * fraction
+            val labelY =
+                if (side == ValueAxisSide.Top) max(0f, plot.top - gapPx - label.size.height)
+                else plot.bottom + gapPx
+            MeasuredValueTick(
+                layout = label,
+                topLeft =
+                    Offset(
+                        clampLabelX(
+                            x - label.size.width / 2f,
+                            label.size.width.toFloat(),
+                            0f,
+                            canvasWidth,
+                        ),
+                        labelY,
+                    ),
+                gridStart = if (drawGrid) Offset(x, plot.top) else null,
+                gridEnd = if (drawGrid) Offset(x, plot.bottom) else null,
+            )
+        } else {
+            val y = plot.bottom - plot.height * fraction
+            val labelX =
+                if (side == ValueAxisSide.Right) plot.right + gapPx
+                else max(0f, plot.left - gapPx - label.size.width)
+            MeasuredValueTick(
+                layout = label,
+                topLeft = Offset(labelX, y - label.size.height / 2f),
+                gridStart = if (drawGrid) Offset(plot.left, y) else null,
+                gridEnd = if (drawGrid) Offset(plot.right, y) else null,
+            )
+        }
+    }
+}
 
 @Composable
 internal fun VisualizationChart(
@@ -246,7 +327,6 @@ private fun PlotChart(
     onMarkClick: (String) -> Unit,
     modifier: Modifier,
 ) {
-    var size by remember { mutableStateOf(androidx.compose.ui.geometry.Size.Zero) }
     var hovered by remember(preview) { mutableStateOf<VisualizationMark?>(null) }
     var tooltipAtStart by remember { mutableStateOf(false) }
     // Default cache of 8 thrashes once a chart has more than a handful of distinct labels.
@@ -306,62 +386,164 @@ private fun PlotChart(
                 },
             )
         }
-    val geometry =
-        remember(preview, config, size, insets) {
-            visualizationGeometry(preview, config, size.width, size.height, insets)
-        }
-    val barLabels =
-        remember(preview, config, geometry, horizontalBars, textMeasurer) {
-            if (
-                !config.showLabels ||
-                    (preview.chartType != ChartType.Bar && preview.chartType != ChartType.Histogram)
-            ) {
-                emptyMap()
-            } else {
-                val layoutsBySize = mutableMapOf<Float, Map<String, MeasuredBarLabel>>()
-                val barLabelFontSize =
-                    chooseBarLabelFontSizeSp(maxPossible = geometry.regions.size) { candidateSp ->
-                        val style =
-                            DataMono.copy(
-                                fontSize = candidateSp.sp,
-                                lineHeight = (candidateSp + 2f).sp,
-                            )
-                        val measured = buildMap {
-                            geometry.regions.forEach { region ->
-                                val mark = marksById[region.markId] ?: return@forEach
-                                val layout =
-                                    textMeasurer.measure(
-                                        barValueLabelText(mark, config),
-                                        style,
-                                    )
-                                val center =
-                                    barLabelCenter(
-                                        bounds = region.bounds,
-                                        labelWidth = layout.size.width.toFloat(),
-                                        labelHeight = layout.size.height.toFloat(),
-                                        horizontalBars = horizontalBars,
-                                    ) ?: return@forEach
-                                put(
-                                    mark.id,
-                                    MeasuredBarLabel(
-                                        layout = layout,
-                                        topLeft =
-                                            Offset(
-                                                center.x - layout.size.width / 2f,
-                                                center.y - layout.size.height / 2f,
-                                            ),
-                                    ),
-                                )
-                            }
-                        }
-                        layoutsBySize[candidateSp] = measured
-                        measured.size
-                    }
-                layoutsBySize[barLabelFontSize].orEmpty()
-            }
-        }
 
-    Box(modifier = modifier) {
+    BoxWithConstraints(modifier = modifier) {
+        val canvasWidth = if (constraints.hasBoundedWidth) constraints.maxWidth.toFloat() else 0f
+        val canvasHeight = if (constraints.hasBoundedHeight) constraints.maxHeight.toFloat() else 0f
+        val chartSize = Size(canvasWidth, canvasHeight)
+        val geometry =
+            remember(preview, config, chartSize, insets) {
+                visualizationGeometry(preview, config, chartSize.width, chartSize.height, insets)
+            }
+        val barLabels =
+            remember(preview, config, geometry, horizontalBars, textMeasurer) {
+                if (
+                    !config.showLabels ||
+                        (preview.chartType != ChartType.Bar &&
+                            preview.chartType != ChartType.Histogram)
+                ) {
+                    emptyMap()
+                } else {
+                    val layoutsBySize = mutableMapOf<Float, Map<String, MeasuredBarLabel>>()
+                    val barLabelFontSize =
+                        chooseBarLabelFontSizeSp(maxPossible = geometry.regions.size) { candidateSp
+                            ->
+                            val style =
+                                DataMono.copy(
+                                    fontSize = candidateSp.sp,
+                                    lineHeight = (candidateSp + 2f).sp,
+                                )
+                            val measured = buildMap {
+                                geometry.regions.forEach { region ->
+                                    val mark = marksById[region.markId] ?: return@forEach
+                                    val layout =
+                                        textMeasurer.measure(
+                                            barValueLabelText(mark, config),
+                                            style,
+                                        )
+                                    val center =
+                                        barLabelCenter(
+                                            bounds = region.bounds,
+                                            labelWidth = layout.size.width.toFloat(),
+                                            labelHeight = layout.size.height.toFloat(),
+                                            horizontalBars = horizontalBars,
+                                        ) ?: return@forEach
+                                    put(
+                                        mark.id,
+                                        MeasuredBarLabel(
+                                            layout = layout,
+                                            topLeft =
+                                                Offset(
+                                                    center.x - layout.size.width / 2f,
+                                                    center.y - layout.size.height / 2f,
+                                                ),
+                                        ),
+                                    )
+                                }
+                            }
+                            layoutsBySize[candidateSp] = measured
+                            measured.size
+                        }
+                    layoutsBySize[barLabelFontSize].orEmpty()
+                }
+            }
+        val primaryValueTicks =
+            remember(geometry, horizontalBars, canvasWidth, gapPx, labelStyle, textMeasurer) {
+                measureValueTicks(
+                    axis = geometry.valueAxis,
+                    side = if (horizontalBars) ValueAxisSide.Bottom else ValueAxisSide.Left,
+                    drawGrid = true,
+                    plot = geometry.plot,
+                    canvasWidth = canvasWidth,
+                    gapPx = gapPx,
+                    textMeasurer = textMeasurer,
+                    labelStyle = labelStyle,
+                )
+            }
+        val secondaryValueTicks =
+            remember(geometry, horizontalBars, canvasWidth, gapPx, labelStyle, textMeasurer) {
+                geometry.secondaryValueAxis
+                    ?.takeIf { it.ticks.isNotEmpty() }
+                    ?.let { secondaryAxis ->
+                        measureValueTicks(
+                            axis = secondaryAxis,
+                            side = if (horizontalBars) ValueAxisSide.Top else ValueAxisSide.Right,
+                            drawGrid = false,
+                            plot = geometry.plot,
+                            canvasWidth = canvasWidth,
+                            gapPx = gapPx,
+                            textMeasurer = textMeasurer,
+                            labelStyle = labelStyle,
+                        )
+                    }
+                    .orEmpty()
+            }
+        val categoryLabels =
+            remember(
+                categoryMarks,
+                geometry,
+                horizontalBars,
+                canvasWidth,
+                gapPx,
+                labelLineHeight,
+                categoryLabelWidths,
+                labelStyle,
+                textMeasurer,
+            ) {
+                if (categoryMarks.isEmpty()) {
+                    emptyList()
+                } else if (horizontalBars) {
+                    val plot = geometry.plot
+                    val bandHeight = plot.height / categoryMarks.size.coerceAtLeast(1)
+                    val step = categoryLabelStep(labelLineHeight + 2f, bandHeight)
+                    val available = plot.left - gapPx * 2f
+                    categoryMarks
+                        .filterIndexed { index, _ -> index % step == 0 }
+                        .mapNotNull { mark ->
+                            val y = geometry.categoryCenters[mark.xKey] ?: return@mapNotNull null
+                            val label =
+                                measureFittedLabel(textMeasurer, mark.xLabel, labelStyle, available)
+                            MeasuredCategoryLabel(
+                                layout = label,
+                                topLeft =
+                                    Offset(
+                                        max(0f, plot.left - gapPx - label.size.width),
+                                        y - label.size.height / 2f,
+                                    ),
+                            )
+                        }
+                } else {
+                    val plot = geometry.plot
+                    val entries = categoryMarks.mapNotNull { mark ->
+                        geometry.categoryCenters[mark.xKey]?.let { center ->
+                            CategoryLabelEntry(
+                                xKey = mark.xKey,
+                                text = mark.xLabel,
+                                center = center,
+                                naturalWidth = categoryLabelWidths[mark.xKey] ?: 0f,
+                            )
+                        }
+                    }
+                    layoutHorizontalCategoryLabels(
+                            entries = entries,
+                            plotLeft = plot.left,
+                            plotWidth = plot.width,
+                            canvasWidth = canvasWidth,
+                            gapPx = gapPx,
+                            measureFitted = { text, maxWidth ->
+                                measureFittedLabel(textMeasurer, text, labelStyle, maxWidth)
+                            },
+                            measuredWidth = { it.size.width.toFloat() },
+                        )
+                        .map { placed ->
+                            MeasuredCategoryLabel(
+                                layout = placed.measured,
+                                topLeft = Offset(placed.drawX, plot.bottom + gapPx),
+                            )
+                        }
+                }
+            }
+
         Canvas(
             modifier =
                 Modifier.fillMaxSize()
@@ -387,76 +569,17 @@ private fun PlotChart(
                         }
                     },
         ) {
-            size = this.size
             val plot = geometry.plot
-            val canvasWidth = this.size.width
-
-            fun fitted(text: String, maxWidth: Float) =
-                textMeasurer.measure(
-                    text,
-                    labelStyle,
-                    overflow = TextOverflow.Ellipsis,
-                    maxLines = 1,
-                    constraints = Constraints(maxWidth = maxWidth.toInt().coerceAtLeast(0)),
-                )
-            // coerceIn would throw once the label is wider than the canvas.
-            fun clampX(x: Float, labelWidth: Float, minX: Float = 0f): Float =
-                clampLabelX(x, labelWidth, minX, canvasWidth)
-
-            fun drawValueTicks(axis: NiceValueAxis, side: ValueAxisSide, drawGrid: Boolean) {
-                val horizontalAxis = side == ValueAxisSide.Bottom || side == ValueAxisSide.Top
-                val maxLabelWidth =
-                    if (side == ValueAxisSide.Right) max(canvasWidth - plot.right - gapPx, 0f)
-                    else valueTickMaxWidth(horizontalAxis, plot, gapPx)
-                axis.ticks.forEach { value ->
-                    val fraction = axis.fraction(value).toFloat().coerceIn(0f, 1f)
-                    val label = fitted(compactNumber(value), maxLabelWidth)
-                    if (horizontalAxis) {
-                        val x = plot.left + plot.width * fraction
-                        if (drawGrid) {
-                            drawLine(
-                                gridColor,
-                                Offset(x, plot.top),
-                                Offset(x, plot.bottom),
-                                strokeWidth = 1f,
-                            )
-                        }
-                        val labelY =
-                            if (side == ValueAxisSide.Top)
-                                max(0f, plot.top - gapPx - label.size.height)
-                            else plot.bottom + gapPx
-                        drawText(
-                            label,
-                            topLeft =
-                                Offset(
-                                    clampX(x - label.size.width / 2f, label.size.width.toFloat()),
-                                    labelY,
-                                ),
-                        )
-                    } else {
-                        val y = plot.bottom - plot.height * fraction
-                        if (drawGrid) {
-                            drawLine(
-                                gridColor,
-                                Offset(plot.left, y),
-                                Offset(plot.right, y),
-                                strokeWidth = 1f,
-                            )
-                        }
-                        val labelX =
-                            if (side == ValueAxisSide.Right) plot.right + gapPx
-                            else max(0f, plot.left - gapPx - label.size.width)
-                        drawText(label, topLeft = Offset(labelX, y - label.size.height / 2f))
-                    }
-                }
-            }
 
             clipRect {
-                drawValueTicks(
-                    geometry.valueAxis,
-                    if (horizontalBars) ValueAxisSide.Bottom else ValueAxisSide.Left,
-                    drawGrid = true,
-                )
+                primaryValueTicks.forEach { tick ->
+                    val start = tick.gridStart
+                    val end = tick.gridEnd
+                    if (start != null && end != null) {
+                        drawLine(gridColor, start, end, strokeWidth = 1f)
+                    }
+                    drawText(tick.layout, topLeft = tick.topLeft)
+                }
                 drawLine(
                     axisColor,
                     Offset(plot.left, plot.top),
@@ -469,27 +592,26 @@ private fun PlotChart(
                     Offset(plot.right, plot.bottom),
                     strokeWidth = 1.5f,
                 )
-                geometry.secondaryValueAxis
-                    ?.takeIf { it.ticks.isNotEmpty() }
-                    ?.let { secondaryAxis ->
-                        if (horizontalBars) {
-                            drawLine(
-                                axisColor,
-                                Offset(plot.left, plot.top),
-                                Offset(plot.right, plot.top),
-                                strokeWidth = 1.5f,
-                            )
-                            drawValueTicks(secondaryAxis, ValueAxisSide.Top, drawGrid = false)
-                        } else {
-                            drawLine(
-                                axisColor,
-                                Offset(plot.right, plot.top),
-                                Offset(plot.right, plot.bottom),
-                                strokeWidth = 1.5f,
-                            )
-                            drawValueTicks(secondaryAxis, ValueAxisSide.Right, drawGrid = false)
-                        }
+                if (secondaryValueTicks.isNotEmpty()) {
+                    if (horizontalBars) {
+                        drawLine(
+                            axisColor,
+                            Offset(plot.left, plot.top),
+                            Offset(plot.right, plot.top),
+                            strokeWidth = 1.5f,
+                        )
+                    } else {
+                        drawLine(
+                            axisColor,
+                            Offset(plot.right, plot.top),
+                            Offset(plot.right, plot.bottom),
+                            strokeWidth = 1.5f,
+                        )
                     }
+                    secondaryValueTicks.forEach { tick ->
+                        drawText(tick.layout, topLeft = tick.topLeft)
+                    }
+                }
 
                 when (preview.chartType) {
                     ChartType.Bar,
@@ -521,8 +643,6 @@ private fun PlotChart(
                             val color =
                                 seriesPalette[seriesIndex[key]?.rem(seriesPalette.size) ?: 0]
                             marks.zipWithNext().forEach { (left, right) ->
-                                // The first frame draws before the measured size feeds back
-                                // into geometry, so points can be missing.
                                 val start = geometry.points[left.id] ?: return@forEach
                                 val end = geometry.points[right.id] ?: return@forEach
                                 drawLine(color, start, end, strokeWidth = 3f)
@@ -562,52 +682,7 @@ private fun PlotChart(
                     null -> Unit
                 }
 
-                if (categoryMarks.isEmpty()) return@clipRect
-                if (horizontalBars) {
-                    val bandHeight = plot.height / categoryMarks.size.coerceAtLeast(1)
-                    val step = categoryLabelStep(labelLineHeight + 2f, bandHeight)
-                    val available = plot.left - gapPx * 2f
-                    categoryMarks
-                        .filterIndexed { index, _ -> index % step == 0 }
-                        .forEach { mark ->
-                            val y = geometry.categoryCenters[mark.xKey] ?: return@forEach
-                            val label = fitted(mark.xLabel, available)
-                            drawText(
-                                label,
-                                topLeft =
-                                    Offset(
-                                        max(0f, plot.left - gapPx - label.size.width),
-                                        y - label.size.height / 2f,
-                                    ),
-                            )
-                        }
-                } else {
-                    val entries = categoryMarks.mapNotNull { mark ->
-                        geometry.categoryCenters[mark.xKey]?.let { center ->
-                            CategoryLabelEntry(
-                                xKey = mark.xKey,
-                                text = mark.xLabel,
-                                center = center,
-                                naturalWidth = categoryLabelWidths[mark.xKey] ?: 0f,
-                            )
-                        }
-                    }
-                    layoutHorizontalCategoryLabels(
-                            entries = entries,
-                            plotLeft = plot.left,
-                            plotWidth = plot.width,
-                            canvasWidth = canvasWidth,
-                            gapPx = gapPx,
-                            measureFitted = ::fitted,
-                            measuredWidth = { it.size.width.toFloat() },
-                        )
-                        .forEach { placed ->
-                            drawText(
-                                placed.measured,
-                                topLeft = Offset(placed.drawX, plot.bottom + gapPx),
-                            )
-                        }
-                }
+                categoryLabels.forEach { label -> drawText(label.layout, topLeft = label.topLeft) }
             }
         }
         hovered?.let { mark ->

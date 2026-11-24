@@ -3,6 +3,7 @@ package com.safedb.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -302,9 +303,18 @@ fun ExploreWindowContent(
                                 Column(
                                     modifier = Modifier.weight(1f).fillMaxWidth().padding(16.dp),
                                 ) {
-                                    viewModel.visualizationPreview.warnings.firstOrNull()?.let {
-                                        warning ->
-                                        MessageBanner(text = warning, kind = BannerKind.WARNING)
+                                    if (viewModel.visualizationPreview.warnings.isNotEmpty()) {
+                                        Column(
+                                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                                        ) {
+                                            viewModel.visualizationPreview.warnings.forEach {
+                                                warning ->
+                                                MessageBanner(
+                                                    text = warning,
+                                                    kind = BannerKind.WARNING,
+                                                )
+                                            }
+                                        }
                                     }
                                     VisualizationChart(
                                         preview = viewModel.visualizationPreview,

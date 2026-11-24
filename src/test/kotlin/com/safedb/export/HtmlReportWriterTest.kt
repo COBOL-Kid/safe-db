@@ -983,6 +983,115 @@ class HtmlReportWriterTest {
         assertTrue(REPORT_JS.contains("chart.secondaryValueTicks"))
     }
 
+    @Test
+    fun horizontalSvgTicksClampInsidePlotLeftAndInsetsMeasureTruncatedTrailingLabels() {
+        val scatterSample =
+            QueryResult(
+                columns =
+                    listOf(ResultColumn("t0__x", "decimal"), ResultColumn("t0__y", "decimal")),
+                rows =
+                    listOf(
+                        listOf(
+                            ResultCell.float(100_000_000_000.0),
+                            ResultCell.float(10.0),
+                        ),
+                        listOf(
+                            ResultCell.float(200_000_000_000.0),
+                            ResultCell.float(20.0),
+                        ),
+                    ),
+                rowCount = 2,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val scatterSession = session().copy(sample = scatterSample)
+        val scatterConfig =
+            VisualizationConfig(
+                chartType = ChartType.Scatter,
+                x = VisualizationField("t0__x", "X"),
+                values =
+                    listOf(
+                        VisualizationMeasure(
+                            "y",
+                            MeasureFn.Sum,
+                            "t0__y",
+                            "Y",
+                            aggregate = false,
+                        ),
+                    ),
+            )
+        val scatterPreview =
+            applyVisualization(scatterSample, scatterConfig, scatterSession.baseSpec.tables)
+        val scatterChart =
+            assertNotNull(
+                buildVisualizationReport(scatterSession, scatterPreview, scatterConfig).chart,
+            )
+        val firstTick = scatterChart.categoryTicks.first()
+        val firstWidth = firstTick.label.length * 7.0 + 4.0
+        assertTrue(
+            firstTick.pos - firstWidth / 2.0 >= scatterChart.plot[0] - 0.1,
+            "Expected leftmost tick (${firstTick.pos}) to stay right of plot left (${scatterChart.plot[0]})",
+        )
+
+        val longLabel = "VeryLongTrailingCategoryNameThatExceedsTwentyFourCharacters"
+        val truncatedLabel = longLabel.take(23) + "…"
+        val longSample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__cat", "varchar"),
+                        ResultColumn("t0__amount", "bigint"),
+                    ),
+                rows =
+                    listOf(
+                        listOf(ResultCell.text("Alpha"), ResultCell.integer(10)),
+                        listOf(ResultCell.text(longLabel), ResultCell.integer(20)),
+                    ),
+                rowCount = 2,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val truncatedSample =
+            longSample.copy(
+                rows =
+                    listOf(
+                        listOf(ResultCell.text("Alpha"), ResultCell.integer(10)),
+                        listOf(ResultCell.text(truncatedLabel), ResultCell.integer(20)),
+                    ),
+            )
+        val barConfig =
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("t0__cat", "Category"),
+                values = listOf(VisualizationMeasure("sum", MeasureFn.Sum, "t0__amount", "Amount")),
+            )
+        val longSession = session().copy(sample = longSample)
+        val longChart =
+            assertNotNull(
+                buildVisualizationReport(
+                        longSession,
+                        applyVisualization(longSample, barConfig, longSession.baseSpec.tables),
+                        barConfig,
+                    )
+                    .chart,
+            )
+        val truncatedSession = session().copy(sample = truncatedSample)
+        val truncatedChart =
+            assertNotNull(
+                buildVisualizationReport(
+                        truncatedSession,
+                        applyVisualization(
+                            truncatedSample,
+                            barConfig,
+                            truncatedSession.baseSpec.tables,
+                        ),
+                        barConfig,
+                    )
+                    .chart,
+            )
+        assertEquals(truncatedChart.plot[2], longChart.plot[2])
+    }
+
     private fun pivotConfig() =
         ExploreConfig(
             rowDimensions = listOf(PivotDimension(column = "t0__status")),

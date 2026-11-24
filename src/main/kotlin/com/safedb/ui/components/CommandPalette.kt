@@ -73,7 +73,6 @@ fun CommandPalette(
     appState: AppState,
     viewModel: AppViewModel,
     onConnectionSelected: (ConnectionDef) -> Unit,
-    onEditConnection: (ConnectionDef) -> Unit = {},
 ) {
     if (!open) return
 
@@ -210,7 +209,7 @@ fun CommandPalette(
                     hint = "${connection.dialect.displayName()} · ${connection.database}",
                     icon = Icons.Filled.Settings,
                 ) {
-                    onEditConnection(connection)
+                    appState.requestEditConnection(connection.id)
                     onDismiss()
                 },
             )

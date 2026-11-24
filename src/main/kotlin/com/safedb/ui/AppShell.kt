@@ -142,7 +142,6 @@ internal fun AppShellContent(
         onConnectionSelected = { target ->
             selectConnection(target, thenNavigate = AppRoute.Builder)
         },
-        onEditConnection = { target -> appState.requestEditConnection(target.id) },
     )
 
     SettingsPanel(

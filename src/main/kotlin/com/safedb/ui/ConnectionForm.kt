@@ -103,8 +103,8 @@ fun ConnectionForm(
 ) {
     val form = remember(existingConnection?.id) { ConnectionFormState(existingConnection) }
     val scope = rememberCoroutineScope()
-    var mounted by remember { mutableStateOf(true) }
-    DisposableEffect(Unit) { onDispose { mounted = false } }
+    val active = remember(form) { mutableStateOf(true) }
+    DisposableEffect(active) { onDispose { active.value = false } }
 
     fun handleTest() {
         form.resetResultState()
@@ -150,7 +150,7 @@ fun ConnectionForm(
             credentialMaterialChanged = credentialMaterialChanged,
             onConnectionChanged = onConnectionChanged,
         ) { outcome ->
-            if (!mounted) return@saveConnection
+            if (!active.value) return@saveConnection
             form.saving = false
             outcome.fold(
                 onSuccess = { saved ->

@@ -6,6 +6,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.text.AnnotatedString
+import com.safedb.AppRoute
 import com.safedb.AppState
 import com.safedb.ConnectionFormRequest
 import com.safedb.model.ConnectionDef
@@ -356,7 +357,6 @@ class ConnectionsScreenTest {
         try {
             runBlocking { viewModel.connections.load() }
             val selected = mutableListOf<ConnectionDef>()
-            val edited = mutableListOf<ConnectionDef>()
             var dismissed = false
 
             withComposeScene(
@@ -370,7 +370,6 @@ class ConnectionsScreenTest {
                             appState = appState,
                             viewModel = viewModel,
                             onConnectionSelected = { selected += it },
-                            onEditConnection = { edited += it },
                         )
                     }
                 },
@@ -392,7 +391,11 @@ class ConnectionsScreenTest {
                     scene.requireContaining("Edit connection: Alpha DB").boundsInRoot.center,
                 )
                 scene.settle()
-                assertEquals(listOf(alpha), edited)
+                assertEquals(AppRoute.Connections, appState.route.value)
+                assertEquals(
+                    ConnectionFormRequest.Edit(alpha.id),
+                    appState.connectionFormRequest.value,
+                )
                 assertTrue(dismissed)
                 assertTrue(selected.isEmpty())
             }
@@ -470,6 +473,82 @@ class ConnectionsScreenTest {
                 scene.settle()
 
                 assertNotNull(scene.findExact("Edit Connection"))
+                assertNotNull(scene.findContaining("Beta DB"))
+                assertNull(scene.findContaining("Alpha DB"))
+            }
+        } finally {
+            alphaSaveGate.complete(Unit)
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun connectionFormCancelsPriorSaveCallbackWithoutOuterKeyWhenExistingConnectionChanges() {
+        val alpha =
+            ConnectionDef(
+                id = "c1",
+                name = "Alpha DB",
+                dialect = Dialect.Postgres,
+                host = "localhost",
+                port = 5432,
+                database = "alpha",
+                username = "reader",
+            )
+        val beta =
+            ConnectionDef(
+                id = "c2",
+                name = "Beta DB",
+                dialect = Dialect.MySql,
+                host = "localhost",
+                port = 3306,
+                database = "beta",
+                username = "reader",
+            )
+        val alphaSaveGate = CompletableDeferred<Unit>()
+        val service =
+            object : FakeSafeDbServiceSupport() {
+                override suspend fun listConnections(): List<ConnectionDef> = listOf(alpha, beta)
+
+                override suspend fun updateConnection(def: ConnectionDef, password: String?) {
+                    if (def.id == alpha.id) alphaSaveGate.await()
+                }
+            }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        try {
+            val viewModel = ConnectionsViewModel(service, scope)
+            runBlocking { viewModel.load() }
+            val currentConnection = mutableStateOf(alpha)
+            val savedCallbacks = mutableListOf<ConnectionDef>()
+
+            withComposeScene(
+                width = 1000,
+                height = 760,
+                content = {
+                    SafeDbTheme(isDark = false) {
+                        ConnectionForm(
+                            connectionsViewModel = viewModel,
+                            existingConnection = currentConnection.value,
+                            onSaved = { saved, _ -> savedCallbacks += saved },
+                        )
+                    }
+                },
+            ) { scene ->
+                scene.settle()
+                assertNotNull(scene.findContaining("Alpha DB"))
+
+                scene.click(scene.requireExact("Save Changes").boundsInRoot.center)
+                scene.settle()
+
+                currentConnection.value = beta
+                Snapshot.sendApplyNotifications()
+                scene.settle()
+                scene.settle()
+                assertNotNull(scene.findContaining("Beta DB"))
+
+                alphaSaveGate.complete(Unit)
+                scene.settle()
+
+                assertTrue(savedCallbacks.isEmpty())
                 assertNotNull(scene.findContaining("Beta DB"))
                 assertNull(scene.findContaining("Alpha DB"))
             }

@@ -23,6 +23,7 @@ import com.safedb.ui.chart.barLabelCenter
 import com.safedb.ui.chart.barValueLabelText
 import com.safedb.ui.chart.categoryLabelStep
 import com.safedb.ui.chart.chartPlotInsets
+import com.safedb.ui.chart.clampLabelX
 import com.safedb.ui.chart.compactNumber
 import com.safedb.ui.chart.estimatedBarLabelHeight
 import com.safedb.ui.chart.estimatedBarLabelWidth
@@ -401,7 +402,7 @@ internal fun buildChartSection(
             lineHeight = labelLineHeight,
             gapPx = 6f,
             clearance = PlotClearance(top = 20f, bottom = 22f),
-            measureLabelWidth = ::estimatedLabelWidth,
+            measureLabelWidth = { estimatedLabelWidth(truncatedTickLabel(it)) },
         )
     val geometry = visualizationGeometry(preview, config, width.toFloat(), height.toFloat(), insets)
     val plot = geometry.plot
@@ -526,7 +527,19 @@ internal fun buildChartSection(
                 .map { entry -> HtmlAxisTick(pos = entry.center.rounded(), label = entry.text) }
         } else {
             selectHorizontalCategoryLabels(entries = centered, plotLeft = plot.left, gapPx = 6f)
-                .map { entry -> HtmlAxisTick(pos = entry.center.rounded(), label = entry.text) }
+                .map { entry ->
+                    val drawX =
+                        clampLabelX(
+                            entry.center - entry.naturalWidth / 2f,
+                            entry.naturalWidth,
+                            plot.left,
+                            width.toFloat(),
+                        )
+                    HtmlAxisTick(
+                        pos = (drawX + entry.naturalWidth / 2f).rounded(),
+                        label = entry.text,
+                    )
+                }
         }
     val secondaryValueTicks = geometry.secondaryValueAxis?.let(::axisTicks).orEmpty()
     val shownLegend = if (multiSeries) preview.series.take(LegendEntryLimit) else emptyList()

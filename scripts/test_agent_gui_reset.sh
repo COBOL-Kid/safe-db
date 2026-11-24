@@ -541,6 +541,24 @@ test_data_dir_and_cli_validation() {
   [[ "$custom_data_dir" == "$TEST_ROOT/custom-data" ]] ||
     fail "explicit SAFEDB_AGENT_GUI_DATA_DIR resolved to '$custom_data_dir'"
 
+  local rel_subdir="$TEST_ROOT/caller-subdir"
+  mkdir -p "$rel_subdir"
+  local expected_rel_dir rel_data_dir
+  if command -v realpath >/dev/null 2>&1; then
+    expected_rel_dir="$(realpath -m -- "$rel_subdir/rel/data")"
+  else
+    expected_rel_dir="$rel_subdir/rel/data"
+  fi
+  rel_data_dir="$(
+    cd "$rel_subdir"
+    SAFEDB_AGENT_GUI_DATA_DIR="rel/data" bash -c '
+      source "$1"
+      printf "%s\n" "$DATA_DIR"
+    ' _ "$REPO_ROOT/scripts/agent_gui.sh"
+  )"
+  [[ "$rel_data_dir" == "$expected_rel_dir" ]] ||
+    fail "relative SAFEDB_AGENT_GUI_DATA_DIR from subdir resolved to '$rel_data_dir', expected '$expected_rel_dir'"
+
   local cli_case cli_status
   local -a cli_args
   for cli_case in \

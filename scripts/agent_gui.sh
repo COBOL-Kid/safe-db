@@ -9,7 +9,13 @@ SCREEN_RES="${AGENT_GUI_SCREEN:-1600x1000}"
 STATE_DIR="$ROOT/build/agent-gui"
 SHOTS_DIR="$STATE_DIR/shots"
 if [[ -n "${SAFEDB_AGENT_GUI_DATA_DIR:-}" && -n "${SAFEDB_AGENT_GUI_DATA_DIR//[[:space:]]/}" ]]; then
-  DATA_DIR="$SAFEDB_AGENT_GUI_DATA_DIR"
+  if [[ "$SAFEDB_AGENT_GUI_DATA_DIR" == /* ]]; then
+    DATA_DIR="$SAFEDB_AGENT_GUI_DATA_DIR"
+  elif command -v realpath >/dev/null 2>&1; then
+    DATA_DIR="$(realpath -m -- "$SAFEDB_AGENT_GUI_DATA_DIR")"
+  else
+    DATA_DIR="$PWD/$SAFEDB_AGENT_GUI_DATA_DIR"
+  fi
 else
   DATA_DIR="$STATE_DIR/data"
 fi

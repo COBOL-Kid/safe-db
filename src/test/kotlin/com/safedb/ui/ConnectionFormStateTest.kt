@@ -402,13 +402,18 @@ class ConnectionFormStateTest {
         val state = ConnectionFormState(sampleConnection())
         val initialFocusRequest = state.passwordFocusRequest
 
-        state.requirePasswordReentry("Enter the password above to test or save.")
+        state.handleTestError(
+            PasswordNotFoundException("Not stored", MissingPasswordReason.NotStored),
+        )
 
         assertTrue(state.savedPasswordMissing)
         assertTrue(state.passwordChangeEnabled)
         assertEquals("", state.password)
         assertFalse(state.showPassword)
-        assertEquals("Enter the password above to test or save.", state.testError)
+        assertEquals(
+            "Password not found for this connection. Enter the password above to test or save.",
+            state.testError,
+        )
         assertEquals(initialFocusRequest + 1, state.passwordFocusRequest)
 
         state.updatePassword("secret")
@@ -422,7 +427,6 @@ class ConnectionFormStateTest {
         val disabledState = ConnectionFormState(sampleConnection())
         disabledState.testResult = "stale ok"
         disabledState.formError = "stale form error"
-        disabledState.resetResultState()
         disabledState.handleTestError(
             PasswordNotFoundException("Disabled backend", MissingPasswordReason.DisabledOverride),
         )
@@ -464,8 +468,12 @@ class ConnectionFormStateTest {
         assertEquals("Explicit password error", alreadyEditingPassword.testError)
 
         val genericState = ConnectionFormState(sampleConnection())
+        genericState.testResult = "stale ok"
+        genericState.formError = "stale form error"
         genericState.handleTestError(IllegalStateException("Network timeout"))
         assertEquals("Network timeout", genericState.testError)
+        assertNull(genericState.testResult)
+        assertNull(genericState.formError)
     }
 
     private fun sampleConnection() =
