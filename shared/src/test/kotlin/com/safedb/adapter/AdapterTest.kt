@@ -38,8 +38,11 @@ import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.currentTime
+import kotlinx.coroutines.test.runTest
 
 class AdapterTest {
     @Test
@@ -82,11 +85,11 @@ class AdapterTest {
         assertTrue(sql.endsWith("[status] = @P1 AND [created_at] >= @P2"))
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun awaitExplainTimesOutAtTheSuppliedDeadline() = runBlocking {
-        val startedAt = System.nanoTime()
+    fun awaitExplainTimesOutAtTheSuppliedDeadline() = runTest {
+        val startedAt = currentTime
         val result = awaitExplain(timeoutMs = 50) { awaitCancellation() }
-        val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
 
         assertEquals(
             ExplainResult.Unavailable(
@@ -95,7 +98,7 @@ class AdapterTest {
             ),
             result,
         )
-        assertTrue(elapsedMs < 1_000, "timed out after ${elapsedMs}ms")
+        assertEquals(50L, currentTime - startedAt)
     }
 
     @Test
