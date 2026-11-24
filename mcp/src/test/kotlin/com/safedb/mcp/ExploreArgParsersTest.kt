@@ -10,6 +10,7 @@ import com.safedb.explore.PivotDimension
 import com.safedb.explore.PivotFilter
 import com.safedb.explore.PivotGrouping
 import com.safedb.explore.PivotMeasure
+import com.safedb.explore.ShowAsMode
 import com.safedb.explore.SortDir
 import com.safedb.explore.ValueFilterOp
 import com.safedb.explore.WorksheetFilter
@@ -676,6 +677,172 @@ class ExploreArgParsersTest {
                 )
                 .value
         assertEquals(WorksheetValueRef.Column(" region "), sorts.single().target)
+    }
+
+    @Test
+    fun parseEnumVariantsAndGroupingFallback() {
+        val showAsModes =
+            listOf(
+                "value" to ShowAsMode.Value,
+                "percent_grand_total" to ShowAsMode.PercentGrandTotal,
+                "percent_row_total" to ShowAsMode.PercentRowTotal,
+                "percent_column_total" to ShowAsMode.PercentColumnTotal,
+            )
+        for ((raw, expected) in showAsModes) {
+            val parsed =
+                assertIs<Arg.Ok<List<PivotMeasure>>>(
+                    parseMeasures(
+                        objects("""{"alias":"m1","fn":"count","show_as":"$raw"}"""),
+                        columns,
+                    ),
+                )
+            assertEquals(expected, parsed.value.single().showAs.mode)
+        }
+
+        val groupings =
+            listOf(
+                "exact" to PivotGrouping.Exact,
+                "year" to PivotGrouping.Date(DateGroupUnit.Year),
+                "quarter" to PivotGrouping.Date(DateGroupUnit.Quarter),
+                "month" to PivotGrouping.Date(DateGroupUnit.Month),
+                "isoweek" to PivotGrouping.Date(DateGroupUnit.IsoWeek),
+                "day" to PivotGrouping.Date(DateGroupUnit.Day),
+            )
+        for ((raw, expected) in groupings) {
+            val parsed =
+                assertIs<Arg.Ok<List<PivotDimension>>>(
+                    parseDimensions(
+                        objects("""{"column":"created","grouping":"$raw"}"""),
+                        columns,
+                        "row_dimensions",
+                    ),
+                )
+            assertEquals(expected, parsed.value.single().grouping)
+        }
+
+        assertEquals(
+            "Unknown grouping 'decade'",
+            assertIs<Arg.Err>(
+                    parseDimensions(
+                        objects("""{"column":"created","grouping":"decade"}"""),
+                        columns,
+                        "row_dimensions",
+                    ),
+                )
+                .message(),
+        )
+        assertEquals(
+            "grouping must be a string or object",
+            assertIs<Arg.Err>(
+                    parseDimensions(
+                        objects("""{"column":"created","grouping":["year"]}"""),
+                        columns,
+                        "row_dimensions",
+                    ),
+                )
+                .message(),
+        )
+        assertEquals(
+            "row_dimensions[0] must be a string or object",
+            assertIs<Arg.Err>(
+                    parseDimensions(
+                        JsonArray(listOf(JsonArray(emptyList()))),
+                        columns,
+                        "row_dimensions",
+                    ),
+                )
+                .message(),
+        )
+
+        val sortModes =
+            listOf(
+                "source_order" to DimensionSortMode.SourceOrder,
+                "label_asc" to DimensionSortMode.LabelAscending,
+                "label_desc" to DimensionSortMode.LabelDescending,
+                "value_asc" to DimensionSortMode.ValueAscending,
+                "value_desc" to DimensionSortMode.ValueDescending,
+            )
+        for ((raw, expected) in sortModes) {
+            val parsed =
+                assertIs<Arg.Ok<List<PivotDimension>>>(
+                    parseDimensions(
+                        objects("""{"column":"region","sort_mode":"$raw"}"""),
+                        columns,
+                        "row_dimensions",
+                    ),
+                )
+            assertEquals(expected, parsed.value.single().sortMode)
+        }
+
+        val labelOps =
+            listOf(
+                "equals" to LabelFilterOp.Equals,
+                "contains" to LabelFilterOp.Contains,
+                "starts_with" to LabelFilterOp.StartsWith,
+                "ends_with" to LabelFilterOp.EndsWith,
+            )
+        for ((raw, expected) in labelOps) {
+            val parsed =
+                assertIs<Arg.Ok<List<PivotFilter>>>(
+                    parsePivotFilters(
+                        objects("""{"column":"region","op":"$raw","value":"north"}"""),
+                        columns,
+                    ),
+                )
+            assertEquals(expected, assertIs<PivotFilter.Label>(parsed.value.single()).op)
+        }
+
+        val valueOps =
+            listOf(
+                "gt" to ValueFilterOp.GreaterThan,
+                "gte" to ValueFilterOp.GreaterThanOrEqual,
+                "lt" to ValueFilterOp.LessThan,
+                "lte" to ValueFilterOp.LessThanOrEqual,
+                "between" to ValueFilterOp.Between,
+                "top" to ValueFilterOp.Top,
+                "bottom" to ValueFilterOp.Bottom,
+            )
+        for ((raw, expected) in valueOps) {
+            val parsed =
+                assertIs<Arg.Ok<List<PivotFilter>>>(
+                    parsePivotFilters(
+                        objects(
+                            """{"column":"region","op":"$raw","measure_alias":"m1","value":"1","second_value":"9","count":5}""",
+                        ),
+                        columns,
+                    ),
+                )
+            assertEquals(expected, assertIs<PivotFilter.Value>(parsed.value.single()).op)
+        }
+
+        val worksheetOps =
+            listOf(
+                "eq" to WorksheetFilterOp.Equals,
+                "ne" to WorksheetFilterOp.NotEquals,
+                "contains" to WorksheetFilterOp.Contains,
+                "starts_with" to WorksheetFilterOp.StartsWith,
+                "ends_with" to WorksheetFilterOp.EndsWith,
+                "gt" to WorksheetFilterOp.GreaterThan,
+                "gte" to WorksheetFilterOp.GreaterThanOrEqual,
+                "lt" to WorksheetFilterOp.LessThan,
+                "lte" to WorksheetFilterOp.LessThanOrEqual,
+                "between" to WorksheetFilterOp.Between,
+                "is_null" to WorksheetFilterOp.IsNull,
+                "is_not_null" to WorksheetFilterOp.IsNotNull,
+                "members" to WorksheetFilterOp.Members,
+            )
+        for ((raw, expected) in worksheetOps) {
+            val parsed =
+                assertIs<Arg.Ok<List<WorksheetFilter>>>(
+                    parseWorksheetFilters(
+                        objects(
+                            """{"column":"region","op":"$raw","value":"a","second_value":"z"}""",
+                        ),
+                        columns,
+                    ),
+                )
+            assertEquals(expected, parsed.value.single().op)
+        }
     }
 }
 

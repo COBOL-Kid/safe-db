@@ -10,6 +10,17 @@ import kotlinx.serialization.json.Json
 
 const val ENV_BACKEND = "SAFEDB_KEYCHAIN_BACKEND"
 
+enum class MissingPasswordReason {
+    DisabledOverride,
+    MemoryStore,
+    NotStored,
+}
+
+class PasswordNotFoundException(
+    message: String,
+    val reason: MissingPasswordReason = MissingPasswordReason.NotStored,
+) : IllegalStateException(message)
+
 enum class RequestedBackend {
     Auto,
     Disabled,
@@ -82,6 +93,15 @@ object SecretsManager {
         activeLabel = labelFor(activeStore)
     }
 
+    fun initMemoryStore() {
+        storeReadCountForTest = 0
+        println(
+            "WARN: using in-memory credential store: credentials are held in process memory only",
+        )
+        activeStore = DisabledMemoryStore()
+        activeLabel = "memory"
+    }
+
     fun passwordForDefinition(def: ConnectionDef): Result<String> {
         val cacheKey = "${def.id}:${def.credentialFingerprint()}"
         CredentialSession.get(cacheKey)?.let {
@@ -96,7 +116,13 @@ object SecretsManager {
                         "Could not read credentials (${unwrapCredentialError(error).message ?: error}).",
                     ),
                 )
-            } ?: return Result.failure(IllegalStateException(passwordNotFoundMessage()))
+            }
+                ?: return Result.failure(
+                    PasswordNotFoundException(
+                        message = passwordNotFoundMessage(),
+                        reason = missingPasswordReason(),
+                    ),
+                )
         val record = runCatching {
             json.decodeFromString<BoundCredential>(raw)
         }
@@ -134,13 +160,24 @@ object SecretsManager {
 
     fun lockCredentials() = CredentialSession.lockCredentials()
 
+    private fun missingPasswordReason(): MissingPasswordReason =
+        when (activeLabel) {
+            "disabled" -> MissingPasswordReason.DisabledOverride
+            "memory" -> MissingPasswordReason.MemoryStore
+            else -> MissingPasswordReason.NotStored
+        }
+
     fun passwordNotFoundMessage(): String =
-        if (activeLabel == "disabled") {
-            "Password not found for this connection because $ENV_BACKEND=disabled is " +
-                "overriding the persisted credential store. Unset $ENV_BACKEND so the " +
-                "saved password can be read; do not add the connection again."
-        } else {
-            "Password not found for this connection. Delete and add the connection again to store the password."
+        when (missingPasswordReason()) {
+            MissingPasswordReason.DisabledOverride ->
+                "Password not found for this connection because $ENV_BACKEND=disabled is " +
+                    "overriding the persisted credential store. Unset $ENV_BACKEND so the " +
+                    "saved password can be read; do not add the connection again."
+            MissingPasswordReason.MemoryStore ->
+                "Password not found for this connection because credentials are held in " +
+                    "memory only for this session. Edit the connection to re-enter the password."
+            MissingPasswordReason.NotStored ->
+                "Password not found for this connection. Edit the connection to re-enter the password."
         }
 
     fun formatSaveCredentialError(err: Throwable): String {

@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -64,6 +65,9 @@ private data class PaletteCommand(
     val icon: ImageVector,
     val action: () -> Unit,
 )
+
+private fun connectionCommandHint(connection: ConnectionDef): String =
+    "${connection.dialect.displayName()} · ${connection.database}"
 
 @Composable
 fun CommandPalette(
@@ -192,10 +196,23 @@ fun CommandPalette(
                 PaletteCommand(
                     id = "conn-${connection.id}",
                     label = "Explore: ${connection.name}",
-                    hint = "${connection.dialect.displayName()} · ${connection.database}",
+                    hint = connectionCommandHint(connection),
                     icon = Icons.Filled.Link,
                 ) {
                     onConnectionSelected(connection)
+                    onDismiss()
+                },
+            )
+        }
+        for (connection in connections) {
+            add(
+                PaletteCommand(
+                    id = "edit-conn-${connection.id}",
+                    label = "Edit connection: ${connection.name}",
+                    hint = connectionCommandHint(connection),
+                    icon = Icons.Filled.Settings,
+                ) {
+                    appState.requestEditConnection(connection.id)
                     onDismiss()
                 },
             )

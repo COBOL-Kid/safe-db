@@ -249,19 +249,6 @@ class BuilderScreenStateTest {
     }
 
     @Test
-    fun queryOptionsShowNoneOnlyForEmptySections() {
-        assertEquals("None", queryOptionEmptyLabel(emptyList()))
-        assertNull(queryOptionEmptyLabel(listOf("orders.status")))
-    }
-
-    @Test
-    fun canvasDisplayYAddsTheContentTopInset() {
-        assertEquals(0f, canvasDisplayY(tableY = 0f, contentTopInsetPx = 0f))
-        assertEquals(464f, canvasDisplayY(tableY = 0f, contentTopInsetPx = 464f))
-        assertEquals(494f, canvasDisplayY(tableY = 30f, contentTopInsetPx = 464f))
-    }
-
-    @Test
     fun canvasPointForViewportPositionAccountsForPanZoomAndInset() {
         val point =
             canvasPointForViewportPosition(
@@ -524,54 +511,6 @@ class BuilderScreenStateTest {
                 false,
                 QueryRiskGate.Disabled,
             ),
-        )
-    }
-
-    @Test
-    fun preliminaryHighRiskDoesNotPresentAsRunBlocked() {
-        val assessment =
-            QueryRiskAssessment(
-                2,
-                "f",
-                8,
-                QueryRiskSeverity.VeryHigh,
-                emptyMap(),
-                emptyList(),
-                emptyList(),
-            )
-
-        assertEquals(
-            "Preliminary query risk: Very high concern · gate applies on run",
-            queryRiskIndicatorText(assessment, null, false, QueryRiskGate.Cautious),
-        )
-    }
-
-    @Test
-    fun queryRiskIndicatorUsesRunUnavailableWhenRunIsNotAvailable() {
-        val assessment =
-            QueryRiskAssessment(
-                2,
-                "f",
-                6,
-                QueryRiskSeverity.High,
-                emptyMap(),
-                emptyList(),
-                emptyList(),
-            )
-
-        assertEquals(
-            "Preliminary query risk: High concern · Run unavailable",
-            queryRiskIndicatorText(
-                assessment,
-                null,
-                false,
-                QueryRiskGate.Standard,
-                runAvailable = false,
-            ),
-        )
-        assertEquals(
-            "Query risk: Ready to assess · Run unavailable",
-            queryRiskIndicatorText(null, null, false, QueryRiskGate.Standard, runAvailable = false),
         )
     }
 

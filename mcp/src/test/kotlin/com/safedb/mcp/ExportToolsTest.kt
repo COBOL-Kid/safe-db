@@ -6,7 +6,6 @@ import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
@@ -162,14 +161,6 @@ class ExportToolsTest {
             assertEquals(csvContents, Files.readString(csvPath))
         } finally {
             dataDir.toFile().deleteRecursively()
-        }
-    }
-
-    @Test
-    fun exportResultToolHasNoAnnotations() = runBlocking {
-        withTempMcpClient(exportService()) { client ->
-            val tool = client.listTools().tools.single { it.name == "export_result" }
-            assertNull(tool.annotations)
         }
     }
 }

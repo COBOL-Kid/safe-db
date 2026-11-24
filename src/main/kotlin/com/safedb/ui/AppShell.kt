@@ -66,7 +66,7 @@ internal fun AppShellContent(
     val settingsOpen by appState.settingsOpen.collectAsState()
     val initialLoading by viewModel.initialLoading.collectAsState()
     val activeConnectionId by appState.activeConnectionId.collectAsState()
-    val openNewConnectionForm by appState.openNewConnectionForm.collectAsState()
+    val connectionFormRequest by appState.connectionFormRequest.collectAsState()
     val schemaSelection by appState.schemaSelection.collectAsState()
     val settings by viewModel.settings.settings.collectAsState()
     val schemaHistoryError by viewModel.settings.schemaHistoryError.collectAsState()
@@ -185,10 +185,11 @@ internal fun AppShellContent(
                 AppRoute.Connections ->
                     ConnectionsScreen(
                         viewModel = viewModel.connections,
-                        openNewConnectionForm = openNewConnectionForm,
-                        onOpenNewConnectionFormConsumed = appState::consumeNewConnectionFormRequest,
+                        connectionFormRequest = connectionFormRequest,
+                        onConnectionFormRequestConsumed = appState::consumeConnectionFormRequest,
                         activeConnectionId = activeConnectionId,
                         defaultConnectionId = settings.defaultConnectionId,
+                        onSelectConnection = { target -> selectConnection(target) },
                         onDeleted = { id ->
                             appState.clearActiveConnectionIf(id)
                             viewModel.settings.clearDefaultIfConnection(id)
@@ -218,7 +219,7 @@ internal fun AppShellContent(
                         onOpenExplore = {
                             val sample = viewModel.query.currentSample(activeConnection?.id)
                             if (activeConnection != null && sample != null) {
-                                viewModel.openExplore(activeConnection, sample.spec, sample.result)
+                                viewModel.openExplore(activeConnection, sample)
                             }
                         },
                         onOpenSettings = appState::openSettings,
@@ -233,12 +234,7 @@ internal fun AppShellContent(
                             } else {
                                 val sample = viewModel.query.currentSample(targetConnection.id)
                                 if (sample != null) {
-                                    viewModel.openExploreRecipe(
-                                        targetConnection,
-                                        sample.spec,
-                                        sample.result,
-                                        recipe,
-                                    )
+                                    viewModel.openExploreRecipe(targetConnection, sample, recipe)
                                 }
                             }
                         },
@@ -263,12 +259,7 @@ internal fun AppShellContent(
                         onOpenExplore = { sample ->
                             val target = connections.firstOrNull { it.id == sample.connectionId }
                             if (target != null) {
-                                viewModel.openExplore(
-                                    target,
-                                    sample.spec,
-                                    sample.result,
-                                    ExploreOrigin.Sql,
-                                )
+                                viewModel.openExplore(target, sample, ExploreOrigin.Sql)
                             }
                         },
                         onOpenConnections = { appState.navigate(AppRoute.Connections) },

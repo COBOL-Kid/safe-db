@@ -14,6 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.key.Key
@@ -153,6 +154,14 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
                 state = exploreWindowState,
             ) {
                 LaunchedEffect(window) { window.minimumSize = Dimension(920, 560) }
+                LaunchedEffect(window, explore) {
+                    if (exploreWindowState.isMinimized) {
+                        exploreWindowState.isMinimized = false
+                        withFrameNanos {}
+                    }
+                    window.toFront()
+                    window.requestFocus()
+                }
                 DisposableEffect(viewModel, window) {
                     val exploreWindow = window
                     exploreWindowRef.value = exploreWindow
@@ -177,6 +186,7 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
                                 viewModel = explore,
                                 currentSpec = originContext.currentSpec,
                                 activeConnectionId = activeConnectionId,
+                                latestSampleRunId = originContext.latestSampleRunId,
                                 onClose = viewModel::closeExplore,
                                 origin = exploreOrigin,
                                 onRefreshSample =
@@ -192,7 +202,6 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
                                     } else {
                                         null
                                     },
-                                sampleRefreshEnabled = originContext.sampleRefreshEnabled,
                                 recipesViewModel = viewModel.recipes,
                                 connections = connections,
                                 onRunRecipe = { recipe, connection ->

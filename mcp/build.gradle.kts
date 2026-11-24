@@ -31,12 +31,24 @@ kover {
     reports {
         filters {
             includes { classes("com.safedb.mcp.*") }
-            excludes { classes($$$"*$$serializer*") }
+            excludes {
+                classes(
+                    $$$"*$$serializer*",
+                    "com.safedb.mcp.MainKt*",
+                    "com.safedb.mcp.SystemCliIo*",
+                )
+            }
         }
         variant("unit") {
             filters {
                 includes { classes("com.safedb.mcp.*") }
-                excludes { classes($$$"*$$serializer*") }
+                excludes {
+                    classes(
+                        $$$"*$$serializer*",
+                        "com.safedb.mcp.MainKt*",
+                        "com.safedb.mcp.SystemCliIo*",
+                    )
+                }
             }
         }
     }

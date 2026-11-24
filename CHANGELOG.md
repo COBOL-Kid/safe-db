@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.1.4
+
+Desktop app, MCP server (`safe-db-mcp` / `@safe-db/mcp`), and shared query engine. Version is `1.1.4` in `build.gradle.kts`; the MCP fat JAR is `safe-db-mcp-1.1.4-all.jar`; npm packages are stamped 1.1.4 at assemble time.
+
+- Refreshed the app icon and added a Liquid Glass icon (`Assets.car` / `CFBundleIconName = SafeDB`) for macOS 26+ ([#120](https://github.com/COBOL-Kid/safe-db/pull/120)).
+- The sidebar footer title now shows the connection status label to match its indicator dot ([#119](https://github.com/COBOL-Kid/safe-db/pull/119)).
+- Explore Visualization: added an opt-in secondary value axis (`Right axis` / `Top axis`) for multi-measure non-stacked Bar and Line charts, with `(left)`/`(right)` or `(bottom)`/`(top)` legend labels, a scale-difference warning when measures differ by 20x or more, automatic normalization back to a single primary axis when the primary measure is removed, and recipe persistence.
+- Explore Visualization and HTML/PNG/CSV export: aligned dark-mode bar value-label contrast between in-app charts and HTML exports, stepped bar value-label font size down uniformly (`12sp` -> `11sp` -> `10sp`) on narrower grouped bars, grouped Auto number formatting, improved histogram bin sizing and bucket ordering for date/binned series, filled contiguous empty histogram bins (up to 500 bins, with a warning if wider) and used a uniform stride for evenly spaced horizontal category axis labels, and shared chart layout, label, and legend policy between in-app charts and HTML reports.
+- Explore window and drill-down: tracked sample runs so the stale-sample banner appears and refreshes reliably after new Builder or SQL runs, brought an already-open or minimized Explore window to the front when re-opened, hid Pinned filter state in Visualization mode, and moved sample-truncation context into the `Source rows` drill-down subtitle instead of showing a `Truncated` badge on drill-down subsets.
+- Save and open file choosers for HTML, CSV, PNG, and Explore recipes now remember the last chosen directory, sanitize suggested filenames, and apply matching file-extension filters.
+- Connections and Command Palette: added `Edit connection: <name>` actions to the Command Palette, anchored Connection Form status banners above the footer, updated missing-password guidance to direct users to edit the connection (and testing a connection with a missing password switches Edit Connection directly into focused password entry), and updated connection reachability immediately after a successful query run.
+- SQL Editor: autocomplete popup closes when the editor loses focus or runs via `Ctrl/Cmd+Enter`, and stays non-focusable so toolbar buttons such as Run fire on the first click.
+
 ## 1.1.3
 
 Desktop app, MCP server (`safe-db-mcp` / `@safe-db/mcp`), and shared query engine. Version is `1.1.3` in `build.gradle.kts`; the MCP fat JAR is `safe-db-mcp-1.1.3-all.jar`; npm packages are stamped 1.1.3 at assemble time.

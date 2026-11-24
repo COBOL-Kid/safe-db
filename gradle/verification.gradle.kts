@@ -6,14 +6,14 @@ val verifyUnitTestDiscovery =
     tasks.register<VerifyUnitTestDiscovery>("verifyUnitTestDiscovery") {
         group = "verification"
         description =
-            "Fails when JVM unit tests are missing from JUnit XML or contain failures or skips."
+            "Fails when compiled unit test classes are missing from JUnit XML or contain failures or skips."
         dependsOn(tasks.named("test"), ":shared:test", ":mcp:test")
         desktopResults.set(layout.buildDirectory.dir("test-results/test"))
         sharedResults.set(project(":shared").layout.buildDirectory.dir("test-results/test"))
         mcpResults.set(project(":mcp").layout.buildDirectory.dir("test-results/test"))
-        minimumDesktopTests.set(406)
-        minimumSharedTests.set(758)
-        minimumMcpTests.set(251)
+        desktopClasses.set(layout.buildDirectory.dir("classes/kotlin/test"))
+        sharedClasses.set(project(":shared").layout.buildDirectory.dir("classes/kotlin/test"))
+        mcpClasses.set(project(":mcp").layout.buildDirectory.dir("classes/kotlin/test"))
     }
 
 val verifyCoverageRatchet =
@@ -22,9 +22,9 @@ val verifyCoverageRatchet =
         description = "Enforces checked-in line coverage floors for desktop and shared logic."
         dependsOn("koverXmlReport")
         reportFile.set(layout.buildDirectory.file("reports/kover/report.xml"))
-        // Shared floor is unit coverage from `check`. JDBC adapter bodies are covered by
-        // integrationTest, which kover ignores.
-        coverageFloors.set(mapOf("desktop" to 92, "shared" to 89))
+        // Shared floor is unit coverage from `check`. Live-JDBC adapter objects, platform keyring
+        // delegates, and testFixtures are excluded so integrationTest-only plumbing does not skew it.
+        coverageFloors.set(mapOf("desktop" to 95, "shared" to 92))
     }
 
 val verifyMcpCoverageRatchet =
@@ -33,7 +33,7 @@ val verifyMcpCoverageRatchet =
         description = "Enforces the checked-in MCP line coverage floor."
         dependsOn(":mcp:koverXmlReportUnit")
         reportFile.set(project(":mcp").layout.buildDirectory.file("reports/kover/reportUnit.xml"))
-        coverageFloors.set(mapOf("mcp" to 93))
+        coverageFloors.set(mapOf("mcp" to 94))
     }
 
 tasks.named("koverVerify") { dependsOn(verifyCoverageRatchet, verifyMcpCoverageRatchet) }
@@ -56,12 +56,23 @@ val testAssertConveyorSite =
         onlyIf { !System.getProperty("os.name").startsWith("Windows", ignoreCase = true) }
     }
 
+val testAgentGuiReset =
+    tasks.register<Exec>("testAgentGuiReset") {
+        group = "verification"
+        description =
+            "Tests agent_gui.sh reset boundaries, PID guards, window matching, and CLI checks."
+        workingDir = projectDir
+        commandLine("bash", "scripts/test_agent_gui_reset.sh")
+        onlyIf { System.getProperty("os.name").startsWith("Linux", ignoreCase = true) }
+    }
+
 tasks.named("check") {
     dependsOn(
         "compileRenderKotlin",
         verifyUnitTestDiscovery,
         testDockerDatabaseHarness,
         testAssertConveyorSite,
+        testAgentGuiReset,
         "koverVerify",
     )
 }

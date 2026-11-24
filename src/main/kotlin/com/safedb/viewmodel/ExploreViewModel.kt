@@ -19,6 +19,7 @@ import com.safedb.explore.WorksheetPreview
 import com.safedb.explore.applyExplore
 import com.safedb.explore.applyVisualization
 import com.safedb.explore.applyWorksheet
+import com.safedb.explore.displayColumnLabels
 import com.safedb.explore.exploreSpecHash
 import com.safedb.explore.pivotCellKey
 import com.safedb.explore.pivotCellLineageKey
@@ -47,6 +48,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+enum class SampleStaleness {
+    Fresh,
+    ConnectionChanged,
+    SpecChanged,
+    NewerSample,
+}
+
 class ExploreViewModel(
     val session: ExploreSession,
     initialConfig: ExploreConfig? = null,
@@ -55,6 +63,7 @@ class ExploreViewModel(
     private val computeDispatcher: CoroutineDispatcher = Dispatchers.Default.limitedParallelism(1),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     initialRecipe: ExploreRecipe? = null,
+    private val sampleRunId: Long? = null,
 ) {
     private val defaultConfig = ExploreConfig.defaultFor(session.sample, session.baseSpec.tables)
 
@@ -371,13 +380,19 @@ class ExploreViewModel(
 
     // A null spec means the origin screen has nothing runnable right now, which matches no executed
     // query.
-    fun isStale(
+    fun staleness(
         currentSpec: QuerySpec?,
         currentConnectionId: String? = session.connectionId,
-    ): Boolean =
-        currentConnectionId != session.connectionId ||
-            currentSpec == null ||
-            exploreSpecHash(currentSpec) != session.baseSpecHash
+        latestSampleRunId: Long? = null,
+    ): SampleStaleness =
+        when {
+            currentConnectionId != session.connectionId -> SampleStaleness.ConnectionChanged
+            currentSpec == null || exploreSpecHash(currentSpec) != session.baseSpecHash ->
+                SampleStaleness.SpecChanged
+            sampleRunId != null && latestSampleRunId != null && latestSampleRunId != sampleRunId ->
+                SampleStaleness.NewerSample
+            else -> SampleStaleness.Fresh
+        }
 
     fun savePreviewCsv(path: Path) {
         val formattedRows = preview.layout.formattedRows
@@ -496,7 +511,19 @@ class ExploreViewModel(
         }
     }
 
-    fun saveResultCsv(result: QueryResult, path: Path) {
+    fun saveDrillResultCsv(result: QueryResult, path: Path) {
+        val labels = displayColumnLabels(result.columns, session.baseSpec.tables)
+        val labeled =
+            result.copy(
+                columns =
+                    result.columns.map { column ->
+                        column.copy(name = labels[column.name] ?: column.name)
+                    },
+            )
+        saveResultCsv(labeled, path)
+    }
+
+    private fun saveResultCsv(result: QueryResult, path: Path) {
         executeExport("Exported ${result.rowCount} row${if (result.rowCount == 1) "" else "s"}") {
             Files.newOutputStream(path).use { output -> writeQueryResultCsv(result, output) }
         }

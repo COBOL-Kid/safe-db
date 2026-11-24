@@ -1,6 +1,5 @@
 package com.safedb.export
 
-import com.safedb.explore.BarOrientation
 import com.safedb.explore.ChartType
 import com.safedb.explore.ExplorePreviewResult
 import com.safedb.explore.ExploreSession
@@ -8,23 +7,35 @@ import com.safedb.explore.PivotRowKind
 import com.safedb.explore.VisualizationConfig
 import com.safedb.explore.VisualizationMark
 import com.safedb.explore.VisualizationPreview
+import com.safedb.explore.VisualizationTableColumnKind
 import com.safedb.explore.WorksheetRowKind
 import com.safedb.explore.WorksheetTableProjection
 import com.safedb.explore.displayColumnLabels
 import com.safedb.explore.pivotCellLineageKey
+import com.safedb.explore.visualizationTableColumns
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
-import com.safedb.ui.PlotInsets
-import com.safedb.ui.categoryLabelIndices
-import com.safedb.ui.compactNumber
-import com.safedb.ui.visualizationGeometry
+import com.safedb.ui.chart.CategoryLabelEntry
+import com.safedb.ui.chart.LegendEntryLimit
+import com.safedb.ui.chart.NiceValueAxis
+import com.safedb.ui.chart.PlotClearance
+import com.safedb.ui.chart.barLabelCenter
+import com.safedb.ui.chart.barValueLabelText
+import com.safedb.ui.chart.categoryLabelStep
+import com.safedb.ui.chart.chartPlotInsets
+import com.safedb.ui.chart.clampLabelX
+import com.safedb.ui.chart.compactNumber
+import com.safedb.ui.chart.estimatedBarLabelHeight
+import com.safedb.ui.chart.estimatedBarLabelWidth
+import com.safedb.ui.chart.legendSeriesLabel
+import com.safedb.ui.chart.selectHorizontalCategoryLabels
+import com.safedb.ui.chart.visualizationGeometry
 import java.io.OutputStream
 import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
@@ -126,6 +137,9 @@ internal data class HtmlChartShape(
     val series: Int = 0,
     val tooltip: String? = null,
     val d: List<Int>? = null,
+    val label: String? = null,
+    val lx: Double? = null,
+    val ly: Double? = null,
 )
 
 @Serializable internal data class HtmlAxisTick(val pos: Double, val label: String)
@@ -147,6 +161,7 @@ internal data class HtmlChartSection(
     val horizontal: Boolean,
     val shapes: List<HtmlChartShape>,
     val valueTicks: List<HtmlAxisTick>,
+    val secondaryValueTicks: List<HtmlAxisTick> = emptyList(),
     val categoryTicks: List<HtmlAxisTick>,
     val legend: List<String>,
     val legendMore: Int,
@@ -333,7 +348,9 @@ internal fun buildVisualizationReport(
         meta = reportMeta(session, "visualization", preview.warnings),
         source = buildSourceTable(session),
         chart = buildChartSection(preview, config),
-        table = preview.exportResult?.let(::tableSectionFrom),
+        table =
+            if (preview.marks.isNotEmpty()) buildVisualizationTableSection(preview, config)
+            else null,
     )
 
 internal fun buildSourceTable(session: ExploreSession): HtmlSourceTable {
@@ -376,36 +393,51 @@ internal fun buildChartSection(
         )
     }
 
-    val horizontal =
-        chartType == ChartType.Bar && config.barOrientation == BarOrientation.Horizontal
-    val maxCategoryExtent =
-        preview.marks.distinctBy { it.xKey }.maxOfOrNull { estimatedLabelWidth(it.xLabel) } ?: 0f
+    val horizontal = config.isHorizontalBar(chartType)
+    val labelLineHeight = 12f
     val insets =
-        if (horizontal) {
-            PlotInsets(left = (maxCategoryExtent + 12f).coerceIn(44f, 180f))
-        } else {
-            PlotInsets()
-        }
+        chartPlotInsets(
+            preview = preview,
+            config = config,
+            lineHeight = labelLineHeight,
+            gapPx = 6f,
+            clearance = PlotClearance(top = 20f, bottom = 22f),
+            measureLabelWidth = { estimatedLabelWidth(truncatedTickLabel(it)) },
+        )
     val geometry = visualizationGeometry(preview, config, width.toFloat(), height.toFloat(), insets)
     val plot = geometry.plot
     val multiSeries = preview.series.size > 1
     val seriesIndex = preview.series.mapIndexed { index, series -> series.key to index }.toMap()
+    val marksById = preview.marks.associateBy { it.id }
 
     val shapes = mutableListOf<HtmlChartShape>()
     when (chartType) {
         ChartType.Bar,
         ChartType.Histogram ->
             geometry.regions.mapTo(shapes) { region ->
-                val mark = preview.marks.first { it.id == region.markId }
+                val mark = marksById.getValue(region.markId)
+                val seriesIdx = seriesIndex[mark.seriesKey] ?: 0
+                val labelText = if (config.showLabels) barValueLabelText(mark, config) else null
+                val labelCenter = labelText?.let {
+                    barLabelCenter(
+                        bounds = region.bounds,
+                        labelWidth = estimatedBarLabelWidth(it),
+                        labelHeight = estimatedBarLabelHeight(),
+                        horizontalBars = horizontal,
+                    )
+                }
                 HtmlChartShape(
                     kind = "rect",
                     x = region.bounds.left.rounded(),
                     y = region.bounds.top.rounded(),
                     w = region.bounds.width.rounded(),
                     h = region.bounds.height.rounded(),
-                    series = seriesIndex[mark.seriesKey] ?: 0,
+                    series = seriesIdx,
                     tooltip = markTooltip(mark, multiSeries),
                     d = mark.sourceRowIndices.takeIf { it.isNotEmpty() },
+                    label = labelText.takeIf { labelCenter != null },
+                    lx = labelCenter?.x?.rounded(),
+                    ly = labelCenter?.y?.rounded(),
                 )
             }
         ChartType.Line -> {
@@ -444,7 +476,7 @@ internal fun buildChartSection(
         ChartType.Scatter ->
             // Reversed for the same reason as line circles: first mark wins overlaps.
             geometry.regions.asReversed().mapTo(shapes) { region ->
-                val mark = preview.marks.first { it.id == region.markId }
+                val mark = marksById.getValue(region.markId)
                 HtmlChartShape(
                     kind = "circle",
                     cx = region.bounds.center.x.rounded(),
@@ -459,10 +491,9 @@ internal fun buildChartSection(
         null -> Unit
     }
 
-    val valueTicks =
-        (0..4).map { tick ->
-            val fraction = tick / 4f
-            val value = geometry.yMin + (geometry.yMax - geometry.yMin) * fraction
+    fun axisTicks(axis: NiceValueAxis): List<HtmlAxisTick> =
+        axis.ticks.map { value ->
+            val fraction = axis.fraction(value).toFloat().coerceIn(0f, 1f)
             HtmlAxisTick(
                 pos =
                     if (horizontal) (plot.left + plot.width * fraction).rounded()
@@ -470,25 +501,54 @@ internal fun buildChartSection(
                 label = compactNumber(value),
             )
         }
+
+    val valueTicks = axisTicks(geometry.valueAxis)
     val categories = preview.marks.distinctBy { it.xKey }
     val centered =
         categories
             .mapNotNull { mark ->
                 geometry.categoryCenters[mark.xKey]?.let { center ->
-                    center to truncatedTickLabel(mark.xLabel)
+                    val label = truncatedTickLabel(mark.xLabel)
+                    CategoryLabelEntry(
+                        xKey = mark.xKey,
+                        text = label,
+                        center = center,
+                        naturalWidth = estimatedLabelWidth(label),
+                    )
                 }
             }
-            .sortedBy { it.first }
-    // Measure the truncated label that is actually rendered, and cap the gap like the in-app
-    // chart (VisualizationChart) so long labels thin the axis instead of emptying it.
-    val requiredGap =
-        if (horizontal) 16f
-        else min((centered.maxOfOrNull { estimatedLabelWidth(it.second) } ?: 0f) + 8f, 160f)
+            .sortedBy { it.center }
     val categoryTicks =
-        categoryLabelIndices(centered.map { it.first }, requiredGap).map { index ->
-            HtmlAxisTick(pos = centered[index].first.rounded(), label = centered[index].second)
+        if (horizontal) {
+            val band = plot.height / centered.size.coerceAtLeast(1)
+            val step = categoryLabelStep(labelLineHeight + 2f, band)
+            centered
+                .filterIndexed { index, _ -> index % step == 0 }
+                .map { entry -> HtmlAxisTick(pos = entry.center.rounded(), label = entry.text) }
+        } else {
+            selectHorizontalCategoryLabels(
+                    entries = centered,
+                    plotLeft = plot.left,
+                    gapPx = 6f,
+                    canvasWidth = width.toFloat(),
+                    evenlySpaced = chartType != ChartType.Scatter,
+                )
+                .map { entry ->
+                    val drawX =
+                        clampLabelX(
+                            entry.center - entry.naturalWidth / 2f,
+                            entry.naturalWidth,
+                            plot.left,
+                            width.toFloat(),
+                        )
+                    HtmlAxisTick(
+                        pos = (drawX + entry.naturalWidth / 2f).rounded(),
+                        label = entry.text,
+                    )
+                }
         }
-    val shownLegend = if (multiSeries) preview.series.take(12) else emptyList()
+    val secondaryValueTicks = geometry.secondaryValueAxis?.let(::axisTicks).orEmpty()
+    val shownLegend = if (multiSeries) preview.series.take(LegendEntryLimit) else emptyList()
     return HtmlChartSection(
         title = preview.title,
         width = width,
@@ -503,12 +563,55 @@ internal fun buildChartSection(
         horizontal = horizontal,
         shapes = shapes,
         valueTicks = valueTicks,
+        secondaryValueTicks = secondaryValueTicks,
         categoryTicks = categoryTicks,
-        legend = shownLegend.map { it.label },
+        legend = shownLegend.map { legendSeriesLabel(it, preview.hasSecondaryAxis, horizontal) },
         legendMore = if (multiSeries) preview.series.size - shownLegend.size else 0,
         kpis = emptyList(),
     )
 }
+
+internal fun buildVisualizationTableSection(
+    preview: VisualizationPreview,
+    config: VisualizationConfig,
+): HtmlTableSection {
+    val columnSpecs = visualizationTableColumns(preview.chartType, config)
+    val rows =
+        preview.marks.map { mark ->
+            HtmlTableRow(
+                cells =
+                    columnSpecs.map { spec ->
+                        when (spec.kind) {
+                            VisualizationTableColumnKind.ScatterX ->
+                                finiteNumericCell(
+                                    mark.xLabel.ifBlank { mark.xValue?.toString().orEmpty() },
+                                    mark.xValue,
+                                )
+                            VisualizationTableColumnKind.ScatterY,
+                            VisualizationTableColumnKind.Value ->
+                                finiteNumericCell(mark.formattedY, mark.y)
+                            VisualizationTableColumnKind.Category -> HtmlCell(mark.xLabel)
+                            VisualizationTableColumnKind.Series -> HtmlCell(mark.seriesLabel)
+                            VisualizationTableColumnKind.Size ->
+                                finiteNumericCell(mark.size?.toString().orEmpty(), mark.size)
+                            VisualizationTableColumnKind.Measure -> HtmlCell(mark.measureLabel)
+                            VisualizationTableColumnKind.SourceRows ->
+                                sourceRowCountCell(mark.sourceRowIndices.size)
+                        }
+                    },
+            )
+        }
+    return HtmlTableSection(
+        columns = columnsWithNumericFlags(columnSpecs.map { it.label }, rows),
+        rows = rows,
+        sortable = true,
+    )
+}
+
+private fun finiteNumericCell(text: String, value: Double?): HtmlCell =
+    HtmlCell(text, value?.takeIf(Double::isFinite))
+
+private fun sourceRowCountCell(count: Int): HtmlCell = HtmlCell(count.toString(), count.toDouble())
 
 internal fun tableSectionFrom(result: QueryResult): HtmlTableSection {
     val rows =

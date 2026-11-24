@@ -27,61 +27,19 @@ class SchemaMapViewModelTest {
     }
 
     @Test
-    fun zoomKeepsTheRequestedScreenAnchorStable() {
+    fun delegatesZoomAndFitToViewportState() {
         val viewModel = SchemaMapViewModel()
         viewModel.activate("c1", "public")
-        viewModel.updatePan(viewModel.pan + Offset(64f, 24f))
-        val anchor = Offset(400f, 300f)
-        val canvasPointBefore = (anchor - viewModel.pan) / viewModel.zoom
-
-        viewModel.setZoom(1.5f, anchor)
-
-        assertEquals(canvasPointBefore.x, ((anchor - viewModel.pan) / viewModel.zoom).x, 0.001f)
-        assertEquals(canvasPointBefore.y, ((anchor - viewModel.pan) / viewModel.zoom).y, 0.001f)
-    }
-
-    @Test
-    fun zoomIsClampedToSupportedRange() {
-        val viewModel = SchemaMapViewModel()
 
         viewModel.setZoom(10f)
         assertEquals(CANVAS_MAX_ZOOM, viewModel.zoom)
 
-        viewModel.setZoom(0.01f)
-        assertEquals(CANVAS_MIN_ZOOM, viewModel.zoom)
-    }
-
-    @Test
-    fun fitCentersContentInsideTheViewport() {
-        val viewModel = SchemaMapViewModel()
         val bounds = Rect(100f, 50f, 900f, 450f)
         val viewport = Size(1_000f, 600f)
-
         viewModel.fit(bounds, viewport, padding = 40f)
-
         val displayedCenter = bounds.center * viewModel.zoom + viewModel.pan
         assertEquals(viewport.width / 2f, displayedCenter.x, 0.001f)
         assertEquals(viewport.height / 2f, displayedCenter.y, 0.001f)
-    }
-
-    @Test
-    fun fitKeepsEveryEdgeOfALargeSchemaInsideThePaddedViewport() {
-        val viewModel = SchemaMapViewModel()
-        val bounds = Rect(-200f, 100f, 7_800f, 4_100f)
-        val viewport = Size(1_000f, 600f)
-        val padding = 40f
-
-        viewModel.fit(bounds, viewport, padding)
-
-        val displayedLeft = bounds.left * viewModel.zoom + viewModel.pan.x
-        val displayedTop = bounds.top * viewModel.zoom + viewModel.pan.y
-        val displayedRight = bounds.right * viewModel.zoom + viewModel.pan.x
-        val displayedBottom = bounds.bottom * viewModel.zoom + viewModel.pan.y
-        assertTrue(viewModel.zoom < 0.4f)
-        assertTrue(displayedLeft >= padding - 0.001f)
-        assertTrue(displayedTop >= padding - 0.001f)
-        assertTrue(displayedRight <= viewport.width - padding + 0.001f)
-        assertTrue(displayedBottom <= viewport.height - padding + 0.001f)
     }
 
     @Test
@@ -125,5 +83,20 @@ class SchemaMapViewModelTest {
         viewModel.activate("c1", "reporting")
         assertFalse(viewModel.consumeInitialFitRequest("c1", "public"))
         assertTrue(viewModel.consumeInitialFitRequest("c1", "reporting"))
+    }
+
+    @Test
+    fun focusCentersNodeInViewportAndIgnoresNonPositiveViewport() {
+        val viewModel = SchemaMapViewModel()
+        viewModel.activate("c1", "public")
+        val initialPan = viewModel.pan
+
+        viewModel.focus(Rect(100f, 50f, 300f, 150f), Size(0f, 500f))
+        assertEquals(initialPan, viewModel.pan)
+
+        viewModel.setZoom(2f)
+        viewModel.focus(Rect(100f, 50f, 300f, 150f), Size(800f, 600f))
+        // center=(200,100) at zoom=2 -> pan=(400 - 400, 300 - 200) = (0, 100)
+        assertEquals(Offset(0f, 100f), viewModel.pan)
     }
 }

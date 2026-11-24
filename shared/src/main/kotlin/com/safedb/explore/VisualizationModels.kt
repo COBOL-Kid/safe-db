@@ -23,6 +23,24 @@ data class VisualizationConfig(
 ) {
     fun isConfigured(): Boolean = x != null || values.isNotEmpty()
 
+    fun isStackedBar(resolvedType: ChartType?): Boolean =
+        resolvedType == ChartType.Bar && barArrangement == BarArrangement.Stacked
+
+    fun isHorizontalBar(resolvedType: ChartType?): Boolean =
+        resolvedType == ChartType.Bar && barOrientation == BarOrientation.Horizontal
+
+    fun supportsSecondaryAxis(resolvedType: ChartType?): Boolean =
+        series == null &&
+            values.size > 1 &&
+            (resolvedType == ChartType.Line ||
+                (resolvedType == ChartType.Bar && barArrangement == BarArrangement.Grouped))
+
+    fun hasMixedAxes(): Boolean =
+        values.any { it.axis == ValueAxis.Primary } && values.any { it.axis == ValueAxis.Secondary }
+
+    fun usesSecondaryAxis(resolvedType: ChartType?): Boolean =
+        supportsSecondaryAxis(resolvedType) && hasMixedAxes()
+
     fun validate(): VisualizationConfig {
         require(schemaVersion == VISUALIZATION_SCHEMA_VERSION) {
             "Unsupported visualization version $schemaVersion"
@@ -50,6 +68,12 @@ data class VisualizationField(
 )
 
 @Serializable
+enum class ValueAxis {
+    Primary,
+    Secondary,
+}
+
+@Serializable
 data class VisualizationMeasure(
     val alias: String,
     val fn: MeasureFn,
@@ -57,6 +81,7 @@ data class VisualizationMeasure(
     val label: String = visualizationMeasureLabel(fn, sourceColumn),
     val aggregate: Boolean = true,
     val numberFormat: PivotNumberFormat = PivotNumberFormat(),
+    val axis: ValueAxis = ValueAxis.Primary,
 ) {
     companion object {
         fun countRows(alias: String = "count"): VisualizationMeasure =
@@ -118,6 +143,11 @@ data class VisualizationPreview(
 ) {
     val ready: Boolean
         get() = blockingMessage == null && marks.isNotEmpty()
+
+    val hasSecondaryAxis: Boolean
+        get() =
+            series.any { it.axis == ValueAxis.Primary } &&
+                series.any { it.axis == ValueAxis.Secondary }
 }
 
 data class VisualizationMark(
@@ -131,8 +161,71 @@ data class VisualizationMark(
     val seriesLabel: String,
     val measureAlias: String,
     val measureLabel: String,
+    val axis: ValueAxis = ValueAxis.Primary,
     val size: Double? = null,
     val sourceRowIndices: List<Int>,
 )
 
-data class VisualizationSeries(val key: String, val label: String)
+data class VisualizationSeries(
+    val key: String,
+    val label: String,
+    val axis: ValueAxis = ValueAxis.Primary,
+)
+
+enum class VisualizationTableColumnKind {
+    ScatterX,
+    ScatterY,
+    Category,
+    Series,
+    Size,
+    Measure,
+    Value,
+    SourceRows,
+}
+
+data class VisualizationTableColumnSpec(
+    val label: String,
+    val kind: VisualizationTableColumnKind,
+)
+
+fun visualizationTableColumns(
+    chartType: ChartType?,
+    config: VisualizationConfig,
+): List<VisualizationTableColumnSpec> {
+    val includeSeries = config.series != null
+    return buildList {
+        if (chartType == ChartType.Scatter) {
+            add(
+                VisualizationTableColumnSpec(
+                    config.x?.label ?: "X",
+                    VisualizationTableColumnKind.ScatterX,
+                ),
+            )
+            add(
+                VisualizationTableColumnSpec(
+                    config.values.firstOrNull()?.label ?: "Y",
+                    VisualizationTableColumnKind.ScatterY,
+                ),
+            )
+            if (includeSeries) {
+                add(VisualizationTableColumnSpec("Series", VisualizationTableColumnKind.Series))
+            }
+            if (config.size != null) {
+                add(VisualizationTableColumnSpec("Size", VisualizationTableColumnKind.Size))
+            }
+        } else {
+            add(
+                VisualizationTableColumnSpec(
+                    config.x?.label ?: "Category",
+                    VisualizationTableColumnKind.Category,
+                ),
+            )
+            if (includeSeries) {
+                add(VisualizationTableColumnSpec("Series", VisualizationTableColumnKind.Series))
+            }
+            add(VisualizationTableColumnSpec("Measure", VisualizationTableColumnKind.Measure))
+            add(VisualizationTableColumnSpec("Value", VisualizationTableColumnKind.Value))
+        }
+        add(VisualizationTableColumnSpec("Source rows", VisualizationTableColumnKind.SourceRows))
+    }
+}

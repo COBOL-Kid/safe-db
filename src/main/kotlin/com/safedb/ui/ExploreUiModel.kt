@@ -1,5 +1,6 @@
 package com.safedb.ui
 
+import com.safedb.explore.ChartType
 import com.safedb.explore.ExploreConfig
 import com.safedb.explore.ExploreSort
 import com.safedb.explore.ExploreSortTarget
@@ -7,15 +8,22 @@ import com.safedb.explore.LabelFilterOp
 import com.safedb.explore.MeasureFn
 import com.safedb.explore.PivotDimension
 import com.safedb.explore.PivotFilter
+import com.safedb.explore.PivotGrouping
 import com.safedb.explore.PivotMeasure
 import com.safedb.explore.SortDir
+import com.safedb.explore.ValueAxis
 import com.safedb.explore.ValueFilterOp
+import com.safedb.explore.VisualizationConfig
+import com.safedb.explore.VisualizationField
+import com.safedb.explore.VisualizationMeasure
+import com.safedb.explore.displayColumnLabel
 import com.safedb.explore.displayColumnLabels
 import com.safedb.model.ColumnCategory
 import com.safedb.model.QueryResult
 import com.safedb.model.TableRef
 import com.safedb.model.classifyColumn
 import com.safedb.model.isNumeric
+import java.math.BigDecimal
 import java.util.UUID
 
 internal data class ExploreFieldOption(
@@ -153,7 +161,11 @@ internal fun moveDimension(
     }
 }
 
-internal fun filterSupportingText(filter: PivotFilter, memberCount: Int? = null): String =
+internal fun filterSupportingText(
+    filter: PivotFilter,
+    memberCount: Int? = null,
+    showPinned: Boolean = true,
+): String =
     when (filter) {
         is PivotFilter.Members -> {
             val selection =
@@ -162,7 +174,7 @@ internal fun filterSupportingText(filter: PivotFilter, memberCount: Int? = null)
                     memberCount != null && filter.includedKeys.size == memberCount -> "All values"
                     else -> "${filter.includedKeys.size} selected"
                 }
-            if (filter.pinned) "$selection · Pinned" else selection
+            if (showPinned && filter.pinned) "$selection · Pinned" else selection
         }
         is PivotFilter.Label -> "${labelFilterOpLabel(filter.op)} \"${filter.value}\""
         is PivotFilter.Value -> valueFilterSupportingText(filter)
@@ -193,4 +205,137 @@ private fun valueFilterOpLabel(op: ValueFilterOp): String =
         ValueFilterOp.Between -> "Between"
         ValueFilterOp.Top -> "Top"
         ValueFilterOp.Bottom -> "Bottom"
+    }
+
+internal fun VisualizationConfig.forChartType(
+    type: ChartType,
+    fields: List<ExploreFieldOption>,
+): VisualizationConfig {
+    fun numeric(column: String?): Boolean =
+        fields.firstOrNull { it.column == column }?.category?.isNumeric() == true
+    fun fieldLabel(column: String): String =
+        fields.firstOrNull { it.column == column }?.label ?: displayColumnLabel(column)
+    fun VisualizationMeasure.asAggregated(): VisualizationMeasure =
+        if (aggregate) this
+        else {
+            val label = sourceColumn?.let { "${fn.shortLabel} ${fieldLabel(it)}" } ?: label
+            copy(aggregate = true, label = label)
+        }
+    return when (type) {
+        ChartType.Histogram -> {
+            val promotedX =
+                x?.takeIf { numeric(it.column) }
+                    ?: values.firstNotNullOfOrNull { measure ->
+                        measure.sourceColumn?.takeIf(::numeric)?.let { column ->
+                            VisualizationField(
+                                column = column,
+                                label = fieldLabel(column),
+                            )
+                        }
+                    }
+            copy(
+                chartType = type,
+                x = promotedX,
+                values = emptyList(),
+                series = null,
+                size = null,
+            )
+        }
+        ChartType.Kpi ->
+            copy(
+                chartType = type,
+                x = null,
+                values = values.take(1).map { it.asAggregated().copy(axis = ValueAxis.Primary) },
+                series = null,
+                size = null,
+            )
+        ChartType.Scatter ->
+            copy(
+                chartType = type,
+                x = x?.takeIf { numeric(it.column) },
+                values =
+                    values
+                        .filter { numeric(it.sourceColumn) }
+                        .take(1)
+                        .map {
+                            it.copy(
+                                aggregate = false,
+                                label = it.sourceColumn?.let(::fieldLabel) ?: it.label,
+                                axis = ValueAxis.Primary,
+                            )
+                        },
+                series = series,
+                size = size?.takeIf { numeric(it.column) },
+            )
+        ChartType.Bar,
+        ChartType.Line ->
+            copy(chartType = type, values = values.map { it.asAggregated() }, size = null)
+        ChartType.Auto -> copy(chartType = type)
+    }
+}
+
+internal fun chartTypeTransitionMessage(
+    previous: VisualizationConfig,
+    next: VisualizationConfig,
+): String? {
+    val nextX = next.x
+    if (
+        nextX != null &&
+            next.chartType == ChartType.Histogram &&
+            previous.x?.column != nextX.column &&
+            previous.values.any { it.sourceColumn == nextX.column }
+    ) {
+        val otherRemoved = buildList {
+            if (previous.series != null && next.series == null) add("series")
+            if (previous.size != null && next.size == null) add("size")
+        }
+        val moved = "Moved ${nextX.label} to X for histogram"
+        return if (otherRemoved.isEmpty()) {
+            "$moved."
+        } else {
+            "$moved; removed incompatible ${otherRemoved.joinToString()} assignment${if (otherRemoved.size == 1) "" else "s"}."
+        }
+    }
+    val removed = buildList {
+        if (previous.x != null && next.x == null) add("X")
+        if (previous.values.isNotEmpty() && next.values.isEmpty()) add("values")
+        if (previous.series != null && next.series == null) add("series")
+        if (previous.size != null && next.size == null) add("size")
+    }
+    return removed
+        .takeIf { it.isNotEmpty() }
+        ?.let {
+            "Removed incompatible ${it.joinToString()} assignment${if (it.size == 1) "" else "s"}."
+        }
+}
+
+internal fun visualizationOptionsSummary(
+    config: VisualizationConfig,
+    effectiveType: ChartType?,
+): String =
+    when (effectiveType) {
+        ChartType.Bar -> "${config.sort.target.name.lowercase()} sort · Top ${config.topN}"
+        ChartType.Line -> "${config.sort.target.name.lowercase()} sort"
+        ChartType.Histogram -> {
+            val binSize =
+                (config.x?.grouping as? PivotGrouping.NumberBin)?.size?.trim()?.takeIf { raw ->
+                    raw.toBigDecimalOrNull()?.let { it > BigDecimal.ZERO } == true
+                }
+            if (binSize != null) "Bin size $binSize" else "Auto bins"
+        }
+        ChartType.Scatter,
+        ChartType.Kpi -> if (config.values.isNotEmpty()) "Format & title" else "Title & display"
+        ChartType.Auto,
+        null -> "Title & display"
+    }
+
+internal fun normalizeMeasureAxes(
+    values: List<VisualizationMeasure>,
+): List<VisualizationMeasure> =
+    if (values.none { it.axis == ValueAxis.Primary }) {
+        values.mapIndexed { index, measure ->
+            if (index == 0) measure.copy(axis = ValueAxis.Primary) else measure
+        }
+    } else {
+        values
     }

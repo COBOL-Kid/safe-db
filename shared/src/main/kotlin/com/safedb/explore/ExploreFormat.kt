@@ -1,10 +1,16 @@
 package com.safedb.explore
 
 import java.math.BigDecimal
+import java.math.RoundingMode
 import java.text.DecimalFormat
 import java.text.DecimalFormatSymbols
 import java.util.Currency
 import java.util.Locale
+
+internal fun createGroupedAutoDecimalFormat(locale: Locale = Locale.getDefault()): DecimalFormat =
+    DecimalFormat("#,##0.########", DecimalFormatSymbols.getInstance(locale)).apply {
+        roundingMode = RoundingMode.HALF_EVEN
+    }
 
 fun formatExploreNumber(value: BigDecimal, format: PivotNumberFormat): String {
     if (format.kind == NumberFormatKind.Auto) return value.stripTrailingZeros().toPlainString()

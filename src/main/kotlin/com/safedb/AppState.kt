@@ -21,6 +21,12 @@ enum class ActiveConnectionOrigin {
     Explicit,
 }
 
+sealed interface ConnectionFormRequest {
+    data object New : ConnectionFormRequest
+
+    data class Edit(val connectionId: String) : ConnectionFormRequest
+}
+
 internal enum class SchemaSelectionSource {
     StartupDefault,
     ConnectionHistory,
@@ -85,21 +91,29 @@ class AppState {
     private val _settingsOpen = MutableStateFlow(false)
     val settingsOpen: StateFlow<Boolean> = _settingsOpen.asStateFlow()
 
-    private val _openNewConnectionForm = MutableStateFlow(false)
-    val openNewConnectionForm: StateFlow<Boolean> = _openNewConnectionForm.asStateFlow()
+    private val _connectionFormRequest = MutableStateFlow<ConnectionFormRequest?>(null)
+    val connectionFormRequest: StateFlow<ConnectionFormRequest?> =
+        _connectionFormRequest.asStateFlow()
 
     fun navigate(route: AppRoute) {
         _route.value = route
-        if (route != AppRoute.Connections) _openNewConnectionForm.value = false
+        if (route != AppRoute.Connections) {
+            _connectionFormRequest.value = null
+        }
     }
 
     fun requestNewConnectionForm() {
-        _openNewConnectionForm.value = true
+        _connectionFormRequest.value = ConnectionFormRequest.New
         _route.value = AppRoute.Connections
     }
 
-    fun consumeNewConnectionFormRequest() {
-        _openNewConnectionForm.value = false
+    fun requestEditConnection(connectionId: String) {
+        _connectionFormRequest.value = ConnectionFormRequest.Edit(connectionId)
+        _route.value = AppRoute.Connections
+    }
+
+    fun consumeConnectionFormRequest() {
+        _connectionFormRequest.value = null
     }
 
     internal fun setActiveConnection(

@@ -31,10 +31,8 @@ class ThemePaletteTest {
 
         assertEquals(lightSignals.size, lightSignals.distinct().size)
         assertEquals(darkSignals.size, darkSignals.distinct().size)
-        assertEquals(Color(0xFF0B5ED7), lightScheme().second.actionPrimary)
-        assertEquals(Color(0xFF18222D), lightScheme().second.navigationBackground)
-        assertEquals(Color(0xFF4C8DFF), darkScheme().second.actionPrimary)
-        assertEquals(Color(0xFF6EA2FF), darkScheme().first.primary)
+        assertEquals(lightScheme(ThemePalette.ControlBlue).second, lightScheme().second)
+        assertEquals(darkScheme(ThemePalette.ControlBlue).second, darkScheme().second)
     }
 
     @Test

@@ -243,6 +243,10 @@ class McpCliSettingsTest {
 
     @Test
     fun settingsClearDefaultConnectionClearsBothFields() = runBlocking {
+        assertEquals(
+            McpCommand.SettingsClearDefaultConnection,
+            parseMcpArgs(arrayOf("settings", "clear-default-connection")),
+        )
         val service = RecordingSafeDbService()
         service.settings = Settings(defaultConnectionId = "c1", defaultSchema = "public")
         val io = BufferCliIo()

@@ -1,5 +1,8 @@
 package com.safedb.mcp
 
+import com.safedb.model.QueryResult
+import com.safedb.model.ResultCell
+import com.safedb.model.ResultColumn
 import com.safedb.persist.hasGroupOrOtherPermissions
 import java.nio.file.Files
 import java.nio.file.Path
@@ -208,7 +211,23 @@ class ResultStoreTest {
                         maxBytes = 20,
                         onAfterJsonlWrite = { error("simulated artifact failure") },
                     )
-                val first = store.put(sampleMcpQueryResult(rowCount = 2))
+                val first =
+                    store.put(
+                        QueryResult(
+                            columns = listOf(ResultColumn("payload", "bytea")),
+                            rows =
+                                listOf(
+                                    listOf(ResultCell.binary(byteArrayOf(1, 2, 3, 4))),
+                                    listOf(ResultCell.bool(true)),
+                                    listOf(ResultCell.Null),
+                                    listOf(ResultCell.float(1.5)),
+                                    listOf(ResultCell.integer(9)),
+                                ),
+                            rowCount = 5,
+                            truncated = false,
+                            warnings = emptyList(),
+                        ),
+                    )
                 assertNull(first.artifactPath)
                 assertNull(first.artifactBytes)
                 assertNotNull(store.get(first.resultId))

@@ -31,7 +31,6 @@ import com.safedb.viewmodel.SavedQueriesViewModel
 import com.safedb.viewmodel.SchemaViewModel
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -40,15 +39,6 @@ import kotlinx.coroutines.Dispatchers
 
 @OptIn(ExperimentalComposeUiApi::class)
 class BuilderLargeLimitGuidanceTest {
-    @Test
-    fun guidanceCopyIsOneShortLine() {
-        assertEquals(
-            "Large limit: add filters or pick columns to keep queries fast.",
-            LARGE_LIMIT_GUIDANCE_TEXT,
-        )
-        assertFalse(LARGE_LIMIT_GUIDANCE_TEXT.contains('\n'))
-    }
-
     @Test
     fun queryOptionsButtonStaysOutsideTheFilterPanel() {
         listOf(960, 1400).forEach { width ->

@@ -17,6 +17,8 @@ import com.safedb.model.TransportSecurity
 import com.safedb.model.TransportSecurityMode
 import com.safedb.model.displayName
 import com.safedb.model.validateDriverProperties
+import com.safedb.secrets.MissingPasswordReason
+import com.safedb.secrets.PasswordNotFoundException
 import java.util.UUID
 
 data class DriverPropertyDraft(
@@ -56,6 +58,12 @@ class ConnectionFormState(val original: ConnectionDef? = null) {
     var username by mutableStateOf(original?.username.orEmpty())
     var password by mutableStateOf("")
     var passwordChangeEnabled by mutableStateOf(original == null)
+        private set
+
+    var savedPasswordMissing by mutableStateOf(false)
+        private set
+
+    var passwordFocusRequest by mutableStateOf(0)
         private set
 
     var showPassword by mutableStateOf(false)
@@ -137,11 +145,38 @@ class ConnectionFormState(val original: ConnectionDef? = null) {
         password = ""
         passwordChangeEnabled = true
         showPassword = false
+        passwordFocusRequest += 1
         resetResultState()
     }
 
+    private fun requirePasswordReentry(message: String) {
+        savedPasswordMissing = true
+        enablePasswordChange()
+        testError = message
+    }
+
+    fun handleTestError(error: Throwable) {
+        resetResultState()
+        if (error is PasswordNotFoundException && isEditing && !passwordChangeEnabled) {
+            when (error.reason) {
+                MissingPasswordReason.DisabledOverride ->
+                    testError = error.message ?: error.toString()
+                MissingPasswordReason.MemoryStore ->
+                    requirePasswordReentry(
+                        "Password not found because credentials are held in memory only for this session. Enter the password above to test or save.",
+                    )
+                MissingPasswordReason.NotStored ->
+                    requirePasswordReentry(
+                        "Password not found for this connection. Enter the password above to test or save.",
+                    )
+            }
+        } else {
+            testError = error.message ?: error.toString()
+        }
+    }
+
     fun keepSavedPassword() {
-        if (!isEditing) return
+        if (!isEditing || savedPasswordMissing) return
         password = ""
         passwordChangeEnabled = false
         showPassword = false

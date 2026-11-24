@@ -5,8 +5,12 @@ import com.safedb.explore.ChartType
 import com.safedb.explore.ExploreConfig
 import com.safedb.explore.ExploreSession
 import com.safedb.explore.MeasureFn
+import com.safedb.explore.NumberFormatKind
 import com.safedb.explore.PivotDimension
+import com.safedb.explore.PivotGrouping
 import com.safedb.explore.PivotMeasure
+import com.safedb.explore.PivotNumberFormat
+import com.safedb.explore.ValueAxis
 import com.safedb.explore.VisualizationConfig
 import com.safedb.explore.VisualizationField
 import com.safedb.explore.VisualizationMeasure
@@ -23,6 +27,11 @@ import com.safedb.model.QuerySpec
 import com.safedb.model.ResultCell
 import com.safedb.model.ResultColumn
 import com.safedb.model.TableRef
+import com.safedb.ui.chart.BarLabelFontSizePx
+import com.safedb.ui.chart.LegendEntryLimit
+import com.safedb.ui.chart.categoryLabelStep
+import com.safedb.ui.chart.contrastingBarLabelColor
+import com.safedb.ui.chart.toCssHex
 import java.io.ByteArrayOutputStream
 import kotlin.math.abs
 import kotlin.test.Test
@@ -423,6 +432,84 @@ class HtmlReportWriterTest {
     }
 
     @Test
+    fun horizontalCategoryTicksFollowVerticalLineHeightStep() {
+        val sparseLabels = (0 until 8).map { index -> "c%02d%s".format(index, "x".repeat(21)) }
+        val sparseSample =
+            QueryResult(
+                columns = listOf(ResultColumn("t0__status", "varchar")),
+                rows = sparseLabels.map { listOf(ResultCell.text(it)) },
+                rowCount = sparseLabels.size,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val sparseConfig =
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("t0__status", "Status"),
+                values = listOf(VisualizationMeasure("count", MeasureFn.Count)),
+                barOrientation = BarOrientation.Horizontal,
+            )
+        val sparsePreview =
+            applyVisualization(sparseSample, sparseConfig, session().baseSpec.tables)
+        val sparseChart = buildChartSection(sparsePreview, sparseConfig)
+        val sparseOrdered = sparsePreview.marks.distinctBy { it.xKey }.map { it.xLabel }
+        val sparseBand = (sparseChart.plot[3] - sparseChart.plot[1]).toFloat() / sparseOrdered.size
+        assertTrue(sparseBand > 14f)
+        assertEquals(sparseOrdered, sparseChart.categoryTicks.map { it.label })
+
+        val denseLabels = (0 until 40).map { index -> "c%02d".format(index) }
+        val denseSample =
+            QueryResult(
+                columns = listOf(ResultColumn("t0__status", "varchar")),
+                rows = denseLabels.map { listOf(ResultCell.text(it)) },
+                rowCount = denseLabels.size,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val denseConfig = sparseConfig.copy(topN = 50)
+        val densePreview = applyVisualization(denseSample, denseConfig, session().baseSpec.tables)
+        val denseChart = buildChartSection(densePreview, denseConfig)
+        val denseOrdered = densePreview.marks.distinctBy { it.xKey }.map { it.xLabel }
+        val denseBand = (denseChart.plot[3] - denseChart.plot[1]).toFloat() / denseOrdered.size
+        val step = categoryLabelStep(14f, denseBand)
+        val stride = denseOrdered.indices.filter { it % step == 0 }
+        assertTrue(denseBand < 14f, "Expected dense bands under 14px, was $denseBand")
+        assertTrue(step > 1, "Expected vertical step to skip crowded categories, was $step")
+        assertEquals(stride.map { denseOrdered[it] }, denseChart.categoryTicks.map { it.label })
+    }
+
+    @Test
+    fun legendCapsAtSharedEntryLimit() {
+        val seriesLabels = (0 until 13).map { "s%02d".format(it) }
+        val sample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__status", "varchar"),
+                        ResultColumn("t0__region", "varchar"),
+                    ),
+                rows = seriesLabels.map { listOf(ResultCell.text("only"), ResultCell.text(it)) },
+                rowCount = seriesLabels.size,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val config =
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("t0__status", "Status"),
+                values = listOf(VisualizationMeasure("count", MeasureFn.Count)),
+                series = VisualizationField("t0__region", "Region"),
+            )
+        val preview = applyVisualization(sample, config, session().baseSpec.tables)
+
+        val chart = buildChartSection(preview, config)
+
+        assertEquals(13, preview.series.size)
+        assertEquals(LegendEntryLimit, chart.legend.size)
+        assertEquals(1, chart.legendMore)
+    }
+
+    @Test
     fun linePolylinesPrecedeCirclesAndCarryNoInteraction() {
         val session = session()
         val config =
@@ -542,6 +629,588 @@ class HtmlReportWriterTest {
         assertTrue(rows.none { "kind" in it.jsonObject })
         // The bootstrap must default the omitted kind instead of treating flat rows as grouped.
         assertTrue(REPORT_JS.contains("(r.kind || 'detail')"))
+    }
+
+    @Test
+    fun visualizationChartEmitsBarLabelsOnlyWhenShowLabelsEnabledAndUsesNiceTicks() {
+        val sample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__status", "varchar"),
+                        ResultColumn("t0__amount", "decimal"),
+                    ),
+                rows =
+                    listOf(
+                        listOf(ResultCell.text("Services"), ResultCell.float(3_624_326.7)),
+                        listOf(ResultCell.text("Subscription"), ResultCell.float(1_620_951.78)),
+                    ),
+                rowCount = 2,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val baseConfig =
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("t0__status", "Status"),
+                values = listOf(VisualizationMeasure("sum", MeasureFn.Sum, "t0__amount")),
+                barOrientation = BarOrientation.Horizontal,
+                showLabels = false,
+            )
+
+        val hiddenPreview = applyVisualization(sample, baseConfig, session().baseSpec.tables)
+        val hiddenChart = buildChartSection(hiddenPreview, baseConfig)
+        assertTrue(hiddenChart.shapes.all { it.label == null })
+        assertEquals(listOf("0", "1M", "2M", "3M", "4M"), hiddenChart.valueTicks.map { it.label })
+
+        val shownConfig = baseConfig.copy(showLabels = true)
+        val shownPreview = applyVisualization(sample, shownConfig, session().baseSpec.tables)
+        val shownChart = buildChartSection(shownPreview, shownConfig)
+        assertEquals(listOf("3.6M", "1.6M"), shownChart.shapes.map { it.label })
+        assertTrue(shownChart.shapes.all { it.lx != null && it.ly != null })
+        HTML_SERIES_COLORS.forEachIndexed { index, color ->
+            val expectedHex = contrastingBarLabelColor(color).toCssHex()
+            assertTrue(REPORT_CSS.contains("--s$index: ${color.toCssHex()};"))
+            assertTrue(REPORT_CSS.contains("--s$index-label: $expectedHex;"))
+        }
+    }
+
+    @Test
+    fun visualizationChartPositionsVerticalLabelsOmitsTinyBarsAndAssignsSeriesIndices() {
+        val sample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__status", "varchar"),
+                        ResultColumn("t0__region", "varchar"),
+                        ResultColumn("t0__amount", "decimal"),
+                    ),
+                rows =
+                    listOf(
+                        listOf(
+                            ResultCell.text("Alpha"),
+                            ResultCell.text("A-Series"),
+                            ResultCell.float(1_000_000.0),
+                        ),
+                        listOf(
+                            ResultCell.text("Alpha"),
+                            ResultCell.text("B-Series"),
+                            ResultCell.float(500_000.0),
+                        ),
+                        listOf(
+                            ResultCell.text("Tiny"),
+                            ResultCell.text("A-Series"),
+                            ResultCell.float(1.0),
+                        ),
+                    ),
+                rowCount = 3,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val config =
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("t0__status", "Status"),
+                values = listOf(VisualizationMeasure("sum", MeasureFn.Sum, "t0__amount")),
+                series = VisualizationField("t0__region", "Region"),
+                barOrientation = BarOrientation.Vertical,
+                showLabels = true,
+            )
+        val preview = applyVisualization(sample, config, session().baseSpec.tables)
+        val chart = buildChartSection(preview, config)
+        val labeled = chart.shapes.filter { it.label != null }
+        assertEquals(2, labeled.size)
+        // Vertical bar labels sit near the top of the bar (top + 7.0), and Tiny bar is omitted.
+        assertTrue(labeled.all { shape -> shape.ly == shape.y!! + 7.0 })
+        assertTrue(REPORT_CSS.contains("font-size: ${BarLabelFontSizePx}px"))
+        assertEquals(listOf(0, 1), labeled.map { it.series })
+        assertNull(chart.shapes.last().label)
+    }
+
+    @Test
+    fun groupedBarReportEmitsAllBarLabelsWhileOmittingOverflowingLabels() {
+        val categories = listOf("Services", "Subscription", "Hardware", "Add-on")
+        val segments = listOf("Enterprise", "Mid-Market", "SMB")
+        val rows = categories.flatMapIndexed { cIndex, category ->
+            segments.mapIndexed { sIndex, segment ->
+                listOf(
+                    ResultCell.text(category),
+                    ResultCell.text(segment),
+                    ResultCell.float(514_400.0 - cIndex * 12_000.0 - sIndex * 5_000.0),
+                )
+            }
+        }
+        val sample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__category", "varchar"),
+                        ResultColumn("t0__segment", "varchar"),
+                        ResultColumn("t0__amount", "decimal"),
+                    ),
+                rows = rows,
+                rowCount = rows.size,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val config =
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("t0__category", "Category"),
+                values = listOf(VisualizationMeasure("sum", MeasureFn.Sum, "t0__amount")),
+                series = VisualizationField("t0__segment", "Segment"),
+                barOrientation = BarOrientation.Vertical,
+                showLabels = true,
+            )
+        val preview = applyVisualization(sample, config, session().baseSpec.tables)
+        val chart = buildChartSection(preview, config)
+
+        assertEquals(12, chart.shapes.size)
+        assertEquals(12, chart.shapes.count { it.label != null })
+
+        val longLabelConfig =
+            config.copy(
+                values =
+                    listOf(
+                        VisualizationMeasure(
+                            "sum",
+                            MeasureFn.Sum,
+                            "t0__amount",
+                            numberFormat =
+                                PivotNumberFormat(NumberFormatKind.Currency, decimals = 2),
+                        ),
+                    ),
+            )
+        val longPreview = applyVisualization(sample, longLabelConfig, session().baseSpec.tables)
+        val longChart = buildChartSection(longPreview, longLabelConfig)
+        assertTrue(longChart.shapes.all { it.label == null })
+    }
+
+    @Test
+    fun visualizationScatterTableOmitsUnsetSeriesAndSizeAndIncludesThemWhenConfigured() {
+        val sample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__region", "varchar"),
+                        ResultColumn("t0__qty", "decimal"),
+                        ResultColumn("t0__amount", "decimal"),
+                        ResultColumn("t0__weight", "decimal"),
+                    ),
+                rows =
+                    listOf(
+                        listOf(
+                            ResultCell.text("Europe"),
+                            ResultCell.float(12.5),
+                            ResultCell.float(400.0),
+                            ResultCell.float(3.0),
+                        ),
+                    ),
+                rowCount = 1,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val session = session().copy(sample = sample)
+        val plainConfig =
+            VisualizationConfig(
+                chartType = ChartType.Scatter,
+                x = VisualizationField("t0__qty", "Qty"),
+                values =
+                    listOf(
+                        VisualizationMeasure(
+                            "amt",
+                            MeasureFn.Sum,
+                            "t0__amount",
+                            "Amount",
+                            aggregate = false,
+                        ),
+                    ),
+            )
+        val plainPreview = applyVisualization(sample, plainConfig, session.baseSpec.tables)
+        val plainTable =
+            assertNotNull(buildVisualizationReport(session, plainPreview, plainConfig).table)
+        assertEquals(listOf("Qty", "Amount", "Source rows"), plainTable.columns.map { it.label })
+        assertEquals(listOf(true, true, true), plainTable.columns.map { it.numeric })
+
+        val fullConfig =
+            plainConfig.copy(
+                series = VisualizationField("t0__region", "Region"),
+                size = VisualizationField("t0__weight", "Weight"),
+            )
+        val fullPreview = applyVisualization(sample, fullConfig, session.baseSpec.tables)
+        val fullTable =
+            assertNotNull(buildVisualizationReport(session, fullPreview, fullConfig).table)
+        assertEquals(
+            listOf("Qty", "Amount", "Series", "Size", "Source rows"),
+            fullTable.columns.map { it.label },
+        )
+        assertEquals(listOf(true, true, false, true, true), fullTable.columns.map { it.numeric })
+    }
+
+    @Test
+    fun visualizationTableDeduplicatesSeriesAndKeepsFormattedNumericValuesSortable() {
+        val sample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__status", "varchar"),
+                        ResultColumn("t0__region", "varchar"),
+                        ResultColumn("t0__amount", "decimal"),
+                    ),
+                rows =
+                    listOf(
+                        listOf(
+                            ResultCell.text("Services"),
+                            ResultCell.text("Europe"),
+                            ResultCell.float(3_624_326.7),
+                        ),
+                        listOf(
+                            ResultCell.text("Subscription"),
+                            ResultCell.text("Asia"),
+                            ResultCell.float(1_620_951.78),
+                        ),
+                    ),
+                rowCount = 2,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val session = session().copy(sample = sample)
+        val singleConfig =
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("t0__status", "Status"),
+                values =
+                    listOf(
+                        VisualizationMeasure("sum", MeasureFn.Sum, "t0__amount", "Sum amount"),
+                    ),
+            )
+        val singlePreview = applyVisualization(sample, singleConfig, session.baseSpec.tables)
+        val singleTable =
+            assertNotNull(buildVisualizationReport(session, singlePreview, singleConfig).table)
+
+        assertEquals(
+            listOf("Status", "Measure", "Value", "Source rows"),
+            singleTable.columns.map { it.label },
+        )
+        assertTrue(singleTable.columns[2].numeric)
+        assertEquals(3_624_326.7, singleTable.rows.first().cells[2].n)
+        assertTrue(
+            singleTable.rows.first().cells[2].t.contains("3,624,326.7") ||
+                singleTable.rows.first().cells[2].t.contains("3.624.326,7"),
+        )
+
+        val multiConfig = singleConfig.copy(series = VisualizationField("t0__region", "Region"))
+        val multiPreview = applyVisualization(sample, multiConfig, session.baseSpec.tables)
+        val multiTable =
+            assertNotNull(buildVisualizationReport(session, multiPreview, multiConfig).table)
+
+        assertEquals(
+            listOf("Status", "Series", "Measure", "Value", "Source rows"),
+            multiTable.columns.map { it.label },
+        )
+    }
+
+    @Test
+    fun dualAxisHtmlReportEmitsSecondaryAxisTicksExpandedPlotAndLegendLabels() {
+        val sample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__category", "varchar"),
+                        ResultColumn("t0__amount", "decimal"),
+                    ),
+                rows =
+                    listOf(
+                        listOf(ResultCell.text("Services"), ResultCell.float(3_624_326.7)),
+                        listOf(ResultCell.text("Subscription"), ResultCell.float(1_620_951.78)),
+                    ),
+                rowCount = 2,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val session = session().copy(sample = sample)
+        val verticalConfig =
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("t0__category", "Category"),
+                values =
+                    listOf(
+                        VisualizationMeasure("sum", MeasureFn.Sum, "t0__amount", "Sum line_total"),
+                        VisualizationMeasure(
+                            "distinct",
+                            MeasureFn.CountDistinct,
+                            "t0__category",
+                            "Distinct category",
+                            axis = ValueAxis.Secondary,
+                        ),
+                    ),
+            )
+        val verticalPreview = applyVisualization(sample, verticalConfig, session.baseSpec.tables)
+        val verticalChart =
+            assertNotNull(buildVisualizationReport(session, verticalPreview, verticalConfig).chart)
+        assertTrue(verticalChart.secondaryValueTicks.isNotEmpty())
+        assertTrue(verticalChart.plot[2] < CHART_EXPORT_WIDTH - 28.0)
+        assertEquals(
+            listOf("Sum line_total (left)", "Distinct category (right)"),
+            verticalChart.legend,
+        )
+        assertEquals(4, verticalChart.shapes.size)
+        assertTrue(verticalChart.shapes.all { (it.h ?: 0.0) > 100.0 })
+
+        val horizontalConfig = verticalConfig.copy(barOrientation = BarOrientation.Horizontal)
+        val horizontalPreview =
+            applyVisualization(sample, horizontalConfig, session.baseSpec.tables)
+        val horizontalChart =
+            assertNotNull(
+                buildVisualizationReport(session, horizontalPreview, horizontalConfig).chart,
+            )
+        assertTrue(horizontalChart.secondaryValueTicks.isNotEmpty())
+        // lineHeight 12 + gap 6 * 2
+        assertEquals(24.0, horizontalChart.plot[1])
+        assertEquals(
+            listOf("Sum line_total (bottom)", "Distinct category (top)"),
+            horizontalChart.legend,
+        )
+
+        val lineConfig = verticalConfig.copy(chartType = ChartType.Line)
+        val linePreview = applyVisualization(sample, lineConfig, session.baseSpec.tables)
+        val lineChart =
+            assertNotNull(buildVisualizationReport(session, linePreview, lineConfig).chart)
+        assertTrue(lineChart.secondaryValueTicks.isNotEmpty())
+        assertEquals(
+            listOf("Sum line_total (left)", "Distinct category (right)"),
+            lineChart.legend,
+        )
+        assertTrue(REPORT_JS.contains("chart.secondaryValueTicks"))
+    }
+
+    @Test
+    fun horizontalSvgTicksClampInsidePlotLeftAndInsetsMeasureTruncatedTrailingLabels() {
+        val scatterSample =
+            QueryResult(
+                columns =
+                    listOf(ResultColumn("t0__x", "decimal"), ResultColumn("t0__y", "decimal")),
+                rows =
+                    listOf(
+                        listOf(
+                            ResultCell.float(100_000_000_000.0),
+                            ResultCell.float(10.0),
+                        ),
+                        listOf(
+                            ResultCell.float(200_000_000_000.0),
+                            ResultCell.float(20.0),
+                        ),
+                    ),
+                rowCount = 2,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val scatterSession = session().copy(sample = scatterSample)
+        val scatterConfig =
+            VisualizationConfig(
+                chartType = ChartType.Scatter,
+                x = VisualizationField("t0__x", "X"),
+                values =
+                    listOf(
+                        VisualizationMeasure(
+                            "y",
+                            MeasureFn.Sum,
+                            "t0__y",
+                            "Y",
+                            aggregate = false,
+                        ),
+                    ),
+            )
+        val scatterPreview =
+            applyVisualization(scatterSample, scatterConfig, scatterSession.baseSpec.tables)
+        val scatterChart =
+            assertNotNull(
+                buildVisualizationReport(scatterSession, scatterPreview, scatterConfig).chart,
+            )
+        val firstTick = scatterChart.categoryTicks.first()
+        val firstWidth = firstTick.label.length * 7.0 + 4.0
+        assertTrue(
+            firstTick.pos - firstWidth / 2.0 >= scatterChart.plot[0] - 0.1,
+            "Expected leftmost tick (${firstTick.pos}) to stay right of plot left (${scatterChart.plot[0]})",
+        )
+
+        val longLabel = "VeryLongTrailingCategoryNameThatExceedsTwentyFourCharacters"
+        val truncatedLabel = longLabel.take(23) + "…"
+        val longSample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__cat", "varchar"),
+                        ResultColumn("t0__amount", "bigint"),
+                    ),
+                rows =
+                    listOf(
+                        listOf(ResultCell.text("Alpha"), ResultCell.integer(10)),
+                        listOf(ResultCell.text(longLabel), ResultCell.integer(20)),
+                    ),
+                rowCount = 2,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val truncatedSample =
+            longSample.copy(
+                rows =
+                    listOf(
+                        listOf(ResultCell.text("Alpha"), ResultCell.integer(10)),
+                        listOf(ResultCell.text(truncatedLabel), ResultCell.integer(20)),
+                    ),
+            )
+        val barConfig =
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("t0__cat", "Category"),
+                values = listOf(VisualizationMeasure("sum", MeasureFn.Sum, "t0__amount", "Amount")),
+            )
+        val longSession = session().copy(sample = longSample)
+        val longChart =
+            assertNotNull(
+                buildVisualizationReport(
+                        longSession,
+                        applyVisualization(longSample, barConfig, longSession.baseSpec.tables),
+                        barConfig,
+                    )
+                    .chart,
+            )
+        val truncatedSession = session().copy(sample = truncatedSample)
+        val truncatedChart =
+            assertNotNull(
+                buildVisualizationReport(
+                        truncatedSession,
+                        applyVisualization(
+                            truncatedSample,
+                            barConfig,
+                            truncatedSession.baseSpec.tables,
+                        ),
+                        barConfig,
+                    )
+                    .chart,
+            )
+        assertEquals(truncatedChart.plot[2], longChart.plot[2])
+    }
+
+    @Test
+    fun histogramCategoryTicksSkipEvenlyAtBinSize500() {
+        val tables = session().baseSpec.tables
+        for (binCount in listOf(18, 20)) {
+            val sample =
+                QueryResult(
+                    columns = listOf(ResultColumn("t0__amount", "decimal")),
+                    rows =
+                        List(binCount) { index -> listOf(ResultCell.float(index * 500.0 + 250.0)) },
+                    rowCount = binCount,
+                    truncated = false,
+                    warnings = emptyList(),
+                )
+            val config =
+                VisualizationConfig(
+                    chartType = ChartType.Histogram,
+                    x =
+                        VisualizationField(
+                            "t0__amount",
+                            "line_total",
+                            grouping = PivotGrouping.NumberBin("500"),
+                        ),
+                )
+            val preview = applyVisualization(sample, config, tables)
+            val chart = buildChartSection(preview, config)
+            val lowers = chart.categoryTicks.map { it.label.substringBefore(" – ").toInt() }
+            val deltas = lowers.zipWithNext { a, b -> b - a }.distinct()
+
+            assertEquals(0, lowers.first(), "Expected first bin at 0 for $binCount bins")
+            assertTrue(lowers.size >= 5, "Expected multiple ticks for $binCount bins")
+            assertEquals(
+                1,
+                deltas.size,
+                "Expected uniform bin-label stride for $binCount bins, got $lowers",
+            )
+            chart.categoryTicks.forEach { tick ->
+                val halfWidth = (tick.label.length * 7.0 + 4.0) / 2.0
+                assertTrue(tick.pos - halfWidth >= chart.plot[0] - 0.1)
+                assertTrue(tick.pos + halfWidth <= chart.width + 0.1)
+            }
+            chart.categoryTicks.zipWithNext().forEach { (left, right) ->
+                val leftRight = left.pos + (left.label.length * 7.0 + 4.0) / 2.0
+                val rightLeft = right.pos - (right.label.length * 7.0 + 4.0) / 2.0
+                assertTrue(
+                    leftRight + 5.8 <= rightLeft,
+                    "Expected >= 6px gap between ${left.label} and ${right.label}",
+                )
+            }
+        }
+    }
+
+    @Test
+    fun histogramWithEmptyIntermediateBinPreservesUniformTickStrideAtBinSize500() {
+        val tables = session().baseSpec.tables
+        for (missingBinIndex in listOf(7, 8)) {
+            val rows =
+                (0 until 27)
+                    .filter { it != missingBinIndex }
+                    .map { index -> listOf(ResultCell.float(index * 500.0 + 250.0)) }
+            val sample =
+                QueryResult(
+                    columns = listOf(ResultColumn("t0__amount", "decimal")),
+                    rows = rows,
+                    rowCount = rows.size,
+                    truncated = false,
+                    warnings = emptyList(),
+                )
+            val config =
+                VisualizationConfig(
+                    chartType = ChartType.Histogram,
+                    x =
+                        VisualizationField(
+                            "t0__amount",
+                            "line_total",
+                            grouping = PivotGrouping.NumberBin("500"),
+                        ),
+                    showLabels = true,
+                )
+            val preview = applyVisualization(sample, config, tables)
+            assertEquals(27, preview.marks.size)
+            val emptyMark = preview.marks[missingBinIndex]
+            assertEquals(
+                "${missingBinIndex * 500} – ${(missingBinIndex + 1) * 500}",
+                emptyMark.xLabel,
+            )
+            assertEquals(0.0, emptyMark.y)
+            assertTrue(emptyMark.sourceRowIndices.isEmpty())
+
+            val chart = buildChartSection(preview, config)
+            assertEquals(27, chart.shapes.size)
+            val emptyShape = chart.shapes[missingBinIndex]
+            assertEquals(0.0, emptyShape.h)
+            assertNull(emptyShape.d)
+            assertNull(emptyShape.label)
+
+            val lowers = chart.categoryTicks.map { it.label.substringBefore(" – ").toInt() }
+            val deltas = lowers.zipWithNext { a, b -> b - a }.distinct()
+            assertEquals(0, lowers.first())
+            assertTrue(lowers.size >= 5, "Expected multiple ticks, got $lowers")
+            assertEquals(
+                listOf(2000),
+                deltas,
+                "Expected uniform 2000-step label stride when bin $missingBinIndex is empty, got $lowers",
+            )
+            chart.categoryTicks.forEach { tick ->
+                val halfWidth = (tick.label.length * 7.0 + 4.0) / 2.0
+                assertTrue(tick.pos - halfWidth >= chart.plot[0] - 0.1)
+                assertTrue(tick.pos + halfWidth <= chart.width + 0.1)
+            }
+            chart.categoryTicks.zipWithNext().forEach { (left, right) ->
+                val leftRight = left.pos + (left.label.length * 7.0 + 4.0) / 2.0
+                val rightLeft = right.pos - (right.label.length * 7.0 + 4.0) / 2.0
+                assertTrue(
+                    leftRight + 5.8 <= rightLeft,
+                    "Expected >= 6px gap between ${left.label} and ${right.label}",
+                )
+            }
+        }
     }
 
     private fun pivotConfig() =

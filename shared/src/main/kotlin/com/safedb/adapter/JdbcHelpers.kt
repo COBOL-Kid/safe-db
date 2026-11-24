@@ -47,8 +47,12 @@ fun buildJdbcUrl(def: ConnectionDef): String =
         Dialect.Db2 -> buildDb2Url(def)
     }
 
-fun createDataSource(def: ConnectionDef, password: String): HikariDataSource =
-    HikariDataSource(createDataSourceConfig(def, password))
+fun createDataSource(
+    def: ConnectionDef,
+    password: String,
+    connectTimeoutMs: Long = CONNECT_TIMEOUT_MS,
+): HikariDataSource =
+    HikariDataSource(createDataSourceConfig(def, password, connectTimeoutMs = connectTimeoutMs))
 
 fun closeDataSource(dataSource: HikariDataSource) = dataSource.close()
 
@@ -56,6 +60,7 @@ internal fun createDataSourceConfig(
     def: ConnectionDef,
     password: String,
     launchProfilePostgresRootCert: String? = System.getProperty(POSTGRES_LAUNCH_ROOT_CERT_PROPERTY),
+    connectTimeoutMs: Long = CONNECT_TIMEOUT_MS,
 ): HikariConfig {
     val config = HikariConfig()
     config.jdbcUrl = buildJdbcUrl(def)
@@ -63,7 +68,7 @@ internal fun createDataSourceConfig(
     config.password = password
     config.maximumPoolSize = 1
     config.minimumIdle = 0
-    config.connectionTimeout = CONNECT_TIMEOUT_MS
+    config.connectionTimeout = connectTimeoutMs
     config.isReadOnly = true
     def.driverProperties.forEach { property ->
         config.addDataSourceProperty(property.name, property.value)
@@ -76,13 +81,17 @@ internal fun createDataSourceConfig(
         Dialect.Db2 -> applyDb2Ssl(config, def)
     }
     // Applied last so a pasted driver property cannot disable the connect deadline.
-    applyConnectTimeouts(config, def.dialect)
+    applyConnectTimeouts(config, def.dialect, connectTimeoutMs)
     return config
 }
 
-internal fun applyConnectTimeouts(config: HikariConfig, dialect: Dialect) {
-    val connectSeconds = (CONNECT_TIMEOUT_MS / 1000L).toString()
-    val connectMillis = CONNECT_TIMEOUT_MS.toString()
+internal fun applyConnectTimeouts(
+    config: HikariConfig,
+    dialect: Dialect,
+    connectTimeoutMs: Long = CONNECT_TIMEOUT_MS,
+) {
+    val connectSeconds = (connectTimeoutMs / 1000L).coerceAtLeast(1L).toString()
+    val connectMillis = connectTimeoutMs.toString()
     val readSeconds = (INTROSPECTION_TIMEOUT_MS / 1000L).toString()
     val readMillis = INTROSPECTION_TIMEOUT_MS.toString()
     when (dialect) {

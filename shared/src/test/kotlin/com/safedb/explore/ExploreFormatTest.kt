@@ -71,6 +71,16 @@ class ExploreFormatTest {
         assertEquals("9007199254740993", fmt("9007199254740993", format))
     }
 
+    @Test
+    fun groupedAutoFormatHonorsLocaleStripsTrailingZerosAndUsesHalfEven() {
+        val us = createGroupedAutoDecimalFormat(Locale.US)
+        val germany = createGroupedAutoDecimalFormat(Locale.GERMANY)
+        assertEquals("1,234,567.5", us.format(BigDecimal("1234567.500")))
+        assertEquals("1.234.567,5", germany.format(BigDecimal("1234567.500")))
+        assertEquals("0.12345678", us.format(BigDecimal("0.123456785")))
+        assertEquals("0.1234568", us.format(BigDecimal("0.123456795")))
+    }
+
     private fun fmt(
         value: String,
         format: PivotNumberFormat,

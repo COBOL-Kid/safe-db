@@ -11,6 +11,24 @@ import com.safedb.model.SortDirection
 import com.zaxxer.hikari.HikariDataSource
 import java.util.UUID
 
+internal fun oracleEncodeConnectQueryValue(value: String): String =
+    buildString(value.length) {
+        for (byte in value.toByteArray()) {
+            val ch = byte.toInt().toChar()
+            if (isSafeOracleConnectChar(ch)) append(ch) else append("%${"%02X".format(byte)}")
+        }
+    }
+
+private fun isSafeOracleConnectChar(ch: Char): Boolean = ch.isLetterOrDigit() || ch in "-_./"
+
+internal fun oracleValidateConnectField(field: String, label: String): Result<Unit> {
+    if (field.isEmpty()) return Result.failure(IllegalArgumentException("$label must not be empty"))
+    if (field.any { !(it.isLetterOrDigit() || it == '.' || it == '-' || it == '_') }) {
+        return Result.failure(IllegalArgumentException("$label contains invalid characters"))
+    }
+    return Result.success(Unit)
+}
+
 object OracleAdapter {
     private val blockedOwners =
         setOf(
@@ -48,23 +66,10 @@ object OracleAdapter {
             "APEX_040200",
         )
 
-    fun encodeConnectQueryValue(value: String): String =
-        buildString(value.length) {
-            for (byte in value.toByteArray()) {
-                val ch = byte.toInt().toChar()
-                if (ch.isLetterOrDigit() || ch in "-_./") append(ch)
-                else append("%${"%02X".format(byte)}")
-            }
-        }
+    fun encodeConnectQueryValue(value: String): String = oracleEncodeConnectQueryValue(value)
 
-    fun validateConnectField(field: String, label: String): Result<Unit> {
-        if (field.isEmpty())
-            return Result.failure(IllegalArgumentException("$label must not be empty"))
-        if (field.any { !(it.isLetterOrDigit() || it == '.' || it == '-' || it == '_') }) {
-            return Result.failure(IllegalArgumentException("$label contains invalid characters"))
-        }
-        return Result.success(Unit)
-    }
+    fun validateConnectField(field: String, label: String): Result<Unit> =
+        oracleValidateConnectField(field, label)
 
     fun test(dataSource: HikariDataSource): String =
         probeVersion(dataSource, $$"SELECT banner FROM v$version WHERE banner LIKE 'Oracle%'")

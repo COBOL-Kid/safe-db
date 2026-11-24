@@ -17,8 +17,10 @@ class SqlEditorViewModel(
     service: SafeDbService,
     scope: CoroutineScope,
     onRunFinished: () -> Unit = {},
+    onConnectionReachable: (String) -> Unit = {},
 ) {
-    private val runController = QueryRunController(service, scope, onRunFinished)
+    private val runController =
+        QueryRunController(service, scope, onRunFinished, onConnectionReachable)
     private var observedParsedSpec = false
     private var lastParsedSpec: QuerySpec? = null
 

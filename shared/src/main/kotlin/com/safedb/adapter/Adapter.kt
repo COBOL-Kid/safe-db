@@ -231,21 +231,34 @@ sealed class Adapter {
     }
 
     companion object {
-        suspend fun connect(def: ConnectionDef, password: String): Adapter {
+        suspend fun connect(
+            def: ConnectionDef,
+            password: String,
+            connectTimeoutMs: Long = CONNECT_TIMEOUT_MS,
+        ): Adapter {
             def.validate().getOrElse { throw IllegalArgumentException(it.message) }
             return try {
                 // Driver connect/login timeouts enforce the handshake deadline inside JDBC.
                 // runInterruptible is a second hard stop: withTimeout alone cannot unblock
                 // a thread stuck in native poll (pgjdbc doAuthentication).
-                withTimeout(CONNECT_TIMEOUT_MS.milliseconds) {
+                withTimeout(connectTimeoutMs.milliseconds) {
                     runInterruptible(Dispatchers.IO) {
                         when (def.dialect) {
-                            Dialect.Postgres -> Postgres(createDataSource(def, password))
-                            Dialect.MySql -> MySql(createDataSource(def, password))
+                            Dialect.Postgres ->
+                                Postgres(createDataSource(def, password, connectTimeoutMs))
+                            Dialect.MySql ->
+                                MySql(createDataSource(def, password, connectTimeoutMs))
                             Dialect.Mssql ->
-                                Mssql(MssqlState(createDataSource(def, password), def, password))
-                            Dialect.Oracle -> Oracle(createDataSource(def, password))
-                            Dialect.Db2 -> Db2(createDataSource(def, password))
+                                Mssql(
+                                    MssqlState(
+                                        createDataSource(def, password, connectTimeoutMs),
+                                        def,
+                                        password,
+                                    ),
+                                )
+                            Dialect.Oracle ->
+                                Oracle(createDataSource(def, password, connectTimeoutMs))
+                            Dialect.Db2 -> Db2(createDataSource(def, password, connectTimeoutMs))
                         }
                     }
                 }

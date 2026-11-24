@@ -7,6 +7,7 @@ import com.safedb.explore.ExploreMode
 import com.safedb.explore.ExploreRecipe
 import com.safedb.explore.MeasureFn
 import com.safedb.explore.RecipeField
+import com.safedb.explore.ValueAxis
 import com.safedb.explore.VisualizationConfig
 import com.safedb.explore.VisualizationField
 import com.safedb.explore.VisualizationMeasure
@@ -123,6 +124,58 @@ class RecipeStoreTest {
         assertEquals(ChartType.Auto, imported.visualization?.chartType)
         assertFalse(imported.visualization?.isConfigured() ?: true)
         assertTrue(imported.worksheet?.columnLayout?.isEmpty() == true)
+    }
+
+    @Test
+    fun visualizationMeasureAxisRoundTripsAndLegacyJsonDefaultsToPrimary() {
+        val store = RecipeStore.new(Files.createTempDirectory("recipe-viz-axis"))
+        val recipe =
+            ExploreRecipe(
+                id = "dual",
+                name = "Dual axis",
+                createdAt = "1",
+                updatedAt = "1",
+                defaultMode = ExploreMode.Visualization,
+                visualization =
+                    VisualizationConfig(
+                        chartType = ChartType.Bar,
+                        x = VisualizationField("status"),
+                        values =
+                            listOf(
+                                VisualizationMeasure("amount", MeasureFn.Sum, "amount"),
+                                VisualizationMeasure(
+                                    "count",
+                                    MeasureFn.Count,
+                                    axis = ValueAxis.Secondary,
+                                ),
+                            ),
+                    ),
+            )
+
+        store.save(recipe)
+        val loaded = store.list().single().visualization!!
+        assertEquals(listOf(ValueAxis.Primary, ValueAxis.Secondary), loaded.values.map { it.axis })
+
+        val legacyJson =
+            """
+            {
+              "schemaVersion": 1,
+              "id": "legacy",
+              "name": "Legacy",
+              "createdAt": "1",
+              "updatedAt": "1",
+              "defaultMode": "Visualization",
+              "visualization": {
+                "schemaVersion": 1,
+                "chartType": "Bar",
+                "x": {"column": "status", "label": "status"},
+                "values": [{"alias": "amount", "fn": "Sum", "sourceColumn": "amount"}]
+              }
+            }
+            """
+                .trimIndent()
+        val importedLegacy = store.importJson(legacyJson, "2").visualization!!
+        assertEquals(ValueAxis.Primary, importedLegacy.values.single().axis)
     }
 
     @Test

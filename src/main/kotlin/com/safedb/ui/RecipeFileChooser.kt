@@ -2,26 +2,23 @@ package com.safedb.ui
 
 import java.awt.Component
 import java.io.File
-import javax.swing.JFileChooser
+import javax.swing.filechooser.FileNameExtensionFilter
 
 internal fun chooseRecipeFile(
     open: Boolean,
     suggestedName: String = "explore-recipe",
     parent: Component? = null,
 ): File? {
-    val safeName =
-        suggestedName.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').ifBlank {
-            "explore-recipe"
-        }
-    val chooser =
-        createAppFileChooser().apply {
-            dialogTitle = if (open) "Import Explore recipe" else "Export Explore recipe"
-            if (!open) selectedFile = File("$safeName.safedb-recipe.json")
-        }
-    val result = if (open) chooser.showOpenDialog(parent) else chooser.showSaveDialog(parent)
-    if (result != JFileChooser.APPROVE_OPTION) return null
-    if (open) return chooser.selectedFile
-    val selected = chooser.selectedFile
-    return if (selected.name.endsWith(".json")) selected
+    val safeName = sanitizeFileNameSegment(suggestedName, "explore-recipe")
+    val selected =
+        chooseAppFile(
+            open = open,
+            title = if (open) "Import Explore recipe" else "Export Explore recipe",
+            suggestedFileName = if (open) null else "$safeName.safedb-recipe.json",
+            extensionFilter = FileNameExtensionFilter("Safe-DB recipes (*.json)", "json"),
+            parent = parent,
+        ) ?: return null
+    if (open) return selected
+    return if (selected.name.endsWith(".json", ignoreCase = true)) selected
     else File("${selected.path}.safedb-recipe.json")
 }

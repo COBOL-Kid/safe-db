@@ -202,4 +202,27 @@ class ResultSummaryTest {
         assertEquals(JsonPrimitive("1420"), column.min)
         assertEquals(JsonPrimitive("890"), column.max)
     }
+
+    @Test
+    fun floatColumnIgnoresNaNInMinMaxAndHandlesAllNaN() {
+        val mixed =
+            QueryResult(
+                columns =
+                    listOf(ResultColumn("score", "float8"), ResultColumn("nan_only", "float8")),
+                rows =
+                    listOf(
+                        listOf(ResultCell.float(Double.NaN), ResultCell.float(Double.NaN)),
+                        listOf(ResultCell.float(3.5), ResultCell.Null),
+                        listOf(ResultCell.float(-1.25), ResultCell.float(Double.NaN)),
+                    ),
+                rowCount = 3,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val columns = summarizeColumns(mixed)
+        assertEquals(JsonPrimitive(-1.25), columns[0].min)
+        assertEquals(JsonPrimitive(3.5), columns[0].max)
+        assertNull(columns[1].min)
+        assertNull(columns[1].max)
+    }
 }

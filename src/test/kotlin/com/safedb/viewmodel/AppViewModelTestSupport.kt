@@ -87,6 +87,8 @@ internal class FakeSafeDbService(
         locked = true
     }
 
+    override suspend fun updateConnection(def: ConnectionDef, password: String?) = Unit
+
     override suspend fun testConnection(def: ConnectionDef, password: String?): String {
         testConnectionCalls += 1
         testConnectionPassword = password

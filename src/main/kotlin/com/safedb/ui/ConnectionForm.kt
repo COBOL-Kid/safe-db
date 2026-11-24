@@ -1,6 +1,7 @@
 package com.safedb.ui
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -41,6 +43,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,7 +51,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -96,18 +103,17 @@ fun ConnectionForm(
 ) {
     val form = remember(existingConnection?.id) { ConnectionFormState(existingConnection) }
     val scope = rememberCoroutineScope()
-    var mounted by remember { mutableStateOf(true) }
-    DisposableEffect(Unit) { onDispose { mounted = false } }
+    val active = remember(form) { mutableStateOf(true) }
+    DisposableEffect(active) { onDispose { active.value = false } }
 
     fun handleTest() {
+        form.resetResultState()
         val validationError = form.validateForm()
         if (validationError != null) {
             form.testError = validationError
             return
         }
         form.testing = true
-        form.testResult = null
-        form.testError = null
         scope.launch {
             try {
                 form.testResult =
@@ -118,7 +124,7 @@ fun ConnectionForm(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                form.testError = error.message ?: error.toString()
+                form.handleTestError(error)
             } finally {
                 form.testing = false
             }
@@ -126,13 +132,13 @@ fun ConnectionForm(
     }
 
     fun handleSave() {
+        form.resetResultState()
         val validationError = form.validateForm()
         if (validationError != null) {
             form.formError = validationError
             return
         }
         form.saving = true
-        form.formError = null
         val def = form.buildDef()
         val password = form.passwordForOperation()
         val editing = form.isEditing
@@ -144,7 +150,7 @@ fun ConnectionForm(
             credentialMaterialChanged = credentialMaterialChanged,
             onConnectionChanged = onConnectionChanged,
         ) { outcome ->
-            if (!mounted) return@saveConnection
+            if (!active.value) return@saveConnection
             form.saving = false
             outcome.fold(
                 onSuccess = { saved ->
@@ -166,42 +172,60 @@ fun ConnectionForm(
         shadowElevation = 0.dp,
     ) {
         Column(Modifier.fillMaxSize()) {
-            Column(
-                modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp),
-            ) {
-                ConnectionStringInput(form)
-                OrDetailsDivider()
-                BoxWithConstraints(Modifier.fillMaxWidth()) {
-                    if (maxWidth < 780.dp) {
-                        Column(verticalArrangement = Arrangement.spacedBy(22.dp)) {
-                            MainConnectionFields(form)
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                            AdvancedConnectionFields(form)
-                        }
-                    } else {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(24.dp),
-                        ) {
-                            Box(Modifier.weight(1.15f)) { MainConnectionFields(form) }
-                            VerticalDivider(
-                                modifier = Modifier.fillMaxHeight(),
-                                color = MaterialTheme.colorScheme.outlineVariant,
-                            )
-                            Box(Modifier.weight(0.95f)) { AdvancedConnectionFields(form) }
+            val scrollState = rememberScrollState()
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.fillMaxSize().verticalScroll(scrollState).padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(18.dp),
+                ) {
+                    ConnectionStringInput(form)
+                    OrDetailsDivider()
+                    BoxWithConstraints(Modifier.fillMaxWidth()) {
+                        if (maxWidth < 780.dp) {
+                            Column(verticalArrangement = Arrangement.spacedBy(22.dp)) {
+                                MainConnectionFields(form)
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                                AdvancedConnectionFields(form)
+                            }
+                        } else {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(24.dp),
+                            ) {
+                                Box(Modifier.weight(1.15f)) { MainConnectionFields(form) }
+                                VerticalDivider(
+                                    modifier = Modifier.fillMaxHeight(),
+                                    color = MaterialTheme.colorScheme.outlineVariant,
+                                )
+                                Box(Modifier.weight(0.95f)) { AdvancedConnectionFields(form) }
+                            }
                         }
                     }
-                }
 
-                form.parseWarnings.forEach { warning ->
-                    MessageBanner(text = warning, kind = BannerKind.WARNING)
+                    form.parseWarnings.forEach { warning ->
+                        MessageBanner(text = warning, kind = BannerKind.WARNING)
+                    }
                 }
-                form.testResult?.let {
-                    MessageBanner(text = "Connected - $it", kind = BannerKind.SUCCESS)
+                VerticalScrollbar(
+                    adapter = rememberScrollbarAdapter(scrollState),
+                    modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+                )
+            }
+
+            if (form.testResult != null || form.testError != null || form.formError != null) {
+                Column(
+                    modifier =
+                        Modifier.fillMaxWidth()
+                            .padding(horizontal = 20.dp)
+                            .padding(top = 8.dp, bottom = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    form.testResult?.let {
+                        MessageBanner(text = "Connected - $it", kind = BannerKind.SUCCESS)
+                    }
+                    form.testError?.let { MessageBanner(text = it, kind = BannerKind.ERROR) }
+                    form.formError?.let { MessageBanner(text = it, kind = BannerKind.ERROR) }
                 }
-                form.testError?.let { MessageBanner(text = it, kind = BannerKind.ERROR) }
-                form.formError?.let { MessageBanner(text = it, kind = BannerKind.ERROR) }
             }
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -359,6 +383,12 @@ private fun MainConnectionFields(form: ConnectionFormState) {
 
 @Composable
 private fun PasswordField(form: ConnectionFormState) {
+    val passwordFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(form.passwordFocusRequest) {
+        if (form.passwordChangeEnabled && form.passwordFocusRequest > 0) {
+            passwordFocusRequester.requestFocus()
+        }
+    }
     if (form.isEditing && !form.passwordChangeEnabled) {
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             OutlinedTextField(
@@ -369,7 +399,12 @@ private fun PasswordField(form: ConnectionFormState) {
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodyMedium,
                 label = { CompactFieldLabel("Password") },
-                trailingIcon = { PlainTextAction("Change", onClick = form::enablePasswordChange) },
+                trailingIcon = {
+                    PlainTextAction(
+                        "Change",
+                        onClick = form::enablePasswordChange,
+                    )
+                },
             )
             if (form.credentialMaterialChanged()) {
                 Text(
@@ -384,7 +419,10 @@ private fun PasswordField(form: ConnectionFormState) {
             OutlinedTextField(
                 value = form.password,
                 onValueChange = form::updatePassword,
-                modifier = Modifier.fillMaxWidth().height(CompactFieldHeight),
+                modifier =
+                    Modifier.fillMaxWidth()
+                        .height(CompactFieldHeight)
+                        .focusRequester(passwordFocusRequester),
                 textStyle = MaterialTheme.typography.bodyMedium,
                 label = { CompactFieldLabel("Password") },
                 placeholder = { CompactFieldPlaceholder("Enter password") },
@@ -406,7 +444,7 @@ private fun PasswordField(form: ConnectionFormState) {
                     )
                 },
             )
-            if (form.isEditing) {
+            if (form.isEditing && !form.savedPasswordMissing) {
                 PlainTextAction("Keep saved password", onClick = form::keepSavedPassword)
             }
         }
@@ -746,7 +784,9 @@ private fun PlainTextAction(
 ) {
     Row(
         modifier =
-            Modifier.clickable(onClick = onClick).padding(horizontal = 6.dp, vertical = 6.dp),
+            Modifier.pointerHoverIcon(PointerIcon.Hand)
+                .clickable(onClick = onClick)
+                .padding(horizontal = 8.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

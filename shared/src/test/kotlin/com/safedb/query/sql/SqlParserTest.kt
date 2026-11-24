@@ -434,4 +434,35 @@ class SqlParserTest {
             Locale.setDefault(previous)
         }
     }
+
+    @Test
+    fun parsesLessThanAndRejectsConflictingLimitsArithmeticAndFunctions() {
+        val ltAst = parse("SELECT id FROM users WHERE id < 10")
+        assertEquals(FilterOp.Lt, assertIs<SqlConditionAst.Predicate>(ltAst.where).op)
+
+        assertEquals(
+            SqlIssueCode.Syntax,
+            failParse("SELECT TOP 5 id FROM users LIMIT 5", Dialect.Mssql).code,
+        )
+        assertEquals(
+            SqlIssueCode.Syntax,
+            failParse("SELECT TOP 5 id FROM users FETCH FIRST 5 ROWS ONLY", Dialect.Mssql).code,
+        )
+        assertEquals(
+            SqlIssueCode.Unsupported,
+            failParse("SELECT a, * FROM users").code,
+        )
+        assertEquals(
+            SqlIssueCode.Unsupported,
+            failParse("SELECT COUNT(id) FROM users").code,
+        )
+        assertEquals(
+            SqlIssueCode.Unsupported,
+            failParse("SELECT id FROM users WHERE id + 1 = 2").code,
+        )
+        assertEquals(
+            SqlIssueCode.Unsupported,
+            failParse("SELECT id FROM users ORDER BY LOWER(name)").code,
+        )
+    }
 }

@@ -1,9 +1,7 @@
 package com.safedb.ui
 
-import androidx.compose.ui.unit.dp
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 class AppShellTransitionTest {
     @Test
@@ -24,12 +22,5 @@ class AppShellTransitionTest {
         assertEquals(false, shouldShowSettingsPanel(requested = false, initialLoading = true))
         assertEquals(false, shouldShowSettingsPanel(requested = true, initialLoading = true))
         assertEquals(true, shouldShowSettingsPanel(requested = true, initialLoading = false))
-    }
-
-    @Test
-    fun `nav icon rail offset stays ahead of the label slot`() {
-        val iconStartOffset = 12.dp
-        assertEquals(41.dp, navButtonLabelStartOffset())
-        assertTrue(navButtonLabelStartOffset() > iconStartOffset)
     }
 }

@@ -33,11 +33,6 @@ class McpCliTest {
         assertTrue(add is McpCommand.ConnectionsAdd)
         assertEquals("mysql", setup.flags.dialect)
         assertEquals("mysql", add.flags.dialect)
-        assertTrue(
-            MCP_USAGE.contains(
-                "safe-db-mcp setup --dialect mysql --database app --username readonly --password-file /absolute/path",
-            ),
-        )
     }
 
     @Test
@@ -85,93 +80,97 @@ class McpCliTest {
 
     @Test
     fun invalidTransportExits2WithoutSaving() = runBlocking {
-        val directory = Files.createTempDirectory("safedb-mcp-cli")
-        val passwordFile = writeOwnerOnlyPasswordFile(directory, "secret")
-        val command =
-            parseMcpArgs(
-                validNonInteractiveAddArgs(passwordFile) + arrayOf("--transport", "opportunistic"),
-            )
-        val service = RecordingSafeDbService()
-        val io = BufferCliIo()
+        withTempDir { directory ->
+            val passwordFile = writeOwnerOnlyPasswordFile(directory, "secret")
+            val command =
+                parseMcpArgs(
+                    validNonInteractiveAddArgs(passwordFile) +
+                        arrayOf("--transport", "opportunistic"),
+                )
+            val service = RecordingSafeDbService()
+            val io = BufferCliIo()
 
-        assertEquals(2, executeMcpCommand(command, service, io, tty = false))
-        assertTrue(service.connections.isEmpty())
-        assertTrue(io.stderr.toString().contains("Unknown transport 'opportunistic'"))
-        assertFalse(io.stderr.toString().contains("secret"))
+            assertEquals(2, executeMcpCommand(command, service, io, tty = false))
+            assertTrue(service.connections.isEmpty())
+            assertTrue(io.stderr.toString().contains("Unknown transport 'opportunistic'"))
+            assertFalse(io.stderr.toString().contains("secret"))
+        }
     }
 
     @Test
     fun addWithFlagsTestsThenSaves() = runBlocking {
-        val directory = Files.createTempDirectory("safedb-mcp-cli")
-        val passwordFile = writeOwnerOnlyPasswordFile(directory, "hunter2\n")
-        val service = RecordingSafeDbService()
-        val io = BufferCliIo()
-        val command =
-            parseMcpArgs(
-                arrayOf(
-                    "connections",
-                    "add",
-                    "--name",
-                    "Tailscale mysql",
-                    "--dialect",
-                    "mysql",
-                    "--host",
-                    "db.example",
-                    "--port",
-                    "3306",
-                    "--database",
-                    "app",
-                    "--username",
-                    "readonly",
-                    "--transport",
-                    "disabled",
-                    "--password-file",
-                    passwordFile.toString(),
-                ),
-            )
+        withTempDir { directory ->
+            val passwordFile = writeOwnerOnlyPasswordFile(directory, "hunter2\n")
+            val service = RecordingSafeDbService()
+            val io = BufferCliIo()
+            val command =
+                parseMcpArgs(
+                    arrayOf(
+                        "connections",
+                        "add",
+                        "--name",
+                        "Tailscale mysql",
+                        "--dialect",
+                        "mysql",
+                        "--host",
+                        "db.example",
+                        "--port",
+                        "3306",
+                        "--database",
+                        "app",
+                        "--username",
+                        "readonly",
+                        "--transport",
+                        "disabled",
+                        "--password-file",
+                        passwordFile.toString(),
+                    ),
+                )
 
-        assertEquals(0, executeMcpCommand(command, service, io, tty = false))
-        assertEquals(1, service.connections.size)
-        val def = service.connections.single()
-        assertEquals("Tailscale mysql", def.name)
-        assertEquals(Dialect.MySql, def.dialect)
-        assertEquals("db.example", def.host)
-        assertEquals(3306, def.port)
-        assertEquals("app", def.database)
-        assertEquals("readonly", def.username)
-        assertEquals(TransportSecurityMode.Disabled, def.transportSecurity.mode)
-        assertEquals("hunter2", service.passwords[def.id])
-        assertEquals(def to "hunter2", service.tested)
-        assertTrue(io.stdout.toString().contains("Added connection ${def.id}"))
-        assertFalse(io.stdout.toString().contains("hunter2"))
+            assertEquals(0, executeMcpCommand(command, service, io, tty = false))
+            assertEquals(1, service.connections.size)
+            val def = service.connections.single()
+            assertEquals("Tailscale mysql", def.name)
+            assertEquals(Dialect.MySql, def.dialect)
+            assertEquals("db.example", def.host)
+            assertEquals(3306, def.port)
+            assertEquals("app", def.database)
+            assertEquals("readonly", def.username)
+            assertEquals(TransportSecurityMode.Disabled, def.transportSecurity.mode)
+            assertEquals("hunter2", service.passwords[def.id])
+            assertEquals(def to "hunter2", service.tested)
+            assertTrue(io.stdout.toString().contains("Added connection ${def.id}"))
+            assertFalse(io.stdout.toString().contains("hunter2"))
+        }
     }
 
     @Test
     fun addDoesNotSaveWhenTestFails() = runBlocking {
-        val directory = Files.createTempDirectory("safedb-mcp-cli")
-        val passwordFile = writeOwnerOnlyPasswordFile(directory, "secret")
-        val service = RecordingSafeDbService().apply { testError = "connection refused" }
-        val io = BufferCliIo()
-        val command =
-            parseMcpArgs(
-                arrayOf(
-                    "setup",
-                    "--dialect",
-                    "postgres",
-                    "--database",
-                    "app",
-                    "--username",
-                    "readonly",
-                    "--transport",
-                    "disabled",
-                    "--password-file",
-                    passwordFile.toString(),
-                ),
-            )
+        withTempDir { directory ->
+            val passwordFile = writeOwnerOnlyPasswordFile(directory, "secret")
+            val service = RecordingSafeDbService().apply { testError = "connection refused" }
+            val io = BufferCliIo()
+            val command =
+                parseMcpArgs(
+                    arrayOf(
+                        "setup",
+                        "--dialect",
+                        "postgres",
+                        "--database",
+                        "app",
+                        "--username",
+                        "readonly",
+                        "--transport",
+                        "disabled",
+                        "--password-file",
+                        passwordFile.toString(),
+                    ),
+                )
 
-        assertEquals(1, executeMcpCommand(command, service, io, tty = false))
-        assertTrue(service.connections.isEmpty())
-        assertTrue(io.stderr.toString().contains("connection refused"))
+            assertEquals(1, executeMcpCommand(command, service, io, tty = false))
+            assertTrue(service.connections.isEmpty())
+            assertTrue(io.stderr.toString().contains("connection refused"))
+        }
     }
 
     @Test
@@ -291,174 +290,183 @@ class McpCliTest {
 
     @Test
     fun oracleSecureTransportRequiresWallet() = runBlocking {
-        val directory = Files.createTempDirectory("safedb-mcp-cli")
-        val passwordFile = writeOwnerOnlyPasswordFile(directory, "oracle-secret")
-        val service = RecordingSafeDbService()
-        val io = BufferCliIo()
-        val secure =
-            parseMcpArgs(
-                validNonInteractiveAddArgs(passwordFile, dialect = "oracle") +
-                    arrayOf("--transport", "verify-identity"),
-            )
+        withTempDir { directory ->
+            val passwordFile = writeOwnerOnlyPasswordFile(directory, "oracle-secret")
+            val service = RecordingSafeDbService()
+            val io = BufferCliIo()
+            val secure =
+                parseMcpArgs(
+                    validNonInteractiveAddArgs(passwordFile, dialect = "oracle") +
+                        arrayOf("--transport", "verify-identity"),
+                )
 
-        assertEquals(2, executeMcpCommand(secure, service, io, tty = false))
-        assertTrue(service.connections.isEmpty())
-        assertTrue(io.stderr.toString().contains("--oracle-wallet"))
-        assertFalse(io.stderr.toString().contains("oracle-secret"))
+            assertEquals(2, executeMcpCommand(secure, service, io, tty = false))
+            assertTrue(service.connections.isEmpty())
+            assertTrue(io.stderr.toString().contains("--oracle-wallet"))
+            assertFalse(io.stderr.toString().contains("oracle-secret"))
 
-        val disabledIo = BufferCliIo()
-        val disabled =
-            parseMcpArgs(
-                validNonInteractiveAddArgs(passwordFile, dialect = "oracle") +
-                    arrayOf("--transport", "disabled"),
-            )
-        assertEquals(0, executeMcpCommand(disabled, service, disabledIo, tty = false))
-        assertEquals(null, service.connections.single().transportSecurity.oracleWalletLocation)
+            val disabledIo = BufferCliIo()
+            val disabled =
+                parseMcpArgs(
+                    validNonInteractiveAddArgs(passwordFile, dialect = "oracle") +
+                        arrayOf("--transport", "disabled"),
+                )
+            assertEquals(0, executeMcpCommand(disabled, service, disabledIo, tty = false))
+            assertEquals(null, service.connections.single().transportSecurity.oracleWalletLocation)
+        }
     }
 
     @Test
     fun oracleSecureTransportSavesWalletLocation() = runBlocking {
-        val directory = Files.createTempDirectory("safedb-mcp-cli")
-        val passwordFile = writeOwnerOnlyPasswordFile(directory, "oracle-secret")
-        val service = RecordingSafeDbService()
-        val io = BufferCliIo()
-        val command =
-            parseMcpArgs(
-                validNonInteractiveAddArgs(passwordFile, dialect = "oracle") +
-                    arrayOf("--transport", "verify-identity", "--oracle-wallet", "/abs/path"),
-            )
+        withTempDir { directory ->
+            val passwordFile = writeOwnerOnlyPasswordFile(directory, "oracle-secret")
+            val service = RecordingSafeDbService()
+            val io = BufferCliIo()
+            val command =
+                parseMcpArgs(
+                    validNonInteractiveAddArgs(passwordFile, dialect = "oracle") +
+                        arrayOf("--transport", "verify-identity", "--oracle-wallet", "/abs/path"),
+                )
 
-        assertEquals(0, executeMcpCommand(command, service, io, tty = false))
-        val saved = service.connections.single()
-        assertEquals("/abs/path", saved.transportSecurity.oracleWalletLocation)
-        assertEquals(TransportSecurityMode.VerifyIdentity, saved.transportSecurity.mode)
-        assertFalse(io.stdout.toString().contains("oracle-secret"))
-        assertFalse(io.stderr.toString().contains("oracle-secret"))
+            assertEquals(0, executeMcpCommand(command, service, io, tty = false))
+            val saved = service.connections.single()
+            assertEquals("/abs/path", saved.transportSecurity.oracleWalletLocation)
+            assertEquals(TransportSecurityMode.VerifyIdentity, saved.transportSecurity.mode)
+            assertFalse(io.stdout.toString().contains("oracle-secret"))
+            assertFalse(io.stderr.toString().contains("oracle-secret"))
+        }
     }
 
     @Test
     fun db2AddDefaultsToPort50000WithoutWallet() = runBlocking {
-        val directory = Files.createTempDirectory("safedb-mcp-cli")
-        val passwordFile = writeOwnerOnlyPasswordFile(directory, "db2-secret")
-        val service = RecordingSafeDbService()
-        val io = BufferCliIo()
-        val command = parseMcpArgs(validNonInteractiveAddArgs(passwordFile, dialect = "db2"))
+        withTempDir { directory ->
+            val passwordFile = writeOwnerOnlyPasswordFile(directory, "db2-secret")
+            val service = RecordingSafeDbService()
+            val io = BufferCliIo()
+            val command = parseMcpArgs(validNonInteractiveAddArgs(passwordFile, dialect = "db2"))
 
-        assertEquals(0, executeMcpCommand(command, service, io, tty = false))
-        val saved = service.connections.single()
-        assertEquals(Dialect.Db2, saved.dialect)
-        assertEquals(50000, saved.port)
-        assertEquals(null, saved.transportSecurity.oracleWalletLocation)
-        assertFalse(io.stdout.toString().contains("db2-secret"))
+            assertEquals(0, executeMcpCommand(command, service, io, tty = false))
+            val saved = service.connections.single()
+            assertEquals(Dialect.Db2, saved.dialect)
+            assertEquals(50000, saved.port)
+            assertEquals(null, saved.transportSecurity.oracleWalletLocation)
+            assertFalse(io.stdout.toString().contains("db2-secret"))
 
-        val secureIo = BufferCliIo()
-        val secure =
-            parseMcpArgs(
-                validNonInteractiveAddArgs(passwordFile, dialect = "db2") +
-                    arrayOf("--transport", "verify-identity"),
+            val secureIo = BufferCliIo()
+            val secure =
+                parseMcpArgs(
+                    validNonInteractiveAddArgs(passwordFile, dialect = "db2") +
+                        arrayOf("--transport", "verify-identity"),
+                )
+            assertEquals(
+                0,
+                executeMcpCommand(secure, RecordingSafeDbService(), secureIo, tty = false),
             )
-        assertEquals(0, executeMcpCommand(secure, RecordingSafeDbService(), secureIo, tty = false))
+        }
     }
 
     @Test
     fun nonInteractiveAddUsesDocumentedDefaults() = runBlocking {
-        val directory = Files.createTempDirectory("safedb-mcp-cli")
-        val passwordFile = writeOwnerOnlyPasswordFile(directory, "default-secret")
-        val service = RecordingSafeDbService()
-        val io = BufferCliIo()
-        val command =
-            parseMcpArgs(
-                arrayOf(
-                    "setup",
-                    "--dialect",
-                    "mysql",
-                    "--database",
-                    "inventory",
-                    "--username",
-                    "reader",
-                    "--password-file",
-                    passwordFile.toString(),
-                ),
-            )
+        withTempDir { directory ->
+            val passwordFile = writeOwnerOnlyPasswordFile(directory, "default-secret")
+            val service = RecordingSafeDbService()
+            val io = BufferCliIo()
+            val command =
+                parseMcpArgs(
+                    arrayOf(
+                        "setup",
+                        "--dialect",
+                        "mysql",
+                        "--database",
+                        "inventory",
+                        "--username",
+                        "reader",
+                        "--password-file",
+                        passwordFile.toString(),
+                    ),
+                )
 
-        assertEquals(0, executeMcpCommand(command, service, io, tty = false))
-        val saved = service.connections.single()
-        assertEquals("inventory", saved.name)
-        assertEquals("localhost", saved.host)
-        assertEquals(3306, saved.port)
-        assertEquals(TransportSecurityMode.Disabled, saved.transportSecurity.mode)
-        assertFalse(io.stdout.toString().contains("default-secret"))
+            assertEquals(0, executeMcpCommand(command, service, io, tty = false))
+            val saved = service.connections.single()
+            assertEquals("inventory", saved.name)
+            assertEquals("localhost", saved.host)
+            assertEquals(3306, saved.port)
+            assertEquals(TransportSecurityMode.Disabled, saved.transportSecurity.mode)
+            assertFalse(io.stdout.toString().contains("default-secret"))
+        }
     }
 
     @Test
     fun nonInteractiveRemoteAddDefaultsToVerifyIdentity() = runBlocking {
-        val directory = Files.createTempDirectory("safedb-mcp-cli")
-        val passwordFile = writeOwnerOnlyPasswordFile(directory, "remote-secret")
-        val service = RecordingSafeDbService()
-        val io = BufferCliIo()
-        val command =
-            parseMcpArgs(
-                arrayOf(
-                    "setup",
-                    "--host",
-                    "db.example.com",
-                    "--dialect",
-                    "postgres",
-                    "--database",
-                    "app",
-                    "--username",
-                    "readonly",
-                    "--password-file",
-                    passwordFile.toString(),
-                ),
-            )
+        withTempDir { directory ->
+            val passwordFile = writeOwnerOnlyPasswordFile(directory, "remote-secret")
+            val service = RecordingSafeDbService()
+            val io = BufferCliIo()
+            val command =
+                parseMcpArgs(
+                    arrayOf(
+                        "setup",
+                        "--host",
+                        "db.example.com",
+                        "--dialect",
+                        "postgres",
+                        "--database",
+                        "app",
+                        "--username",
+                        "readonly",
+                        "--password-file",
+                        passwordFile.toString(),
+                    ),
+                )
 
-        assertEquals(0, executeMcpCommand(command, service, io, tty = false))
-        val saved = service.connections.single()
-        assertEquals("db.example.com", saved.host)
-        assertEquals(TransportSecurityMode.VerifyIdentity, saved.transportSecurity.mode)
-        assertFalse(io.stdout.toString().contains("remote-secret"))
-        assertFalse(io.stderr.toString().contains("remote-secret"))
+            assertEquals(0, executeMcpCommand(command, service, io, tty = false))
+            val saved = service.connections.single()
+            assertEquals("db.example.com", saved.host)
+            assertEquals(TransportSecurityMode.VerifyIdentity, saved.transportSecurity.mode)
+            assertFalse(io.stdout.toString().contains("remote-secret"))
+            assertFalse(io.stderr.toString().contains("remote-secret"))
+        }
     }
 
     @Test
     fun unsafePasswordFileErrorsDoNotLeakSecrets() = runBlocking {
-        val directory = Files.createTempDirectory("safedb-mcp-cli")
-        val multiline =
-            writeOwnerOnlyPasswordFile(directory, "top-secret-value\nunexpected-second-line")
-        val multilineIo = BufferCliIo()
-        val multilineCommand = parseMcpArgs(validNonInteractiveAddArgs(multiline))
-
-        assertEquals(
-            2,
-            executeMcpCommand(
-                multilineCommand,
-                RecordingSafeDbService(),
-                multilineIo,
-                tty = false,
-            ),
-        )
-        assertTrue(multilineIo.stderr.toString().contains("exactly one line"))
-        assertFalse(multilineIo.stderr.toString().contains("top-secret-value"))
-
-        if (Files.getFileStore(directory).supportsFileAttributeView("posix")) {
-            val exposed = directory.resolve("exposed-password.txt")
-            Files.writeString(exposed, "permission-secret")
-            Files.setPosixFilePermissions(exposed, PosixFilePermissions.fromString("rw-r--r--"))
-            val permissionsIo = BufferCliIo()
-            val permissionsCommand = parseMcpArgs(validNonInteractiveAddArgs(exposed))
+        withTempDir { directory ->
+            val multiline =
+                writeOwnerOnlyPasswordFile(directory, "top-secret-value\nunexpected-second-line")
+            val multilineIo = BufferCliIo()
+            val multilineCommand = parseMcpArgs(validNonInteractiveAddArgs(multiline))
 
             assertEquals(
                 2,
                 executeMcpCommand(
-                    permissionsCommand,
+                    multilineCommand,
                     RecordingSafeDbService(),
-                    permissionsIo,
+                    multilineIo,
                     tty = false,
                 ),
             )
-            assertTrue(permissionsIo.stderr.toString().contains("owner-only"))
-            assertFalse(permissionsIo.stderr.toString().contains("permission-secret"))
+            assertTrue(multilineIo.stderr.toString().contains("exactly one line"))
+            assertFalse(multilineIo.stderr.toString().contains("top-secret-value"))
+
+            if (Files.getFileStore(directory).supportsFileAttributeView("posix")) {
+                val exposed = directory.resolve("exposed-password.txt")
+                Files.writeString(exposed, "permission-secret")
+                Files.setPosixFilePermissions(exposed, PosixFilePermissions.fromString("rw-r--r--"))
+                val permissionsIo = BufferCliIo()
+                val permissionsCommand = parseMcpArgs(validNonInteractiveAddArgs(exposed))
+
+                assertEquals(
+                    2,
+                    executeMcpCommand(
+                        permissionsCommand,
+                        RecordingSafeDbService(),
+                        permissionsIo,
+                        tty = false,
+                    ),
+                )
+                assertTrue(permissionsIo.stderr.toString().contains("owner-only"))
+                assertFalse(permissionsIo.stderr.toString().contains("permission-secret"))
+            }
         }
     }
 
@@ -519,74 +527,135 @@ class McpCliTest {
 
     @Test
     fun addPersistsThroughFileStore() = runBlocking {
-        val directory = Files.createTempDirectory("safedb-mcp-cli")
-        val passwordFile = writeOwnerOnlyPasswordFile(directory, "stored-secret")
-        SecretsManager.initFileStore(directory.resolve("credentials"))
-        val inner =
-            SafeDbServiceImpl(
-                configStore = ConfigStore.new(directory),
-                queryStore = QueryStore.new(directory),
-                settingsStore = SettingsStore.new(directory),
-            )
-        val service =
-            object : RecordingSafeDbService() {
-                override suspend fun createConnection(
-                    def: com.safedb.model.ConnectionDef,
-                    password: String,
-                ) = inner.createConnection(def, password)
+        withTempDir { directory ->
+            val passwordFile = writeOwnerOnlyPasswordFile(directory, "stored-secret")
+            SecretsManager.initFileStore(directory.resolve("credentials"))
+            val inner =
+                SafeDbServiceImpl(
+                    configStore = ConfigStore.new(directory),
+                    queryStore = QueryStore.new(directory),
+                    settingsStore = SettingsStore.new(directory),
+                )
+            val service =
+                object : RecordingSafeDbService() {
+                    override suspend fun createConnection(
+                        def: com.safedb.model.ConnectionDef,
+                        password: String,
+                    ) = inner.createConnection(def, password)
 
-                override suspend fun listConnections() = inner.listConnections()
+                    override suspend fun listConnections() = inner.listConnections()
+                }
+            val io = BufferCliIo()
+            val command =
+                parseMcpArgs(
+                    arrayOf(
+                        "setup",
+                        "--name",
+                        "File store",
+                        "--dialect",
+                        "postgres",
+                        "--database",
+                        "app",
+                        "--username",
+                        "readonly",
+                        "--transport",
+                        "disabled",
+                        "--password-file",
+                        passwordFile.toString(),
+                    ),
+                )
+
+            try {
+                assertEquals(0, executeMcpCommand(command, service, io, tty = false))
+                val saved = inner.listConnections().single()
+                assertEquals("File store", saved.name)
+                assertEquals(
+                    "stored-secret",
+                    SecretsManager.passwordForDefinition(saved).getOrThrow(),
+                )
+                assertFalse(
+                    Files.readString(directory.resolve("connections.json"))
+                        .contains("stored-secret"),
+                )
+            } finally {
+                SecretsManager.initStore("disabled")
             }
-        val io = BufferCliIo()
-        val command =
-            parseMcpArgs(
-                arrayOf(
-                    "setup",
-                    "--name",
-                    "File store",
-                    "--dialect",
-                    "postgres",
-                    "--database",
-                    "app",
-                    "--username",
-                    "readonly",
-                    "--transport",
-                    "disabled",
-                    "--password-file",
-                    passwordFile.toString(),
-                ),
-            )
-
-        try {
-            assertEquals(0, executeMcpCommand(command, service, io, tty = false))
-            val saved = inner.listConnections().single()
-            assertEquals("File store", saved.name)
-            assertEquals("stored-secret", SecretsManager.passwordForDefinition(saved).getOrThrow())
-            assertFalse(
-                Files.readString(directory.resolve("connections.json")).contains("stored-secret"),
-            )
-        } finally {
-            SecretsManager.initStore("disabled")
         }
     }
 
     @Test
-    fun usageTextListsConnectionAndSettingsCommands() {
-        assertTrue(MCP_USAGE.contains("safe-db-mcp connections test [<id>]"))
-        assertTrue(MCP_USAGE.contains("safe-db-mcp settings [show]"))
-        assertTrue(
-            MCP_USAGE.contains(
-                "safe-db-mcp settings risk-gate <cautious|standard|flexible|disabled>",
+    fun interactiveTtySetupAndConnectionsCliCommandsWorkEndToEnd() = runBlocking {
+        assertEquals(
+            McpCommand.ConnectionsList,
+            parseMcpArgs(arrayOf("connections", "list")),
+        )
+        assertEquals(
+            McpCommand.ConnectionsDelete("c1"),
+            parseMcpArgs(arrayOf("connections", "delete", "c1")),
+        )
+
+        val emptyIo = BufferCliIo()
+        assertEquals(
+            0,
+            executeMcpCommand(
+                McpCommand.ConnectionsList,
+                RecordingSafeDbService(),
+                emptyIo,
+                tty = false,
             ),
         )
-        assertTrue(MCP_USAGE.contains("safe-db-mcp settings timeout <seconds>"))
-        assertTrue(
-            MCP_USAGE.contains(
-                "safe-db-mcp settings default-connection <id> [--default-schema <schema>]",
+        assertEquals("No connections.\n", emptyIo.stdout.toString())
+
+        // Interactive TTY setup: blank retry before valid dialect, default remote transport, empty
+        // name -> database
+        val ttyIo =
+            BufferCliIo(
+                lines =
+                    ArrayDeque(
+                        listOf(
+                            "   ",
+                            "mssql",
+                            "db.example.com",
+                            "1433",
+                            "warehouse",
+                            "etl",
+                            "",
+                            "",
+                        ),
+                    ),
+                passwords = ArrayDeque(listOf("tty-secret")),
+            )
+        val ttyService = RecordingSafeDbService()
+        assertEquals(
+            0,
+            executeMcpCommand(parseMcpArgs(arrayOf("setup")), ttyService, ttyIo, tty = true),
+        )
+        val saved = ttyService.connections.single()
+        assertEquals(Dialect.Mssql, saved.dialect)
+        assertEquals("db.example.com", saved.host)
+        assertEquals(1433, saved.port)
+        assertEquals("warehouse", saved.database)
+        assertEquals("warehouse", saved.name)
+        assertEquals("etl", saved.username)
+        assertEquals(TransportSecurityMode.VerifyIdentity, saved.transportSecurity.mode)
+        assertEquals("tty-secret", ttyService.tested?.second)
+        assertFalse(ttyIo.stdout.toString().contains("tty-secret"))
+
+        // Invalid interactive port fails cleanly
+        val badPortIo =
+            BufferCliIo(
+                lines = ArrayDeque(listOf("postgres", "localhost", "not-a-port")),
+                passwords = ArrayDeque(listOf("ignored")),
+            )
+        assertEquals(
+            2,
+            executeMcpCommand(
+                parseMcpArgs(arrayOf("setup")),
+                RecordingSafeDbService(),
+                badPortIo,
+                tty = true,
             ),
         )
-        assertTrue(MCP_USAGE.contains("safe-db-mcp settings clear-default-connection"))
-        assertTrue(MCP_USAGE.contains("safe-db-mcp settings block-schema <schema>"))
-        assertTrue(MCP_USAGE.contains("safe-db-mcp settings unblock-schema <schema>"))
+        assertTrue(badPortIo.stderr.toString().contains("Invalid port"))
     }
 }

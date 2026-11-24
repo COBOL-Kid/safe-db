@@ -918,6 +918,230 @@ class ApplyExploreTest {
         assertEquals(ResultCell.IntegerCell(300), totalRow[3])
     }
 
+    @Test
+    fun showAsModesCalculateRowColumnParentDifferenceRunningAndRanks() {
+        val sample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__region", "varchar"),
+                        ResultColumn("t0__quarter", "varchar"),
+                        ResultColumn("t0__amount", "bigint"),
+                    ),
+                rows =
+                    listOf(
+                        listOf(
+                            ResultCell.text("East"),
+                            ResultCell.text("Q1"),
+                            ResultCell.IntegerCell(100),
+                        ),
+                        listOf(
+                            ResultCell.text("East"),
+                            ResultCell.text("Q2"),
+                            ResultCell.IntegerCell(300),
+                        ),
+                        listOf(
+                            ResultCell.text("West"),
+                            ResultCell.text("Q1"),
+                            ResultCell.IntegerCell(200),
+                        ),
+                        listOf(
+                            ResultCell.text("West"),
+                            ResultCell.text("Q2"),
+                            ResultCell.IntegerCell(400),
+                        ),
+                    ),
+                rowCount = 4,
+                truncated = false,
+                warnings = emptyList(),
+            )
+
+        fun runShowAs(showAs: PivotShowAs, withColDim: Boolean = true): List<List<ResultCell>> =
+            applyExplore(
+                    sample = sample,
+                    config =
+                        ExploreConfig(
+                            rowDimensions = listOf(PivotDimension("t0__region", id = "r")),
+                            columnDimensions =
+                                if (withColDim) listOf(PivotDimension("t0__quarter", id = "c"))
+                                else emptyList(),
+                            measures =
+                                listOf(
+                                    PivotMeasure(
+                                        alias = "amt",
+                                        fn = MeasureFn.Sum,
+                                        sourceColumn = "t0__amount",
+                                        label = "Amount",
+                                        showAs = showAs,
+                                    ),
+                                ),
+                            showRowTotals = false,
+                            showColumnTotals = false,
+                        ),
+                )
+                .result
+                .rows
+
+        // East Q1=100, Q2=300 (row sum=400); West Q1=200, Q2=400 (row sum=600)
+        assertEquals(
+            0.25,
+            (runShowAs(PivotShowAs(ShowAsMode.PercentRowTotal))[0][1] as ResultCell.FloatCell)
+                .value,
+            0.001,
+        )
+        assertEquals(
+            1.0 / 3.0,
+            (runShowAs(PivotShowAs(ShowAsMode.PercentColumnTotal))[0][1] as ResultCell.FloatCell)
+                .value,
+            0.001,
+        )
+        assertEquals(
+            1.0 / 3.0,
+            (runShowAs(PivotShowAs(ShowAsMode.PercentParent, baseDimensionId = "r"))[0][1]
+                    as ResultCell.FloatCell)
+                .value,
+            0.001,
+        )
+        assertEquals(
+            0.25,
+            (runShowAs(PivotShowAs(ShowAsMode.PercentParent, baseDimensionId = "c"))[0][1]
+                    as ResultCell.FloatCell)
+                .value,
+            0.001,
+        )
+
+        // Sibling modes against row dimension ("r"): West - East on Q1 = 200 - 100 = 100
+        assertEquals(
+            100L,
+            (runShowAs(
+                    PivotShowAs(
+                        ShowAsMode.DifferenceFrom,
+                        baseDimensionId = "r",
+                        baseItemKey = "East",
+                    ),
+                )[1][1]
+                    as ResultCell.IntegerCell)
+                .value,
+        )
+        assertEquals(
+            1L,
+            (runShowAs(PivotShowAs(ShowAsMode.PercentDifferenceFrom, baseDimensionId = "r"))[1][1]
+                    as ResultCell.IntegerCell)
+                .value,
+        )
+        // PercentRunningTotal on East Q1 = 100 / (100+200) = 0.333, West Q1 = 1.0
+        assertEquals(
+            1.0 / 3.0,
+            (runShowAs(PivotShowAs(ShowAsMode.PercentRunningTotal, baseDimensionId = "r"))[0][1]
+                    as ResultCell.FloatCell)
+                .value,
+            0.001,
+        )
+        // RankAscending: East (400) -> 1, West (600) -> 2; RankDescending: West -> 1
+        assertEquals(
+            1L,
+            (runShowAs(
+                    PivotShowAs(ShowAsMode.RankAscending, baseDimensionId = "r"),
+                    withColDim = false,
+                )[0][1]
+                    as ResultCell.IntegerCell)
+                .value,
+        )
+        assertEquals(
+            1L,
+            (runShowAs(
+                    PivotShowAs(ShowAsMode.RankDescending, baseDimensionId = "r"),
+                    withColDim = false,
+                )[1][1]
+                    as ResultCell.IntegerCell)
+                .value,
+        )
+    }
+
+    @Test
+    fun pivotValueFilterOpsTopSubtotalsUnknownFormulaMeasureAndCellLimitWork() {
+        val sample = sampleResult()
+        // East=375 (3 rows), West=500 (2 rows), blank=50 (1 row)
+        listOf(
+                ValueFilterOp.GreaterThan to listOf("400", null) to listOf("West"),
+                ValueFilterOp.GreaterThanOrEqual to listOf("375", null) to listOf("East", "West"),
+                ValueFilterOp.LessThan to listOf("100", null) to listOf("(blank)"),
+                ValueFilterOp.LessThanOrEqual to listOf("375", null) to listOf("East", "(blank)"),
+                ValueFilterOp.Between to listOf("100", "400") to listOf("East"),
+                ValueFilterOp.Bottom to listOf("1", null) to listOf("(blank)"),
+            )
+            .forEach { (opAndVals, expectedRegions) ->
+                val (op, vals) = opAndVals
+                val filtered =
+                    applyExplore(
+                        sample = sample,
+                        config =
+                            ExploreConfig(
+                                rowDimensions = listOf(PivotDimension("t0__region", id = "r")),
+                                measures = listOf(PivotMeasure("sum", MeasureFn.Sum, "t0__amount")),
+                                filters =
+                                    listOf(
+                                        PivotFilter.Value(
+                                            id = "vf",
+                                            column = "t0__region",
+                                            label = "region",
+                                            measureAlias = "sum",
+                                            op = op,
+                                            value = vals[0]!!,
+                                            secondValue = vals[1],
+                                            count = vals[0]!!.toIntOrNull() ?: 1,
+                                        ),
+                                    ),
+                                showColumnTotals = false,
+                            ),
+                    )
+                val labels = filtered.result.rows.map { (it[0] as ResultCell.TextCell).value.text }
+                assertEquals(expectedRegions, labels, "op=$op")
+            }
+
+        val topSubtotals =
+            applyExplore(
+                sample = sample,
+                config =
+                    ExploreConfig(
+                        rowDimensions =
+                            listOf(
+                                PivotDimension("t0__region", id = "r"),
+                                PivotDimension("t0__status", id = "s"),
+                            ),
+                        measures = listOf(PivotMeasure("count", MeasureFn.Count, label = "Orders")),
+                        showSubtotals = true,
+                        subtotalPosition = SubtotalPosition.Top,
+                    ),
+            )
+        assertTrue(
+            topSubtotals.result.rows.any {
+                (it[0] as? ResultCell.TextCell)?.value?.text == "East total"
+            },
+        )
+
+        val badFormula =
+            applyExplore(
+                sample = sample,
+                config =
+                    ExploreConfig(
+                        rowDimensions = listOf(PivotDimension("t0__region")),
+                        measures =
+                            listOf(
+                                PivotMeasure(
+                                    alias = "calc",
+                                    fn = MeasureFn.Count,
+                                    label = "Broken",
+                                    formula = "[missing_alias] + 1",
+                                ),
+                            ),
+                    ),
+            )
+        assertTrue(
+            badFormula.result.warnings.any { it.contains("unknown measure 'missing_alias'") },
+        )
+    }
+
     private fun twoDimensionRegionStatusPivot(showSubtotals: Boolean): ExplorePreviewResult =
         applyExplore(
             sampleResult(),

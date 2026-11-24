@@ -3,6 +3,7 @@ package com.safedb.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -59,8 +60,9 @@ import com.safedb.ui.theme.ToolbarHeaderVerticalPadding
 import com.safedb.viewmodel.ExploreOrigin
 import com.safedb.viewmodel.ExploreViewModel
 import com.safedb.viewmodel.RecipesViewModel
+import com.safedb.viewmodel.SampleStaleness
 import java.io.File
-import javax.swing.JFileChooser
+import javax.swing.filechooser.FileNameExtensionFilter
 
 @Composable
 fun ExploreWindowContent(
@@ -69,11 +71,11 @@ fun ExploreWindowContent(
     onClose: () -> Unit,
     origin: ExploreOrigin = ExploreOrigin.Builder,
     onRefreshSample: (() -> Unit)? = null,
-    sampleRefreshEnabled: Boolean = false,
     recipesViewModel: RecipesViewModel,
     connections: List<ConnectionDef> = emptyList(),
     onRunRecipe: (ExploreRecipe, ConnectionDef) -> Unit = { _, _ -> },
     activeConnectionId: String? = viewModel.session.connectionId,
+    latestSampleRunId: Long? = null,
     modifier: Modifier = Modifier,
 ) {
     val session = viewModel.session
@@ -85,8 +87,10 @@ fun ExploreWindowContent(
         remember(session.sample.columns, session.baseSpec.tables) {
             buildExploreFieldOptions(session.sample, session.baseSpec.tables)
         }
-    val stale = viewModel.isStale(currentSpec, activeConnectionId)
-    val connectionStale = activeConnectionId != session.connectionId
+    val staleness =
+        remember(viewModel, currentSpec, activeConnectionId, latestSampleRunId) {
+            viewModel.staleness(currentSpec, activeConnectionId, latestSampleRunId)
+        }
     var drillResult by remember { mutableStateOf<QueryResult?>(null) }
     var pivotRailVisible by remember { mutableStateOf(true) }
     var worksheetRailVisible by remember { mutableStateOf(true) }
@@ -97,12 +101,12 @@ fun ExploreWindowContent(
         ExploreDrillDialog(
             result = result,
             onExport = {
-                chooseExportFile("explore-details", "csv", parent = appWindow)?.let {
-                    viewModel.saveResultCsv(result, it)
-                }
+                chooseExportFile("${session.connectionLabel}-details", "csv", parent = appWindow)
+                    ?.let { viewModel.saveDrillResultCsv(result, it) }
             },
             onDismiss = { drillResult = null },
             exporting = viewModel.exporting,
+            tables = session.baseSpec.tables,
         )
     }
 
@@ -153,10 +157,8 @@ fun ExploreWindowContent(
 
         Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
             ExploreStaleSampleWarning(
-                stale = stale,
+                staleness = staleness,
                 origin = origin,
-                sampleRefreshEnabled = sampleRefreshEnabled,
-                connectionStale = connectionStale,
                 onRefreshSample = onRefreshSample,
             )
             ExplorePreviewErrorBanner(viewModel.previewError(activeMode))
@@ -277,6 +279,7 @@ fun ExploreWindowContent(
                                     tables = session.baseSpec.tables,
                                     fields = fields,
                                     memberOptionsFor = viewModel::memberOptions,
+                                    resolvedChartType = viewModel.visualizationPreview.chartType,
                                     onConfigChange = { next ->
                                         viewModel.updateVisualization { next }
                                     },
@@ -300,9 +303,18 @@ fun ExploreWindowContent(
                                 Column(
                                     modifier = Modifier.weight(1f).fillMaxWidth().padding(16.dp),
                                 ) {
-                                    viewModel.visualizationPreview.warnings.firstOrNull()?.let {
-                                        warning ->
-                                        MessageBanner(text = warning, kind = BannerKind.WARNING)
+                                    if (viewModel.visualizationPreview.warnings.isNotEmpty()) {
+                                        Column(
+                                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                                        ) {
+                                            viewModel.visualizationPreview.warnings.forEach {
+                                                warning ->
+                                                MessageBanner(
+                                                    text = warning,
+                                                    kind = BannerKind.WARNING,
+                                                )
+                                            }
+                                        }
                                     }
                                     VisualizationChart(
                                         preview = viewModel.visualizationPreview,
@@ -327,7 +339,10 @@ fun ExploreWindowContent(
                                             !viewModel.isLoading(ExploreMode.Visualization),
                                     onExportHtml = {
                                         chooseExportFile(
-                                                "${session.connectionLabel}-chart",
+                                                visualizationExportStem(
+                                                    viewModel.visualizationPreview.title,
+                                                    session.connectionLabel,
+                                                ),
                                                 "html",
                                                 parent = appWindow,
                                             )
@@ -335,7 +350,11 @@ fun ExploreWindowContent(
                                     },
                                     onExportCsv = {
                                         chooseExportFile(
-                                                "${session.connectionLabel}-chart-data",
+                                                visualizationExportStem(
+                                                    viewModel.visualizationPreview.title,
+                                                    session.connectionLabel,
+                                                    dataExport = true,
+                                                ),
                                                 "csv",
                                                 parent = appWindow,
                                             )
@@ -343,7 +362,10 @@ fun ExploreWindowContent(
                                     },
                                     onExportPng = {
                                         chooseExportFile(
-                                                "${session.connectionLabel}-chart",
+                                                visualizationExportStem(
+                                                    viewModel.visualizationPreview.title,
+                                                    session.connectionLabel,
+                                                ),
                                                 "png",
                                                 parent = appWindow,
                                             )
@@ -451,15 +473,13 @@ private fun ExploreModeSelector(
     }
 }
 
-@Composable
-private fun ExploreStaleSampleWarning(
-    stale: Boolean,
+internal data class ExploreStaleSampleBanner(val text: String, val showRefreshAction: Boolean)
+
+internal fun exploreStaleSampleBanner(
+    staleness: SampleStaleness,
     origin: ExploreOrigin,
-    sampleRefreshEnabled: Boolean,
-    connectionStale: Boolean,
-    onRefreshSample: (() -> Unit)?,
-) {
-    if (!stale) return
+    refreshAvailable: Boolean,
+): ExploreStaleSampleBanner {
     // Refresh pulls from whichever surface opened this window, so the instructions have to name it
     // — telling a SQL-origin user to re-run in Builder never produces a sample and leaves Refresh
     // off.
@@ -468,21 +488,61 @@ private fun ExploreStaleSampleWarning(
             ExploreOrigin.Builder -> "Builder"
             ExploreOrigin.Sql -> "SQL"
         }
+    return when (staleness) {
+        SampleStaleness.Fresh -> ExploreStaleSampleBanner(text = "", showRefreshAction = false)
+        SampleStaleness.ConnectionChanged ->
+            ExploreStaleSampleBanner(
+                text =
+                    "The active connection changed. Reopen Explore from the query you " +
+                        "want to inspect; Refresh cannot update this sample.",
+                showRefreshAction = false,
+            )
+        SampleStaleness.NewerSample if refreshAvailable ->
+            ExploreStaleSampleBanner(
+                text =
+                    "Newer $surface results are available. Refresh the Explore sample to load them.",
+                showRefreshAction = true,
+            )
+        SampleStaleness.NewerSample ->
+            ExploreStaleSampleBanner(
+                text =
+                    "Newer $surface results are available. Reopen Explore from $surface to inspect them.",
+                showRefreshAction = false,
+            )
+        SampleStaleness.SpecChanged if refreshAvailable ->
+            ExploreStaleSampleBanner(
+                text =
+                    "The $surface query changed. Refresh the Explore sample from the latest $surface results.",
+                showRefreshAction = true,
+            )
+        SampleStaleness.SpecChanged ->
+            ExploreStaleSampleBanner(
+                text =
+                    "The $surface query changed. Re-run the query in $surface, then refresh or reopen Explore.",
+                showRefreshAction = false,
+            )
+    }
+}
+
+@Composable
+private fun ExploreStaleSampleWarning(
+    staleness: SampleStaleness,
+    origin: ExploreOrigin,
+    onRefreshSample: (() -> Unit)?,
+) {
+    if (staleness == SampleStaleness.Fresh) return
+    val banner =
+        exploreStaleSampleBanner(
+            staleness = staleness,
+            origin = origin,
+            refreshAvailable = onRefreshSample != null,
+        )
     Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
         MessageBanner(
-            text =
-                when {
-                    connectionStale ->
-                        "The active connection changed. Reopen Explore from the query you " +
-                            "want to inspect; Refresh cannot update this sample."
-                    sampleRefreshEnabled ->
-                        "The $surface query changed. Refresh the Explore sample from the latest $surface results."
-                    else ->
-                        "The $surface query changed. Re-run the query in $surface, then refresh or reopen Explore."
-                },
+            text = banner.text,
             kind = BannerKind.WARNING,
             action =
-                if (!connectionStale && sampleRefreshEnabled && onRefreshSample != null) {
+                if (banner.showRefreshAction && onRefreshSample != null) {
                     { PrimaryButton(onClick = onRefreshSample) { Text("Refresh sample") } }
                 } else null,
         )
@@ -587,23 +647,40 @@ private fun VisualizationExportBar(
     }
 }
 
-private fun chooseExportFile(
+internal fun visualizationExportStem(
+    chartTitle: String,
     connectionLabel: String,
+    dataExport: Boolean = false,
+): String {
+    val base =
+        sanitizeFileNameSegment(chartTitle, "").take(64).trimEnd('-').ifEmpty {
+            sanitizeFileNameSegment("$connectionLabel-chart", "chart")
+        }
+    return if (dataExport) "$base-data" else base
+}
+
+internal fun exploreExportFileName(stem: String, extension: String): String {
+    val safeName = sanitizeFileNameSegment(stem, "explore")
+    return "explore-$safeName.$extension"
+}
+
+private fun chooseExportFile(
+    stem: String,
     extension: String,
     parent: java.awt.Component? = null,
 ): java.nio.file.Path? {
-    val safeName =
-        connectionLabel.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').ifEmpty {
-            "explore"
-        }
-    val chooser =
-        createAppFileChooser().apply {
-            selectedFile = File("explore-$safeName.$extension")
-            dialogTitle = "Export Explore ${extension.uppercase()}"
-        }
-    val result = chooser.showSaveDialog(parent)
-    if (result != JFileChooser.APPROVE_OPTION) return null
-    val file = chooser.selectedFile
+    val file =
+        chooseAppFile(
+            open = false,
+            title = "Export Explore ${extension.uppercase()}",
+            suggestedFileName = exploreExportFileName(stem, extension),
+            extensionFilter =
+                FileNameExtensionFilter(
+                    "${extension.uppercase()} files (*.$extension)",
+                    extension,
+                ),
+            parent = parent,
+        ) ?: return null
     return if (file.extension.equals(extension, ignoreCase = true)) file.toPath()
     else File("${file.path}.$extension").toPath()
 }

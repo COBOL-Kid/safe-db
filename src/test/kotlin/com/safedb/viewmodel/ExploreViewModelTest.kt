@@ -39,6 +39,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -167,11 +168,32 @@ class ExploreViewModelTest {
         val viewModel =
             ExploreViewModel(createExploreSession(connection(), baseSpec, sampleResult()))
 
-        assertFalse(viewModel.isStale(baseSpec))
-        assertFalse(viewModel.isStale(baseSpec, "c1"))
-        assertTrue(viewModel.isStale(baseSpec, "c2"))
-        assertTrue(viewModel.isStale(baseSpec.copy(limit = 250)))
-        assertTrue(viewModel.isStale(null))
+        assertEquals(SampleStaleness.Fresh, viewModel.staleness(baseSpec))
+        assertEquals(SampleStaleness.Fresh, viewModel.staleness(baseSpec, "c1"))
+        // Untracked sessions (sampleRunId == null) must stay fresh even when latestSampleRunId is
+        // set.
+        assertEquals(
+            SampleStaleness.Fresh,
+            viewModel.staleness(baseSpec, "c1", latestSampleRunId = 4L),
+        )
+        assertEquals(SampleStaleness.ConnectionChanged, viewModel.staleness(baseSpec, "c2"))
+        assertEquals(SampleStaleness.SpecChanged, viewModel.staleness(baseSpec.copy(limit = 250)))
+        assertEquals(SampleStaleness.SpecChanged, viewModel.staleness(null))
+
+        val runVm =
+            ExploreViewModel(
+                createExploreSession(connection(), baseSpec, sampleResult()),
+                sampleRunId = 3L,
+            )
+        assertEquals(
+            SampleStaleness.Fresh,
+            runVm.staleness(baseSpec, "c1", latestSampleRunId = null),
+        )
+        assertEquals(SampleStaleness.Fresh, runVm.staleness(baseSpec, "c1", latestSampleRunId = 3L))
+        assertEquals(
+            SampleStaleness.NewerSample,
+            runVm.staleness(baseSpec, "c1", latestSampleRunId = 4L),
+        )
     }
 
     @Test
@@ -569,8 +591,14 @@ class ExploreViewModelTest {
 
         val csv = createTempFile(suffix = ".csv")
         viewModel.saveVisualizationCsv(csv)
-        assertTrue(csv.readText().contains("Status,Series,Measure,Value,Source rows"))
+        assertTrue(csv.readText().contains("Status,Measure,Value,Source rows"))
         assertTrue(csv.readText().contains("pending"))
+
+        viewModel.updateVisualization { it.copy(series = VisualizationField("t0__id", "Order")) }
+        val seriesCsv = createTempFile(suffix = ".csv")
+        viewModel.saveVisualizationCsv(seriesCsv)
+        assertTrue(seriesCsv.readText().contains("Status,Series,Measure,Value,Source rows"))
+        viewModel.updateVisualization { it.copy(series = null) }
 
         val html = createTempFile(suffix = ".html")
         viewModel.saveVisualizationHtml(html)
@@ -611,6 +639,55 @@ class ExploreViewModelTest {
         val image = Image.makeFromEncoded(bytes)
         assertEquals(1600, image.width)
         assertEquals(900, image.height)
+    }
+
+    @Test
+    fun drillCsvExportUsesDisplayColumnLabelsWithoutAliasMangling() {
+        val joinedSpec =
+            sampleSpec()
+                .copy(
+                    tables =
+                        listOf(
+                            TableRef("sales", "regions", "r"),
+                            TableRef("sales", "accounts", "a"),
+                            TableRef("sales", "order_items", "oi"),
+                        ),
+                )
+        val joinedSample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("r__name", "text"),
+                        ResultColumn("a__name", "text"),
+                        ResultColumn("oi__line_total", "numeric"),
+                    ),
+                rows =
+                    listOf(
+                        listOf(
+                            ResultCell.text("Europe"),
+                            ResultCell.text("Acme"),
+                            ResultCell.float(455.5),
+                        ),
+                    ),
+                rowCount = 1,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val viewModel =
+            ExploreViewModel(createExploreSession(connection(), joinedSpec, joinedSample))
+        val drill =
+            viewModel.sourceRowsFor(
+                viewModel.preview.layout.rowEntries.first().pathKey,
+                viewModel.preview.layout.columnLeaves.single().pathKey,
+                viewModel.config.measures.single().alias,
+            )
+        val csv = createTempFile(suffix = ".csv")
+
+        viewModel.saveDrillResultCsv(drill, csv)
+
+        val lines = csv.readText().trim().lines()
+        assertEquals("regions.name,accounts.name,line_total", lines.first())
+        assertTrue(lines[1].startsWith("Europe,Acme,455.5"))
     }
 
     @Test
@@ -754,6 +831,100 @@ class ExploreViewModelTest {
         assertFalse(viewModel.exporting)
         assertTrue(Files.size(firstPath) > 0L)
         assertEquals(0L, Files.size(secondPath))
+    }
+
+    @Test
+    fun exportFailureHiddenColumnsIncompleteChartTemplateToggleAndMemberLabelsWork() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val richSample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__status", "varchar"),
+                        ResultColumn("t0__flag", "boolean"),
+                        ResultColumn("t0__num", "bigint"),
+                        ResultColumn("t0__flt", "double"),
+                        ResultColumn("t0__bin", "bytea"),
+                    ),
+                rows =
+                    listOf(
+                        listOf(
+                            ResultCell.text("open"),
+                            ResultCell.BoolCell(true),
+                            ResultCell.IntegerCell(7),
+                            ResultCell.FloatCell(2.5),
+                            ResultCell.binary(byteArrayOf(1, 2)),
+                        ),
+                        listOf(
+                            ResultCell.Null,
+                            ResultCell.Null,
+                            ResultCell.Null,
+                            ResultCell.Null,
+                            ResultCell.Null,
+                        ),
+                    ),
+                rowCount = 2,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val viewModel =
+            ExploreViewModel(
+                createExploreSession(connection(), sampleSpec(), richSample),
+                computationScope = this,
+                computeDispatcher = dispatcher,
+                ioDispatcher = dispatcher,
+            )
+        runCurrent()
+
+        assertEquals(
+            listOf("(blank)", "open"),
+            viewModel.memberOptions("t0__status").map { it.label },
+        )
+        assertEquals(
+            listOf("(blank)", "true"),
+            viewModel.memberOptions("t0__flag").map { it.label },
+        )
+        assertEquals(listOf("(blank)", "7"), viewModel.memberOptions("t0__num").map { it.label })
+        assertEquals(listOf("(blank)", "2.5"), viewModel.memberOptions("t0__flt").map { it.label })
+        assertEquals(listOf("(blank)", "AQI="), viewModel.memberOptions("t0__bin").map { it.label })
+
+        viewModel.toggleColumnPath("open")
+        assertTrue("open" in viewModel.config.collapsedColumnPaths)
+
+        viewModel.applyVisualizationTemplate(
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("t0__status", "Status"),
+                values = listOf(VisualizationMeasure("c", MeasureFn.Count, label = "Count")),
+            ),
+        )
+        assertEquals(ExploreMode.Visualization, viewModel.workspace.activeMode)
+        runCurrent()
+
+        // Incomplete chart guard
+        viewModel.updateVisualization { VisualizationConfig() }
+        runCurrent()
+        val visOut = createTempFile(suffix = ".csv")
+        viewModel.saveVisualizationCsv(visOut)
+        assertEquals("Complete the chart before exporting.", viewModel.exportError)
+
+        // All worksheet columns hidden guard
+        viewModel.updateWorksheetColumnLayout(
+            viewModel.worksheetPreview.columns.map {
+                WorksheetColumnLayout(ref = it.valueRef, visible = false)
+            },
+        )
+        val wsOut = createTempFile(suffix = ".csv")
+        viewModel.saveWorksheetCsv(wsOut)
+        assertEquals("Show at least one worksheet column before exporting.", viewModel.exportError)
+
+        // completeExport failure propagation when writing to an invalid parent directory
+        val badPath = java.nio.file.Path.of("/nonexistent-safedb-dir-${System.nanoTime()}/out.csv")
+        viewModel.savePreviewCsv(badPath)
+        advanceUntilIdle()
+        assertFalse(viewModel.exporting)
+        assertNull(viewModel.exportMessage)
+        assertTrue(!viewModel.exportError.isNullOrBlank())
     }
 
     private fun ExploreViewModel.reconfigure(mode: ExploreMode) {

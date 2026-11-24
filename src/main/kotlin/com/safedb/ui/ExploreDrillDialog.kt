@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.safedb.model.QueryResult
+import com.safedb.model.TableRef
 import com.safedb.ui.components.PrimaryButton
 import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.theme.DialogShape
@@ -20,6 +21,7 @@ internal fun ExploreDrillDialog(
     onExport: () -> Unit,
     onDismiss: () -> Unit,
     exporting: Boolean = false,
+    tables: List<TableRef> = emptyList(),
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -27,14 +29,22 @@ internal fun ExploreDrillDialog(
         title = {
             Column {
                 Text("Source rows", style = MaterialTheme.typography.titleMedium)
+                val samplePhrase =
+                    if (result.truncated) "truncated Explore sample" else "Explore sample"
                 Text(
-                    "${result.rowCount} matching row${if (result.rowCount == 1) "" else "s"} from the Explore sample",
+                    "${result.rowCount} matching row${if (result.rowCount == 1) "" else "s"} from the $samplePhrase",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         },
-        text = { ResultsTable(result = result, modifier = Modifier.width(860.dp).height(480.dp)) },
+        text = {
+            ResultsTable(
+                result = result.copy(truncated = false),
+                tables = tables,
+                modifier = Modifier.width(860.dp).height(480.dp),
+            )
+        },
         confirmButton = {
             PrimaryButton(onClick = onExport, enabled = !exporting) { Text("Export rows") }
         },

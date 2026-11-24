@@ -1,14 +1,15 @@
 # Commands and verification
 
-`./gradlew check` is enough for most pull requests: desktop, `:shared`, and `:mcp` unit tests, `compileRenderKotlin`, test discovery, Docker harness orchestration, and Kover ratchets.
+`./gradlew check` is enough for most pull requests: desktop, `:shared`, and `:mcp` unit tests, `compileRenderKotlin`, test discovery, Docker harness orchestration, `testAgentGuiReset` (Linux), and Kover ratchets.
 
-Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less builds. `check` requires at least 406 desktop, 758 shared, and 251 MCP tests, with 92% desktop, 89% shared, and 93% MCP line-coverage floors. Inspect JUnit XML if discovery is uncertain. Shared kover ignores `integrationTest`, matching MCP, so the ratchet is the `check` unit report. The root Kover allowlist includes `com.safedb.launch.*` and `com.safedb.canvas.*`, and attributes split packages by source file (`CsvWriter.kt` in `com.safedb.export` and `SchemaRelationships.kt` in `com.safedb.schema` count under `:shared`, while desktop files in those packages count under desktop). Unknown split-package sourcefiles fail the ratchet.
+Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less builds. `check` runs `verifyUnitTestDiscovery` (requiring every compiled desktop, `:shared`, and `:mcp` test class in JUnit XML with zero failures or skips) and Kover ratchets with 95% desktop, 92% `:shared`, and 94% `:mcp` line-coverage floors. Inspect JUnit XML if discovery is uncertain. Shared Kover excludes `testFixtures`, `integrationTest`, platform keyring delegates, and live-JDBC adapter objects (while tracking pure `*AdapterKt` helpers), and MCP Kover likewise ignores `integrationTest` plus CLI entrypoint/stdio plumbing so both ratchets reflect unit-testable code. The root Kover allowlist includes pure desktop UI helpers (`com.safedb.ui.util.*`, `com.safedb.ui.chart.*`, `ConnectionFormState*`, `ExploreUiModel*`, `ExploreTemplates*`, `TransportSecurityOptions*`, `WorksheetColumnInteractions*`), `com.safedb.launch.*`, and `com.safedb.canvas.*`, and attributes split packages (`com.safedb.export` and `com.safedb.schema`) by source file. Unknown split-package sourcefiles fail the ratchet.
 
 | Command | Use |
 | --- | --- |
 | `./gradlew help` | Validate root Gradle configuration after build logic changes. |
 | `./gradlew run` | Start the graphical desktop app on macOS or Windows. |
-| `./gradlew check` | Fast gate: desktop, shared, and mcp unit tests, `compileRenderKotlin`, discovery, Docker harness orchestration, and Kover ratchets. |
+| `scripts/agent_gui.sh up` / `./gradlew runAgentGui` | `scripts/agent_gui.sh up` is the harness that starts Xvfb and launches `./gradlew --no-daemon runAgentGui`. `./gradlew runAgentGui` is the unpackaged entry point that harness launches; it does not start Xvfb and uses the ambient `DISPLAY`. See [agent-gui.md](agent-gui.md). |
+| `./gradlew check` | Fast gate: desktop, shared, and mcp unit tests, `compileRenderKotlin`, discovery, Docker harness orchestration, `testAgentGuiReset` (Linux), and Kover ratchets. |
 | `./gradlew ktfmtCheck` | Kotlin format check (`ktfmtFormat` to rewrite). Included in `check`. |
 | `./gradlew qodanaScan` | JVM Community Qodana pass (`qodana.yaml`). Local static analysis; not labeled CI. |
 | `./gradlew check koverXmlReport koverVerify --rerun-tasks --no-build-cache` | Fresh unit-coverage proof for broad Kotlin/build changes. Shared and MCP kover both ignore `integrationTest`. |
@@ -34,8 +35,8 @@ Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less bui
 | `./gradlew :mcp:run` | Stdio MCP server. Speaks JSON-RPC on stdin/stdout; use an MCP client or Inspector. Behavior and tools: [mcp.md](mcp.md). |
 | `./gradlew :mcp:run --args='connections list'` | List saved MCP connections (human CLI; not JSON-RPC). |
 | `./gradlew :mcp:run --args='setup --dialect postgres --database app --username readonly --password-file /absolute/path'` | Non-interactive connection add. Gradle typically has a null `System.console()`, so this is not a password prompt. |
-| `./gradlew :mcp:shadowJar` | Fat JAR at `mcp/build/libs/safe-db-mcp-1.1.3-all.jar`. |
-| `./gradlew :mcp:assembleNpm` | jlink the current OS into `mcp/build/npm/@safe-db/mcp` plus one platform package, stamped 1.1.3 from Gradle (`mcp/npm/package.json` stays `0.0.0-dev` until assemble). Downloads a pinned Temurin 25 jlink JDK only on Linux x64; JMODs for the current platform go into `mcp/build/npm-cache/`. |
+| `./gradlew :mcp:shadowJar` | Fat JAR at `mcp/build/libs/safe-db-mcp-1.1.4-all.jar`. |
+| `./gradlew :mcp:assembleNpm` | jlink the current OS into `mcp/build/npm/@safe-db/mcp` plus one platform package, stamped 1.1.4 from Gradle (`mcp/npm/package.json` stays `0.0.0-dev` until assemble). Downloads a pinned Temurin 25 jlink JDK only on Linux x64; JMODs for the current platform go into `mcp/build/npm-cache/`. |
 | `./gradlew :mcp:assembleNpmAllPlatforms` | jlink every platform into `mcp/build/npm-all/@safe-db/mcp` plus platform packages. Linux x64 only (cross-links with Temurin JMODs). |
 | `./gradlew :mcp:npmCliTest` | `node --test` for the npm CLI shim. Part of `check` when `node` is on `PATH`; skips otherwise. |
 | `./gradlew :mcp:npmPackagedTest` | Packaged MCP stdio/MySQL smoke against the current-OS jlink image. Not part of `check`. |
@@ -43,7 +44,7 @@ Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less bui
 
 ## Integration tests
 
-The root `integrationTest` task runs both the shared JDBC suite and the MCP integration suite. The MCP suite always exercises the packaged shadow JAR over stdio; its per-dialect packaged cases (MySQL, PostgreSQL, SQL Server, Oracle, and Db2) skip when their engine is unavailable. Required MySQL verification checks the shared and MCP JUnit reports separately, so shared MySQL cases cannot hide a missing or skipped MCP case. PostgreSQL-only runs require shared PostgreSQL coverage but do not require the MCP MySQL case.
+The root `integrationTest` task runs both the shared JDBC suite and the MCP integration suite. The MCP suite always exercises the packaged shadow JAR over stdio; its per-dialect packaged cases (MySQL, PostgreSQL, SQL Server, Oracle, and Db2 in `McpPackagedDialectsIntegrationTest`) skip when their engine is unavailable. Required per-dialect verification (`SAFEDB_TEST_REQUIRE_{MYSQL,POSTGRES,MSSQL,ORACLE,DB2}=true`) checks the shared and MCP JUnit reports separately—including matching `McpPackagedDialectsIntegrationTest` cases—so shared cases cannot hide a missing or skipped MCP case.
 
 Integration tests use `SAFEDB_TEST_REQUIRE_MYSQL=true`, `SAFEDB_TEST_REQUIRE_POSTGRES=true`, `SAFEDB_TEST_REQUIRE_MSSQL=true`, `SAFEDB_TEST_REQUIRE_ORACLE=true`, and `SAFEDB_TEST_REQUIRE_DB2=true` to require configured engines. Each engine has matching `SAFEDB_TEST_{MYSQL,POSTGRES,MSSQL,ORACLE,DB2}_{HOST,PORT,USER,PASSWORD,DATABASE}` variables; MySQL also accepts optional `SAFEDB_TEST_MYSQL_DOCKER`. The disposable `compose.yaml` stack uses fixed, checked-in credentials, and the test defaults match it, so `./gradlew integrationTest` needs no `SAFEDB_TEST_*` variables after `scripts/docker_test_databases.sh up`:
 

@@ -132,6 +132,23 @@ class CanvasScrollStateTest {
         assertNull(target)
     }
 
+    @Test
+    fun unconsumedScrollEventPansTheMap() {
+        val horizontal = overflowState(pan = 36f)
+        val vertical = overflowState(pan = -64f)
+
+        val target =
+            canvasPanForScrollEvent(
+                horizontal = horizontal,
+                vertical = vertical,
+                delta = Offset(0f, 3f),
+                shiftPressed = false,
+                consumed = false,
+            )
+
+        assertEquals(Offset(36f, -184f), target)
+    }
+
     private fun overflowState(pan: Float): CanvasAxisScrollState =
         canvasAxisScrollState(
             contentStart = 0f,

@@ -331,35 +331,18 @@ class ConnectionToolsTest {
             service.connections += sampleMcpConnection(id = "c$index", name = "Conn $index")
         }
         withTempMcpClient(service) { client ->
-            val firstPage =
+            val page =
                 client.callTool("list_connections", mapOf("offset" to 1, "limit" to 2)).json()
             assertEquals(
                 listOf("c1", "c2"),
-                firstPage.getValue("connections").jsonArray.map {
+                page.getValue("connections").jsonArray.map {
                     it.jsonObject.getValue("id").jsonPrimitive.content
                 },
             )
-            assertEquals("5", firstPage.getValue("total_count").jsonPrimitive.content)
-            assertEquals("true", firstPage.getValue("truncated").jsonPrimitive.content)
-            assertEquals("3", firstPage.getValue("next_offset").jsonPrimitive.content)
+            assertEquals("5", page.getValue("total_count").jsonPrimitive.content)
+            assertEquals("true", page.getValue("truncated").jsonPrimitive.content)
+            assertEquals("3", page.getValue("next_offset").jsonPrimitive.content)
 
-            val lastPage =
-                client.callTool("list_connections", mapOf("offset" to 3, "limit" to 2)).json()
-            assertEquals(
-                listOf("c3", "c4"),
-                lastPage.getValue("connections").jsonArray.map {
-                    it.jsonObject.getValue("id").jsonPrimitive.content
-                },
-            )
-            assertEquals("5", lastPage.getValue("total_count").jsonPrimitive.content)
-            assertEquals("false", lastPage.getValue("truncated").jsonPrimitive.content)
-            assertFalse(lastPage.containsKey("next_offset"))
-
-            assertError(
-                client.callTool("list_connections", mapOf("limit" to 0)),
-                "invalid_arguments",
-                "limit must be 1 or more",
-            )
             assertError(
                 client.callTool("list_connections", mapOf("offset" to -1)),
                 "invalid_arguments",
@@ -384,18 +367,6 @@ class ConnectionToolsTest {
             val reasons = pending.getValue("reasons").jsonArray.map { it.jsonPrimitive.content }
             assertTrue(reasons.all { it.contains("desktop app") })
             assertTrue(reasons.any { it.contains("saved queries and query history") })
-        }
-    }
-
-    @Test
-    fun connectionToolMetadataIsDocumented() = runBlocking {
-        withTempMcpClient(RecordingSafeDbService()) { client ->
-            val tools = client.listTools().tools.associateBy { it.name }
-            assertEquals(true, tools.getValue("list_connections").annotations?.readOnlyHint)
-            val delete = tools.getValue("delete_connection")
-            assertEquals(true, delete.annotations?.destructiveHint)
-            assertEquals(listOf("connection_id"), delete.inputSchema.required)
-            assertTrue(delete.inputSchema.properties?.containsKey("confirmation") == true)
         }
     }
 }

@@ -101,15 +101,36 @@ class AppStateTest {
         val state = AppState()
         state.requestNewConnectionForm()
         assertEquals(AppRoute.Connections, state.route.value)
-        assertEquals(true, state.openNewConnectionForm.value)
+        assertEquals(ConnectionFormRequest.New, state.connectionFormRequest.value)
 
-        state.consumeNewConnectionFormRequest()
-        assertEquals(false, state.openNewConnectionForm.value)
+        state.consumeConnectionFormRequest()
+        assertNull(state.connectionFormRequest.value)
         assertEquals(AppRoute.Connections, state.route.value)
 
         state.requestNewConnectionForm()
         state.navigate(AppRoute.Home)
-        assertEquals(false, state.openNewConnectionForm.value)
+        assertNull(state.connectionFormRequest.value)
+        assertEquals(AppRoute.Home, state.route.value)
+    }
+
+    @Test
+    fun editConnectionRequestNavigatesToConnectionsAndClearsWhenConsumedOrSuperseded() {
+        val state = AppState()
+        state.requestEditConnection("c1")
+        assertEquals(AppRoute.Connections, state.route.value)
+        assertEquals(ConnectionFormRequest.Edit("c1"), state.connectionFormRequest.value)
+
+        state.consumeConnectionFormRequest()
+        assertNull(state.connectionFormRequest.value)
+        assertEquals(AppRoute.Connections, state.route.value)
+
+        state.requestEditConnection("c2")
+        state.requestNewConnectionForm()
+        assertEquals(ConnectionFormRequest.New, state.connectionFormRequest.value)
+
+        state.requestEditConnection("c3")
+        state.navigate(AppRoute.Home)
+        assertNull(state.connectionFormRequest.value)
         assertEquals(AppRoute.Home, state.route.value)
     }
 
@@ -134,6 +155,26 @@ class AppStateTest {
             SchemaSelectionIntent.Unselected,
             resolveQuerySchemaSelection(spec.copy(tables = emptyList())),
         )
+    }
+
+    @Test
+    fun clearDefaultConnectionAndSetActiveSchemaRespectConnectionState() {
+        val state = AppState()
+
+        state.setActiveSchema("ignored")
+        assertEquals(SchemaSelectionIntent.Unselected, state.schemaSelection.value)
+
+        state.activateDefaultConnection("c1", "public")
+        state.setActiveSchema("analytics")
+        assertEquals(
+            SchemaSelectionIntent("analytics", SchemaSelectionSource.User),
+            state.schemaSelection.value,
+        )
+
+        state.clearDefaultConnection()
+        assertNull(state.activeConnectionId.value)
+        assertNull(state.activeConnectionOrigin.value)
+        assertEquals(SchemaSelectionIntent.Unselected, state.schemaSelection.value)
     }
 
     private fun connection(id: String) =

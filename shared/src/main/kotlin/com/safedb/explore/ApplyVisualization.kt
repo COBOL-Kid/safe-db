@@ -8,8 +8,11 @@ import com.safedb.model.classifyColumn
 import com.safedb.model.isNumeric
 import com.safedb.model.isTemporal
 import java.math.BigDecimal
+import java.math.BigInteger
 import java.math.MathContext
 import java.math.RoundingMode
+import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.sqrt
 
@@ -26,6 +29,9 @@ private class VisualizationPlanner(
     private val sampleIndex = SampleIndex(sample)
     private val types = sample.columns.associate { it.name to classifyColumn(it.dataType) }
     private val warnings = linkedSetOf<String>()
+    private val seriesSortKeys = mutableMapOf<String, String>()
+    private val plainValues = mutableMapOf<String, String>()
+    private val autoDecimalFormat by lazy { createGroupedAutoDecimalFormat() }
 
     fun apply(): VisualizationPreview {
         if (!config.isConfigured())
@@ -49,20 +55,28 @@ private class VisualizationPlanner(
                 ChartType.Auto -> emptyList()
             }
         if (marks.isEmpty()) return blocked("No plottable values were found.", chartType)
-        val ordered = orderMarks(marks, chartType)
+        val canonicalSeries = canonicalSeriesOrder(marks)
+        val seriesRank = canonicalSeries.mapIndexed { index, series -> series.key to index }.toMap()
+        val ordered = orderMarks(marks, chartType, seriesRank)
+        val presentSeriesKeys = ordered.mapTo(mutableSetOf()) { it.seriesKey }
+        val presentSeries = canonicalSeries.filter { it.key in presentSeriesKeys }
+        val orphanSecondary =
+            presentSeries.none { it.axis == ValueAxis.Primary } &&
+                presentSeries.any { it.axis == ValueAxis.Secondary }
+        val normalizedMarks =
+            if (orphanSecondary) ordered.map { it.copy(axis = ValueAxis.Primary) } else ordered
         val series =
-            ordered
-                .distinctBy { it.seriesKey }
-                .map { VisualizationSeries(it.seriesKey, it.seriesLabel) }
+            if (orphanSecondary) presentSeries.map { it.copy(axis = ValueAxis.Primary) }
+            else presentSeries
         val title = config.title.ifBlank { defaultTitle(chartType) }
         return VisualizationPreview(
             chartType = chartType,
             title = title,
-            marks = ordered,
-            categories = ordered.distinctBy { it.xKey }.map { it.xLabel },
+            marks = normalizedMarks,
+            categories = normalizedMarks.distinctBy { it.xKey }.map { it.xLabel },
             series = series,
             warnings = warnings.toList(),
-            exportResult = exportResult(chartType, ordered),
+            exportResult = exportResult(chartType, normalizedMarks),
         )
     }
 
@@ -128,11 +142,13 @@ private class VisualizationPlanner(
         type: ChartType,
     ): List<VisualizationMark> {
         val x = config.x ?: return emptyList()
+        val dualAxisAllowed = config.supportsSecondaryAxis(type)
+        val effectiveDualAxis = config.usesSecondaryAxis(type)
         val groups = linkedMapOf<Pair<ExploreBucket, ExploreBucket>, MutableList<ChartRecord>>()
         records.forEach { record ->
             val xBucket = bucket(record.cell(x.column), x)
             val seriesBucket =
-                config.series?.let { bucket(record.cell(it.column), it) }
+                config.series?.let { seriesBucket(record.cell(it.column), it) }
                     ?: ExploreBucket("", "", "", ordinal = null)
             groups.getOrPut(xBucket to seriesBucket, ::mutableListOf) += record
         }
@@ -143,18 +159,21 @@ private class VisualizationPlanner(
                 val value = aggregate(grouped, measure) ?: return@forEach
                 val seriesKey = if (config.series != null) seriesBucket.key else measure.alias
                 val seriesLabel = if (config.series != null) seriesBucket.label else measure.label
+                val id = "${xBucket.key}|$seriesKey|${measure.alias}"
+                plainValues[id] = plain(value)
                 marks +=
                     VisualizationMark(
-                        id = "${xBucket.key}|$seriesKey|${measure.alias}",
+                        id = id,
                         xKey = xBucket.key,
                         xLabel = xBucket.label,
                         xValue = xBucket.ordinal,
                         y = value.toDouble(),
-                        formattedY = formatExploreNumber(value, measure.numberFormat),
+                        formattedY = formatVisualizationNumber(value, measure.numberFormat),
                         seriesKey = seriesKey,
                         seriesLabel = seriesLabel,
                         measureAlias = measure.alias,
                         measureLabel = measure.label,
+                        axis = if (effectiveDualAxis) measure.axis else ValueAxis.Primary,
                         sourceRowIndices = grouped.map { it.index },
                     )
             }
@@ -166,7 +185,20 @@ private class VisualizationPlanner(
         ) {
             warnings += "Line charts are clearest with a date or datetime X field"
         }
-        return applyValueFilters(marks)
+        val filtered = applyValueFilters(marks)
+        if (dualAxisAllowed && !effectiveDualAxis && filtered.isNotEmpty()) {
+            val nonZeroPeaks =
+                filtered
+                    .groupBy { it.measureAlias }
+                    .values
+                    .map { measureMarks -> measureMarks.maxOf { abs(it.y) } }
+                    .filter { it > 0.0 }
+            if (nonZeroPeaks.size >= 2 && nonZeroPeaks.max() / nonZeroPeaks.min() >= 20.0) {
+                warnings +=
+                    "Values use very different scales. Assign a value to the secondary axis to compare them."
+            }
+        }
+        return filtered
     }
 
     private fun scatterMarks(records: List<ChartRecord>): List<VisualizationMark> {
@@ -177,7 +209,7 @@ private class VisualizationPlanner(
             val xValue = resultCellDecimal(record.cell(x.column))
             val yValue = resultCellDecimal(record.cell(yColumn))
             if (xValue == null || yValue == null) return@mapNotNull null
-            val seriesBucket = config.series?.let { bucket(record.cell(it.column), it) }
+            val seriesBucket = config.series?.let { seriesBucket(record.cell(it.column), it) }
             val size = config.size?.let { resultCellDecimal(record.cell(it.column))?.toDouble() }
             VisualizationMark(
                 id = "row:${record.index}",
@@ -185,7 +217,7 @@ private class VisualizationPlanner(
                 xLabel = xValue.stripTrailingZeros().toPlainString(),
                 xValue = xValue.toDouble(),
                 y = yValue.toDouble(),
-                formattedY = formatExploreNumber(yValue, yMeasure.numberFormat),
+                formattedY = formatVisualizationNumber(yValue, yMeasure.numberFormat),
                 seriesKey = seriesBucket?.key ?: yMeasure.alias,
                 seriesLabel = seriesBucket?.label ?: yMeasure.label,
                 measureAlias = yMeasure.alias,
@@ -205,21 +237,38 @@ private class VisualizationPlanner(
         val configured = field.grouping as? PivotGrouping.NumberBin
         val min = values.minOf { it.second }
         val max = values.maxOf { it.second }
-        val requested = configured?.size?.toBigDecimalOrNull()
+        val requested = configured?.size?.trim()?.toBigDecimalOrNull()
         val binCount = ceil(sqrt(values.size.toDouble())).toInt().coerceIn(5, 20)
         val computed =
             if (max.compareTo(min) == 0) BigDecimal.ONE
-            else max.subtract(min).divide(binCount.toBigDecimal(), MathContext.DECIMAL128)
+            else
+                niceHistogramBinSize(
+                    max.subtract(min).divide(binCount.toBigDecimal(), MathContext.DECIMAL128),
+                )
         val size = requested?.takeIf { it > BigDecimal.ZERO } ?: computed
-        val start = configured?.start?.toBigDecimalOrNull() ?: min
-        val groups = linkedMapOf<BigDecimal, MutableList<ChartRecord>>()
+        val start = configured?.start?.trim()?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+        val groups = linkedMapOf<BigInteger, MutableList<ChartRecord>>()
         values.forEach { (record, value) ->
-            val index = value.subtract(start).divide(size, 0, RoundingMode.FLOOR)
-            val lower = start.add(index.multiply(size))
-            groups.getOrPut(lower, ::mutableListOf) += record
+            val index = value.subtract(start).divide(size, 0, RoundingMode.FLOOR).toBigInteger()
+            groups.getOrPut(index, ::mutableListOf) += record
         }
-        return groups.toSortedMap().map { (lower, grouped) ->
+        val minIndex = groups.keys.min()
+        val maxIndex = groups.keys.max()
+        val binSpan = maxIndex.subtract(minIndex).add(BigInteger.ONE)
+        val indices =
+            if (binSpan <= MAX_CONTIGUOUS_HISTOGRAM_BINS.toBigInteger()) {
+                List(binSpan.toInt()) { offset ->
+                    minIndex.add(BigInteger.valueOf(offset.toLong()))
+                }
+            } else {
+                warnings +=
+                    "Empty bins omitted because the range spans more than $MAX_CONTIGUOUS_HISTOGRAM_BINS bins."
+                groups.keys.sorted()
+            }
+        return indices.map { index ->
+            val lower = start.add(BigDecimal(index).multiply(size))
             val upper = lower.add(size)
+            val grouped = groups[index].orEmpty()
             val label = "${plain(lower)} – ${plain(upper)}"
             VisualizationMark(
                 id = "bin:${plain(lower)}",
@@ -227,7 +276,7 @@ private class VisualizationPlanner(
                 xLabel = label,
                 xValue = lower.toDouble(),
                 y = grouped.size.toDouble(),
-                formattedY = grouped.size.toString(),
+                formattedY = autoDecimalFormat.format(grouped.size.toBigDecimal()),
                 seriesKey = "count",
                 seriesLabel = "Count",
                 measureAlias = "count",
@@ -240,13 +289,15 @@ private class VisualizationPlanner(
     private fun kpiMarks(records: List<ChartRecord>): List<VisualizationMark> {
         val measure = config.values.single()
         val value = aggregate(records, measure) ?: return emptyList()
+        val id = "kpi:${measure.alias}"
+        plainValues[id] = plain(value)
         return listOf(
             VisualizationMark(
-                id = "kpi:${measure.alias}",
+                id = id,
                 xKey = "",
                 xLabel = measure.label,
                 y = value.toDouble(),
-                formattedY = formatExploreNumber(value, measure.numberFormat),
+                formattedY = formatVisualizationNumber(value, measure.numberFormat),
                 seriesKey = measure.alias,
                 seriesLabel = measure.label,
                 measureAlias = measure.alias,
@@ -302,9 +353,22 @@ private class VisualizationPlanner(
         return current
     }
 
+    private fun canonicalSeriesOrder(marks: List<VisualizationMark>): List<VisualizationSeries> {
+        val distinct =
+            marks
+                .distinctBy { it.seriesKey }
+                .map { VisualizationSeries(it.seriesKey, it.seriesLabel, it.axis) }
+        return if (config.series != null) {
+            distinct.sortedBy { (seriesSortKeys[it.key] ?: it.label).lowercase(Locale.ROOT) }
+        } else {
+            distinct
+        }
+    }
+
     private fun orderMarks(
         marks: List<VisualizationMark>,
         type: ChartType,
+        seriesRank: Map<String, Int>,
     ): List<VisualizationMark> {
         if (type == ChartType.Scatter || type == ChartType.Kpi) return marks
         val groups = marks.groupBy { it.xKey }.values.toList()
@@ -321,14 +385,23 @@ private class VisualizationPlanner(
                     }
                 VisualizationSortTarget.Category ->
                     groups.sortedBy { it.first().xLabel.lowercase() }
-                VisualizationSortTarget.Value -> groups.sortedBy { it.firstOrNull()?.y ?: 0.0 }
+                VisualizationSortTarget.Value ->
+                    groups.sortedBy { group ->
+                        val primary = group.filter { it.axis == ValueAxis.Primary }
+                        (primary.ifEmpty { group }).sumOf { it.y }
+                    }
             }.let { if (config.sort.dir == SortDir.Desc) it.reversed() else it }
         val limited = if (type == ChartType.Bar) sorted.take(config.topN) else sorted
         if (type == ChartType.Bar && groups.size > limited.size) {
             warnings += "Showing ${limited.size} of ${groups.size} categories"
         }
-        return limited.flatten()
+        return limited.flatMap { group ->
+            group.sortedBy { mark -> seriesRank[mark.seriesKey] ?: Int.MAX_VALUE }
+        }
     }
+
+    private fun seriesBucket(cell: ResultCell, field: VisualizationField): ExploreBucket =
+        bucket(cell, field).also { seriesSortKeys.putIfAbsent(it.key, it.sortKey) }
 
     private fun bucket(cell: ResultCell, field: VisualizationField): ExploreBucket {
         if (cell is ResultCell.Null)
@@ -342,11 +415,19 @@ private class VisualizationPlanner(
         val column = measure.sourceColumn
         if (measure.fn == MeasureFn.Count && column == null) return records.size.toBigDecimal()
         val cells = column?.let { records.map { record -> record.cell(it) } }.orEmpty()
-        if (measure.fn == MeasureFn.Min || measure.fn == MeasureFn.Max) {
-            val values = cells.mapNotNull(::resultCellDecimal)
-            return if (measure.fn == MeasureFn.Min) values.minOrNull() else values.maxOrNull()
+        return when (measure.fn) {
+            MeasureFn.Min -> cells.mapNotNull(::resultCellDecimal).minOrNull()
+            MeasureFn.Max -> cells.mapNotNull(::resultCellDecimal).maxOrNull()
+            MeasureFn.Sum ->
+                cells.mapNotNull(::resultCellDecimal).fold(BigDecimal.ZERO, BigDecimal::add)
+            MeasureFn.Avg -> cells.mapNotNull(::resultCellDecimal).average()
+            MeasureFn.Product ->
+                cells
+                    .mapNotNull(::resultCellDecimal)
+                    .takeIf { it.isNotEmpty() }
+                    ?.fold(BigDecimal.ONE, BigDecimal::multiply)
+            else -> resultCellDecimal(aggregateMeasure(cells, measure.fn))
         }
-        return resultCellDecimal(aggregateMeasure(cells, measure.fn))
     }
 
     private fun defaultTitle(type: ChartType): String {
@@ -362,45 +443,58 @@ private class VisualizationPlanner(
     }
 
     private fun exportResult(type: ChartType, marks: List<VisualizationMark>): QueryResult {
-        val columns =
-            if (type == ChartType.Scatter) {
-                listOf(
-                    ResultColumn(config.x?.label ?: "X", "decimal"),
-                    ResultColumn(config.values.single().label, "decimal"),
-                    ResultColumn("Series", "text"),
-                    ResultColumn("Size", "decimal"),
-                    ResultColumn("Source rows", "integer"),
-                )
-            } else {
-                listOf(
-                    ResultColumn(config.x?.label ?: "Category", "text"),
-                    ResultColumn("Series", "text"),
-                    ResultColumn("Measure", "text"),
-                    ResultColumn("Value", "text"),
-                    ResultColumn("Source rows", "integer"),
-                )
-            }
+        val columnSpecs = visualizationTableColumns(type, config)
+        val allAuto = config.values.all { it.numberFormat.kind == NumberFormatKind.Auto }
+        val columns = columnSpecs.map { spec ->
+            val dataType =
+                when (spec.kind) {
+                    VisualizationTableColumnKind.ScatterX,
+                    VisualizationTableColumnKind.ScatterY,
+                    VisualizationTableColumnKind.Size -> "decimal"
+                    VisualizationTableColumnKind.Category,
+                    VisualizationTableColumnKind.Series,
+                    VisualizationTableColumnKind.Measure -> "text"
+                    VisualizationTableColumnKind.Value ->
+                        when {
+                            type == ChartType.Histogram -> "integer"
+                            allAuto -> "decimal"
+                            else -> "text"
+                        }
+                    VisualizationTableColumnKind.SourceRows -> "integer"
+                }
+            ResultColumn(spec.label, dataType)
+        }
         val rows = marks.map { mark ->
-            if (type == ChartType.Scatter) {
-                listOf(
-                    ResultCell.FloatCell(mark.xValue ?: 0.0),
-                    ResultCell.FloatCell(mark.y),
-                    ResultCell.text(mark.seriesLabel),
-                    mark.size?.let(ResultCell::FloatCell) ?: ResultCell.Null,
-                    ResultCell.IntegerCell(mark.sourceRowIndices.size.toLong()),
-                )
-            } else {
-                listOf(
-                    ResultCell.text(mark.xLabel),
-                    ResultCell.text(mark.seriesLabel),
-                    ResultCell.text(mark.measureLabel),
-                    ResultCell.text(mark.formattedY),
-                    ResultCell.IntegerCell(mark.sourceRowIndices.size.toLong()),
-                )
+            columnSpecs.map { spec ->
+                when (spec.kind) {
+                    VisualizationTableColumnKind.ScatterX ->
+                        ResultCell.FloatCell(mark.xValue ?: 0.0)
+                    VisualizationTableColumnKind.ScatterY -> ResultCell.FloatCell(mark.y)
+                    VisualizationTableColumnKind.Category -> ResultCell.text(mark.xLabel)
+                    VisualizationTableColumnKind.Series -> ResultCell.text(mark.seriesLabel)
+                    VisualizationTableColumnKind.Size ->
+                        mark.size?.let(ResultCell::FloatCell) ?: ResultCell.Null
+                    VisualizationTableColumnKind.Measure -> ResultCell.text(mark.measureLabel)
+                    VisualizationTableColumnKind.Value ->
+                        when {
+                            type == ChartType.Histogram -> ResultCell.IntegerCell(mark.y.toLong())
+                            allAuto -> ResultCell.text(plainValues[mark.id] ?: mark.y.toString())
+                            else -> ResultCell.text(mark.formattedY)
+                        }
+                    VisualizationTableColumnKind.SourceRows ->
+                        ResultCell.IntegerCell(mark.sourceRowIndices.size.toLong())
+                }
             }
         }
         return QueryResult(columns, rows, rows.size, sample.truncated, warnings.toList())
     }
+
+    private fun formatVisualizationNumber(value: BigDecimal, format: PivotNumberFormat): String =
+        if (format.kind == NumberFormatKind.Auto) {
+            autoDecimalFormat.format(value)
+        } else {
+            formatExploreNumber(value, format)
+        }
 
     private fun blocked(message: String, type: ChartType? = null) =
         VisualizationPreview(
@@ -413,6 +507,23 @@ private class VisualizationPlanner(
     private fun ChartRecord.cell(column: String): ResultCell = sampleIndex.cell(row, column)
 }
 
+private const val MAX_CONTIGUOUS_HISTOGRAM_BINS = 500
+
 private data class ChartRecord(val index: Int, val row: List<ResultCell>)
 
 private fun plain(value: BigDecimal): String = value.stripTrailingZeros().toPlainString()
+
+private fun niceHistogramBinSize(rough: BigDecimal): BigDecimal {
+    if (rough <= BigDecimal.ZERO) return BigDecimal.ONE
+    val exponent = rough.precision() - rough.scale() - 1
+    val fraction = rough.scaleByPowerOfTen(-exponent)
+    val niceFraction =
+        when {
+            fraction <= BigDecimal.ONE -> BigDecimal.ONE
+            fraction <= BigDecimal("2") -> BigDecimal("2")
+            fraction <= BigDecimal("2.5") -> BigDecimal("2.5")
+            fraction <= BigDecimal("5") -> BigDecimal("5")
+            else -> BigDecimal.TEN
+        }
+    return niceFraction.scaleByPowerOfTen(exponent).stripTrailingZeros()
+}

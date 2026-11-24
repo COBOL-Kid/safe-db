@@ -10,6 +10,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.text.AnnotatedString
+import com.safedb.loadAppVersion
 import com.safedb.service.FakeSafeDbServiceSupport
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.SettingsViewModel
@@ -120,6 +121,13 @@ class SettingsQueryTimeoutTest {
             assertNull(scene.findContaining(QUERY_TIMEOUT_RANGE_ERROR))
             assertNull(scene.findByTag(QUERY_TIMEOUT_ERROR_TAG))
             assertEquals(45, viewModel.settings.value.queryTimeoutSeconds)
+        }
+    }
+
+    @Test
+    fun settingsMenuShowsThePackagedAppVersion() {
+        withSettingsPanel(settingsViewModel(), width = 1000, height = 900) { scene ->
+            scene.requireExact("Version ${loadAppVersion()}")
         }
     }
 }

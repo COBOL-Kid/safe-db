@@ -1,5 +1,6 @@
 package com.safedb.secrets
 
+import com.github.javakeyring.Keyring
 import com.safedb.platform.DesktopPlatform
 import com.safedb.platform.DesktopStoreUnavailableException
 
@@ -27,3 +28,18 @@ private constructor(private val delegate: CredentialStore, val label: String) :
         }
     }
 }
+
+internal fun createJavaKeyringDelegateOrNull(): CredentialStore? = runCatching {
+    JavaKeyringDelegate(Keyring.create())
+}
+    .getOrNull()
+
+// Operational startup secrets must not use the fallback allowed for connection credentials.
+internal fun createStrictPlatformCredentialStoreOrNull(
+    platform: DesktopPlatform = DesktopPlatform.current(),
+): CredentialStore? =
+    when (platform) {
+        DesktopPlatform.MacOs,
+        DesktopPlatform.Windows -> createJavaKeyringDelegateOrNull()
+        DesktopPlatform.Linux -> null
+    }

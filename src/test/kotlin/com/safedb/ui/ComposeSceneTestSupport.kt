@@ -42,8 +42,11 @@ internal fun sampleQuerySpec() =
         limit = 100,
     )
 
-internal fun ImageComposeScene.allSemanticsNodes(): List<SemanticsNode> = semanticsOwners.flatMap {
-    it.rootSemanticsNode.descendants()
+internal fun ImageComposeScene.allSemanticsNodes(
+    useUnmergedTree: Boolean = false,
+): List<SemanticsNode> = semanticsOwners.flatMap {
+    val root = if (useUnmergedTree) it.unmergedRootSemanticsNode else it.rootSemanticsNode
+    root.descendants()
 }
 
 internal fun SemanticsNode.label(): String {
@@ -96,17 +99,23 @@ internal fun ImageComposeScene.nodesLabeled(label: String): List<SemanticsNode> 
 internal fun ImageComposeScene.nodesContaining(text: String): List<SemanticsNode> =
     allSemanticsNodes().filter { it.label().contains(text) }
 
-internal fun ImageComposeScene.findByTag(tag: String): SemanticsNode? =
-    allSemanticsNodes().firstOrNull { node ->
+internal fun ImageComposeScene.findByTag(
+    tag: String,
+    useUnmergedTree: Boolean = false,
+): SemanticsNode? =
+    allSemanticsNodes(useUnmergedTree).firstOrNull { node ->
         node.config.contains(SemanticsProperties.TestTag) &&
             node.config[SemanticsProperties.TestTag] == tag
     }
 
-internal fun ImageComposeScene.requireByTag(tag: String): SemanticsNode =
-    findByTag(tag)
+internal fun ImageComposeScene.requireByTag(
+    tag: String,
+    useUnmergedTree: Boolean = false,
+): SemanticsNode =
+    findByTag(tag, useUnmergedTree)
         ?: error(
             "No node tagged '$tag' in ${
-                allSemanticsNodes().map { it.label() }.filter { it.isNotEmpty() }
+                allSemanticsNodes(useUnmergedTree).map { it.label() }.filter { it.isNotEmpty() }
             }",
         )
 

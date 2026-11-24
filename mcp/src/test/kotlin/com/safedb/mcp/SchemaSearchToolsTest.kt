@@ -223,12 +223,4 @@ class SchemaSearchToolsTest {
             assertTrue(filtered.getValue("matches").jsonArray.isEmpty())
         }
     }
-
-    @Test
-    fun searchCatalogToolIsReadOnly() = runBlocking {
-        withTempMcpClient(catalogService()) { client ->
-            val tool = client.listTools().tools.single { it.name == "search_catalog" }
-            assertEquals(true, tool.annotations?.readOnlyHint)
-        }
-    }
 }

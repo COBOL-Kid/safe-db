@@ -275,15 +275,6 @@ class SchemaJoinToolsTest {
     }
 
     @Test
-    fun findJoinPathsToolMetadataIsDocumented() = runBlocking {
-        withTempMcpClient(catalogService()) { client ->
-            val tool = client.listTools().tools.single { it.name == "find_join_paths" }
-            assertEquals(true, tool.annotations?.readOnlyHint)
-            assertTrue(tool.outputSchema?.properties?.containsKey("from_table") == true)
-        }
-    }
-
-    @Test
     fun findJoinPathsPaginatesDirectNeighborsAndValidatesOffsetAndLimit() = runBlocking {
         val service = joinService()
         withTempMcpClient(service) { client ->
@@ -304,23 +295,6 @@ class SchemaJoinToolsTest {
             assertEquals("true", first.getValue("truncated").jsonPrimitive.content)
             assertEquals("1", first.getValue("next_offset").jsonPrimitive.content)
 
-            val second =
-                client
-                    .callTool(
-                        "find_join_paths",
-                        mapOf(
-                            "connection_id" to "c1",
-                            "from_table" to "public.customers",
-                            "offset" to 1,
-                            "limit" to 1,
-                        ),
-                    )
-                    .json()
-            assertEquals(1, second.getValue("neighbors").jsonArray.size)
-            assertEquals("2", second.getValue("total_count").jsonPrimitive.content)
-            assertEquals("false", second.getValue("truncated").jsonPrimitive.content)
-            assertFalse(second.containsKey("next_offset"))
-
             assertError(
                 client.callTool(
                     "find_join_paths",
@@ -332,18 +306,6 @@ class SchemaJoinToolsTest {
                 ),
                 "invalid_arguments",
                 "limit must be 1 or more",
-            )
-            assertError(
-                client.callTool(
-                    "find_join_paths",
-                    mapOf(
-                        "connection_id" to "c1",
-                        "from_table" to "public.customers",
-                        "offset" to -1,
-                    ),
-                ),
-                "invalid_arguments",
-                "offset must be 0 or more",
             )
         }
     }

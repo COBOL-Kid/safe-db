@@ -10,7 +10,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-class ConnectionsViewModel(private val service: SafeDbService, private val scope: CoroutineScope) {
+class ConnectionsViewModel(
+    private val service: SafeDbService,
+    private val scope: CoroutineScope,
+    private val onCredentialsUpdated: (ConnectionDef) -> Unit = {},
+) {
     private val _connections = MutableStateFlow<List<ConnectionDef>>(emptyList())
     val connections: StateFlow<List<ConnectionDef>> = _connections.asStateFlow()
 
@@ -52,10 +56,6 @@ class ConnectionsViewModel(private val service: SafeDbService, private val scope
         return service.createConnection(def, password)
     }
 
-    suspend fun updateConnection(def: ConnectionDef, password: String?) {
-        service.updateConnection(def, password)
-    }
-
     fun saveConnection(
         def: ConnectionDef,
         password: String?,
@@ -67,14 +67,19 @@ class ConnectionsViewModel(private val service: SafeDbService, private val scope
         try {
             val saved =
                 if (editing) {
-                    updateConnection(def, password)
+                    service.updateConnection(def, password)
+                    // Credential-material edits clear the active connection via
+                    // onConnectionChanged;
+                    // password-only updates re-probe the active connection in place.
+                    if (credentialMaterialChanged) {
+                        onConnectionChanged(def.id)
+                    } else if (password != null) {
+                        onCredentialsUpdated(def)
+                    }
                     def
                 } else {
                     createConnection(def, password ?: "")
                 }
-            if (editing && credentialMaterialChanged) {
-                onConnectionChanged(saved.id)
-            }
             load()
             onComplete(Result.success(saved))
         } catch (error: CancellationException) {

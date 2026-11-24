@@ -246,6 +246,107 @@ class LaunchProfileTest {
         assertTrue(properties.isEmpty())
     }
 
+    @Test
+    fun rejectsInvalidArgsSchemaTrustStorePasswordSourcesAndRollsBackTempPemOnFailure() {
+        val directory = Files.createTempDirectory("safedb-launch-profile-gaps")
+        try {
+            assertFalse(configure(emptyArray()))
+            assertTrue(
+                assertFailsWith<LaunchProfileException> { configure(arrayOf("--bad")) }
+                    .message!!
+                    .contains("Usage:"),
+            )
+
+            val trustStore =
+                createTrustStore(directory.resolve("roots.p12"), "secret", withCertificate = true)
+            val passwordFile = directory.resolve("pw.txt").apply { writeText("secret") }
+
+            val missingFile = directory.resolve("missing.json")
+            assertTrue(
+                assertFailsWith<LaunchProfileException> {
+                        configure(arrayOf("--launch-profile", missingFile.toString()))
+                    }
+                    .message!!
+                    .contains("readable regular file"),
+            )
+
+            val badSchema =
+                directory.resolve("bad-schema.json").apply {
+                    writeText(
+                        """{"schemaVersion":2,"trustStore":{"type":"PKCS12","path":"${jsonPath(trustStore)}","password":{"source":"file","path":"${jsonPath(passwordFile)}"}}}""",
+                    )
+                }
+            assertTrue(
+                assertFailsWith<LaunchProfileException> {
+                        configure(arrayOf("--launch-profile", badSchema.toString()))
+                    }
+                    .message!!
+                    .contains("schemaVersion 2"),
+            )
+
+            val badType =
+                directory.resolve("bad-type.json").apply {
+                    writeText(
+                        """{"schemaVersion":1,"trustStore":{"type":"JKS","path":"${jsonPath(trustStore)}","password":{"source":"file","path":"${jsonPath(passwordFile)}"}}}""",
+                    )
+                }
+            assertTrue(
+                assertFailsWith<LaunchProfileException> {
+                        configure(arrayOf("--launch-profile", badType.toString()))
+                    }
+                    .message!!
+                    .contains("PKCS12"),
+            )
+
+            val badFileSource =
+                writeProfile(
+                    directory,
+                    trustStore,
+                    """{"source":"file","path":"${jsonPath(passwordFile)}","reference":"extra"}""",
+                )
+            assertTrue(
+                assertFailsWith<LaunchProfileException> {
+                        configure(arrayOf("--launch-profile", badFileSource.toString()))
+                    }
+                    .message!!
+                    .contains("do not allow reference"),
+            )
+
+            val unknownSource = writeProfile(directory, trustStore, """{"source":"env"}""")
+            assertTrue(
+                assertFailsWith<LaunchProfileException> {
+                        configure(arrayOf("--launch-profile", unknownSource.toString()))
+                    }
+                    .message!!
+                    .contains("Unsupported trust-store password source"),
+            )
+
+            val validProfile =
+                writeProfile(
+                    directory,
+                    trustStore,
+                    """{"source":"file","path":"${jsonPath(passwordFile)}"}""",
+                )
+            var createdPem: Path? = null
+            assertFailsWith<LaunchProfileException> {
+                LaunchProfileBootstrap.configure(
+                    args = arrayOf("--launch-profile", validProfile.toString()),
+                    credentialStoreFactory = { null },
+                    propertySetter = { key, value ->
+                        if (key == POSTGRES_LAUNCH_ROOT_CERT_PROPERTY) {
+                            createdPem = Path.of(value)
+                            assertTrue(Files.exists(createdPem!!))
+                            error("simulated property setter failure")
+                        }
+                    },
+                )
+            }
+            assertTrue(createdPem != null && !Files.exists(createdPem))
+        } finally {
+            directory.toFile().deleteRecursively()
+        }
+    }
+
     private fun configure(
         args: Array<String>,
         store: CredentialStore? = null,

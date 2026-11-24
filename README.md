@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/COBOL-Kid/safe-db/releases"><img alt="Version 1.1.3" src="https://img.shields.io/badge/version-1.1.3-blue"></a>
+  <a href="https://github.com/COBOL-Kid/safe-db/releases"><img alt="Version 1.1.4" src="https://img.shields.io/badge/version-1.1.4-blue"></a>
   <a href="LICENSE.txt"><img alt="Apache License 2.0" src="https://img.shields.io/badge/license-Apache%202.0-green"></a>
   <a href="https://www.npmjs.com/package/@safe-db/mcp"><img alt="npm downloads per month" src="https://img.shields.io/npm/dm/%40safe-db/mcp?label=npm%20downloads"></a>
 </p>
@@ -18,7 +18,7 @@
   <a href="https://safe-db.dev">Website</a>
 </p>
 
-Read-only access to production databases, for people and for agents. The 1.1.3 desktop app and the MCP server share one query engine: it introspects PostgreSQL, MySQL, SQL Server, Oracle, and Db2, compiles a structured `QuerySpec` to bound-parameter SQL, and runs a time-boxed, row-capped `SELECT`.
+Read-only access to production databases, for people and for agents. The 1.1.4 desktop app and the MCP server share one query engine: it introspects PostgreSQL, MySQL, SQL Server, Oracle, and Db2, compiles a structured `QuerySpec` to bound-parameter SQL, and runs a time-boxed, row-capped `SELECT`.
 
 Packaged releases and the user guide are at [safe-db.dev](https://safe-db.dev). This repository is for building from source and changing the code.
 

@@ -25,14 +25,6 @@ import kotlin.test.assertTrue
 
 class Db2AdapterJdbcTest {
     @Test
-    fun db2TestReadsTheVersionProbe() {
-        val jdbc = script(probe("DB2 v12.1.0"))
-
-        assertEquals("DB2 v12.1.0", Db2Adapter.test(jdbc.dataSource()))
-        assertEquals(listOf("SELECT 1 FROM SYSIBM.SYSDUMMY1"), jdbc.sql)
-    }
-
-    @Test
     fun db2IntrospectsTheLuwCatalog() {
         val schema = Db2Adapter.introspect(script(luwCatalog()).dataSource())
 
@@ -269,19 +261,16 @@ class Db2AdapterJdbcTest {
     }
 
     @Test
-    fun db2ExplainLuwReportsMissingExplainTables() {
-        val result = explain(script(luwExplain(explainPlan = undefined())))
-
-        assertUnavailable(result, PlanUnavailableReason.UnsupportedShape, "SYSINSTALLOBJECTS")
-    }
-
-    @Test
-    fun db2ExplainLuwRethrowsUnexpectedExplainPlanErrors() {
+    fun db2ExplainLuwReportsMissingExplainTablesAndRethrowsUnexpectedErrors() {
+        assertUnavailable(
+            explain(script(luwExplain(explainPlan = undefined()))),
+            PlanUnavailableReason.UnsupportedShape,
+            "SYSINSTALLOBJECTS",
+        )
         val error =
             assertFailsWith<SQLException> {
                 explain(script(luwExplain(explainPlan = failure("nope"))))
             }
-
         assertEquals("nope", error.message)
     }
 
@@ -402,17 +391,18 @@ class Db2AdapterJdbcTest {
     }
 
     @Test
-    fun db2ExplainZosReportsAnUnreadableSqlId() {
-        val jdbc = script(zosExplain(sqlId = query(listOf("SQLID"), listOf(listOf("  ")))))
-
-        assertUnavailable(explain(jdbc), PlanUnavailableReason.ExecutionFailure, "CURRENT SQLID")
-    }
-
-    @Test
-    fun db2ExplainZosReportsSqlIdReadFailure() {
-        val jdbc = script(zosExplain(sqlId = failure("sqlid")))
-
-        assertUnavailable(explain(jdbc), PlanUnavailableReason.ExecutionFailure, "CURRENT SQLID")
+    fun db2ExplainZosReportsUnreadableOrFailedSqlId() {
+        listOf(
+                script(zosExplain(sqlId = query(listOf("SQLID"), listOf(listOf("  "))))),
+                script(zosExplain(sqlId = failure("sqlid"))),
+            )
+            .forEach { jdbc ->
+                assertUnavailable(
+                    explain(jdbc),
+                    PlanUnavailableReason.ExecutionFailure,
+                    "CURRENT SQLID",
+                )
+            }
     }
 
     @Test
@@ -429,38 +419,32 @@ class Db2AdapterJdbcTest {
     }
 
     @Test
-    fun db2ExplainZosReportsAMissingPlanTable() {
-        val jdbc = script(zosExplain(planTable = undefined()))
+    fun db2ExplainZosReportsMissingPlanTableAcrossStages() {
+        val preflight = script(zosExplain(planTable = undefined()))
+        assertUnavailable(explain(preflight), PlanUnavailableReason.UnsupportedShape, "DSNTIJXA")
+        assertTrue(preflight.sql.none { it.contains("EXPLAIN PLAN") })
 
-        assertUnavailable(explain(jdbc), PlanUnavailableReason.UnsupportedShape, "DSNTIJXA")
-        assertTrue(jdbc.sql.none { it.contains("EXPLAIN PLAN") })
+        val onExplain = script(zosExplain(explainPlan = undefined()))
+        assertUnavailable(explain(onExplain), PlanUnavailableReason.UnsupportedShape, "DSNTIJXA")
+
+        val onRead = script(zosExplain(planRows = undefined()))
+        assertUnavailable(explain(onRead), PlanUnavailableReason.UnsupportedShape, "DSNTIJXA")
+        assertTrue(onRead.sql.any { it.contains("DELETE FROM \"APP\".PLAN_TABLE") })
     }
 
     @Test
-    fun db2ExplainZosReportsAnUnreadablePlanTable() {
+    fun db2ExplainZosReportsUnreadablePlanTableAndRethrowsUnexpectedErrors() {
         val jdbc = script(zosExplain(planTable = failure("plan")))
-
         assertUnavailable(
             explain(jdbc),
             PlanUnavailableReason.ExecutionFailure,
             "could not be read",
         )
-    }
 
-    @Test
-    fun db2ExplainZosReportsAMissingPlanTableWhenExplainIsUndefined() {
-        val jdbc = script(zosExplain(explainPlan = undefined()))
-
-        assertUnavailable(explain(jdbc), PlanUnavailableReason.UnsupportedShape, "DSNTIJXA")
-    }
-
-    @Test
-    fun db2ExplainZosRethrowsUnexpectedExplainPlanErrors() {
         val error =
             assertFailsWith<SQLException> {
                 explain(script(zosExplain(explainPlan = failure("nope"))))
             }
-
         assertEquals("nope", error.message)
     }
 
@@ -478,14 +462,6 @@ class Db2AdapterJdbcTest {
 
         assertUnavailable(explain(jdbc), PlanUnavailableReason.CleanupFailure, "cleanup failed")
         assertTrue(jdbc.sql.any { it.contains("DELETE FROM \"APP\".DSN_STATEMNT_TABLE") })
-    }
-
-    @Test
-    fun db2ExplainZosReportsAMissingPlanTableWhenThePlanReadIsUndefined() {
-        val jdbc = script(zosExplain(planRows = undefined()))
-
-        assertUnavailable(explain(jdbc), PlanUnavailableReason.UnsupportedShape, "DSNTIJXA")
-        assertTrue(jdbc.sql.any { it.contains("DELETE FROM \"APP\".PLAN_TABLE") })
     }
 
     @Test

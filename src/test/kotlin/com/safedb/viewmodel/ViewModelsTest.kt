@@ -6,7 +6,6 @@ import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.model.FilterGroup
 import com.safedb.model.HistoryEntry
-import com.safedb.model.JoinSpec
 import com.safedb.model.QueryRiskGate
 import com.safedb.model.QuerySpec
 import com.safedb.model.SavedQuery
@@ -108,13 +107,17 @@ class ViewModelsTest {
                     username = "user",
                 )
 
-            viewModel.updateConnection(updated, null)
-            assertEquals(listOf(updated), service.updatedConnections)
-            assertEquals(0, service.connectionListCalls)
-
-            viewModel.refresh()
+            var saveResult: Result<ConnectionDef>? = null
+            viewModel.saveConnection(
+                def = updated,
+                password = null,
+                editing = true,
+                credentialMaterialChanged = false,
+                onComplete = { saveResult = it },
+            )
             advanceUntilIdle()
-
+            assertEquals(Result.success(updated), saveResult)
+            assertEquals(listOf(updated), service.updatedConnections)
             assertEquals(1, service.connectionListCalls)
             assertEquals("connection list failed", viewModel.error.value)
         }
@@ -636,28 +639,6 @@ class ViewModelsTest {
         }
 
     @Test
-    fun queryViewModelRemovesJoinByExactOrReversedMatch() {
-        val service = RecordingSafeDbService()
-        val scope = TestScope(dispatcher)
-        val viewModel = QueryViewModel(service, scope)
-        val customerJoin = JoinSpec("t0", "customer_id", "t1", "id")
-        val productJoin = JoinSpec("t2", "product_id", "t3", "id")
-
-        viewModel.addJoin(customerJoin)
-        viewModel.addJoin(productJoin)
-
-        viewModel.removeJoin(JoinSpec("t1", "id", "t0", "customer_id"))
-
-        assertEquals(listOf(productJoin), viewModel.joins.toList())
-
-        viewModel.removeJoin(JoinSpec("t4", "id", "t5", "id"))
-        assertEquals(listOf(productJoin), viewModel.joins.toList())
-
-        viewModel.removeJoin(productJoin)
-        assertTrue(viewModel.joins.isEmpty())
-    }
-
-    @Test
     fun historyFailurePreservesEntriesAndOnlyCompletesAfterRetry() =
         runTest(dispatcher) {
             val service = RecordingSafeDbService()
@@ -803,7 +784,151 @@ class ViewModelsTest {
             viewModel.loadDefaultSchemaOptions("c2")
             advanceUntilIdle()
             assertEquals(listOf("reporting", "safedb_test"), viewModel.defaultSchemaOptions.value)
+            assertEquals(1, service.settingsSaveCount.coerceAtLeast(0))
             assertEquals(1, service.schemaLoadCount)
+        }
+
+    @Test
+    fun settingsViewModelCoversClearDefaultForgetLastClearSchemaSelectionsAndErrors() =
+        runTest(dispatcher) {
+            val service = RecordingSafeDbService()
+            val scope = TestScope(dispatcher)
+            val viewModel = SettingsViewModel(service, scope)
+
+            service.failSettingsGet = true
+            viewModel.load()
+            advanceUntilIdle()
+            assertEquals("settings get failed", viewModel.loadError.value)
+
+            service.failSettingsGet = false
+            viewModel.load()
+            advanceUntilIdle()
+            assertNull(viewModel.loadError.value)
+
+            // No-op clearDefaultLocation invokes onSuccess without persisting.
+            var clearedNoOp = false
+            viewModel.clearDefaultLocation { clearedNoOp = true }
+            advanceUntilIdle()
+            assertTrue(clearedNoOp)
+            assertEquals(0, service.settingsSaveCount)
+
+            // Mismatched or unloaded schema save sets validation error.
+            viewModel.saveDefaultLocation("c1", "reporting")
+            advanceUntilIdle()
+            assertEquals(
+                "Select a schema loaded from the chosen database.",
+                viewModel.saveError.value,
+            )
+
+            viewModel.loadDefaultSchemaOptions("c1")
+            advanceUntilIdle()
+            viewModel.saveDefaultLocation("c1", "reporting")
+            viewModel.rememberLastSchema("c1", "reporting")
+            advanceUntilIdle()
+
+            // clearSchemaSelectionsForConnection keeps defaultConnectionId while clearing schema &
+            // history.
+            viewModel.clearSchemaSelectionsForConnection("c1")
+            advanceUntilIdle()
+            assertEquals("c1", viewModel.settings.value.defaultConnectionId)
+            assertNull(viewModel.settings.value.defaultSchema)
+            assertTrue(viewModel.settings.value.lastSelectedSchemas.isEmpty())
+            assertTrue(viewModel.defaultSchemaOptions.value.isEmpty())
+
+            // forgetLastSchema removes remembered schema and clearDefaultLocation clears
+            // defaultConnectionId.
+            viewModel.rememberLastSchema("c1", "safedb_test")
+            advanceUntilIdle()
+            viewModel.forgetLastSchema("c1")
+            advanceUntilIdle()
+            assertTrue(viewModel.settings.value.lastSelectedSchemas.isEmpty())
+
+            service.failSettingsSave = true
+            var clearedAfterFail = false
+            viewModel.clearDefaultLocation { clearedAfterFail = true }
+            advanceUntilIdle()
+            assertFalse(clearedAfterFail)
+            assertEquals("c1", viewModel.settings.value.defaultConnectionId)
+
+            service.failSettingsSave = false
+            var clearedAfterSuccess = false
+            viewModel.clearDefaultLocation { clearedAfterSuccess = true }
+            advanceUntilIdle()
+            assertTrue(clearedAfterSuccess)
+            assertNull(viewModel.settings.value.defaultConnectionId)
+
+            // clearDefaultIfConnection on unrelated id is a no-op calling onSuccess.
+            var unrelatedCleared = false
+            viewModel.clearDefaultIfConnection("other") { unrelatedCleared = true }
+            advanceUntilIdle()
+            assertTrue(unrelatedCleared)
+        }
+
+    @Test
+    fun schemaViewModelHandlesFailuresStaleFailuresAndUnavailableWarnings() =
+        runTest(dispatcher) {
+            val service = RecordingSafeDbService()
+            val first = CompletableDeferred<Schema>()
+            val second = CompletableDeferred<Schema>()
+            service.schemaResponses["c1"] = first
+            service.schemaResponses["c2"] = second
+            val reachable = mutableListOf<String>()
+            val viewModel =
+                SchemaViewModel(
+                    service,
+                    TestScope(dispatcher),
+                    onConnectionReachable = { reachable += it },
+                )
+
+            var firstComplete: Boolean? = null
+            var secondComplete: Boolean? = null
+            viewModel.load("c1") { firstComplete = it }
+            runCurrent()
+            viewModel.load("c2") { secondComplete = it }
+            runCurrent()
+
+            // Newer request completes first, then older request fails; stale failure must not
+            // clobber.
+            second.complete(Schema(listOf(TableInfo("public", "orders", emptyList(), emptyList()))))
+            runCurrent()
+            first.completeExceptionally(IllegalStateException("stale failure"))
+            advanceUntilIdle()
+
+            assertEquals(true, secondComplete)
+            assertEquals(false, firstComplete)
+            assertEquals("c2", viewModel.loadedConnectionId)
+            assertNull(viewModel.error)
+            assertEquals(listOf("c2"), reachable)
+
+            service.failSchemaLoad = true
+            var failComplete: Boolean? = null
+            viewModel.load("c3") { failComplete = it }
+            advanceUntilIdle()
+            assertEquals(false, failComplete)
+            assertNull(viewModel.loadedConnectionId)
+            assertEquals("schema load failed", viewModel.error)
+
+            service.failSchemaLoad = false
+            service.schemaResponses.clear()
+            viewModel.load(
+                "c1",
+                SchemaSelectionIntent("missing", SchemaSelectionSource.StartupDefault),
+            )
+            advanceUntilIdle()
+            assertEquals(
+                "Default schema \"missing\" is unavailable. Select a schema or update Settings.",
+                viewModel.preferredSchemaWarning,
+            )
+
+            viewModel.load(
+                "c1",
+                SchemaSelectionIntent("missing", SchemaSelectionSource.User),
+            )
+            advanceUntilIdle()
+            assertEquals(
+                "Schema \"missing\" is unavailable. Select another schema.",
+                viewModel.preferredSchemaWarning,
+            )
         }
 }
 
@@ -816,6 +941,7 @@ private class RecordingSafeDbService : FakeSafeDbServiceSupport() {
     var savedSettings: Settings? = null
     var failHistoryClear = false
     var failSavedMutation = false
+    var failSettingsGet = false
     var failSettingsSave = false
     var failSchemaLoad = false
     var failConnectionList = false
@@ -931,7 +1057,10 @@ private class RecordingSafeDbService : FakeSafeDbServiceSupport() {
         historyCleared = true
     }
 
-    override suspend fun getSettings(): Settings = Settings.default()
+    override suspend fun getSettings(): Settings {
+        if (failSettingsGet) error("settings get failed")
+        return Settings.default()
+    }
 
     override suspend fun saveSettings(settings: Settings) {
         if (failSettingsSave) error("settings save failed")

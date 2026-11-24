@@ -13,14 +13,21 @@ import com.safedb.viewmodel.DatabaseReachability
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import org.jetbrains.skia.Image
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
 
-@OptIn(ExperimentalComposeUiApi::class)
+@OptIn(ExperimentalComposeUiApi::class, ExperimentalCoroutinesApi::class)
 class SidebarLogoPositionTest {
     @Test
     fun `logo stays on the icon axis while the sidebar opens and closes`() {
+        val dispatcher = StandardTestDispatcher()
         var collapsed by mutableStateOf(true)
-        ImageComposeScene(width = 320, height = 420, density = Density(1f)) {
+        ImageComposeScene(
+                width = 320,
+                height = 420,
+                density = Density(1f),
+                coroutineContext = dispatcher,
+            ) {
                 SafeDbTheme(isDark = false) {
                     Sidebar(
                         route = AppRoute.Home,
@@ -36,125 +43,56 @@ class SidebarLogoPositionTest {
                 }
             }
             .use { scene ->
-                var frameTime = 0L
+                var frameTimeNs = 0L
 
-                fun sample(): SidebarFrame {
-                    frameTime += 16_000_000L
-                    return scene.render(frameTime).use { image -> measureSidebar(image) }
+                fun stepFrame(): SidebarBoundsSample {
+                    dispatcher.scheduler.advanceTimeBy(16)
+                    dispatcher.scheduler.runCurrent()
+                    frameTimeNs += 16_000_000L
+                    scene.render(frameTimeNs).close()
+                    val logo =
+                        scene.requireByTag(SIDEBAR_LOGO_TAG, useUnmergedTree = true).boundsInRoot
+                    val rail =
+                        scene.requireByTag(SIDEBAR_RAIL_TAG, useUnmergedTree = true).boundsInRoot
+                    return SidebarBoundsSample(logo.left, logo.top, rail.width)
                 }
 
-                val samples = mutableListOf<SidebarFrame>()
-                repeat(3) {
-                    samples += sample()
-                    Thread.sleep(30)
-                }
+                val samples = mutableListOf<SidebarBoundsSample>()
+                repeat(3) { samples += stepFrame() }
                 val collapsedWidth = samples.last().railWidth
                 assertTrue(
-                    collapsedWidth in 72..74,
+                    collapsedWidth in 70f..76f,
                     "collapsed rail width was $collapsedWidth",
                 )
 
                 collapsed = false
-                pumpUntil(samples, ::sample) { it.railWidth >= 230 }
-                repeat(8) {
-                    samples += sample()
-                    Thread.sleep(40)
-                }
+                repeat(45) { samples += stepFrame() }
                 assertTrue(
-                    samples.last().railWidth >= 230,
+                    samples.last().railWidth >= 230f,
                     "sidebar did not finish opening; last rail width ${samples.last().railWidth}",
                 )
 
                 collapsed = true
-                pumpUntil(samples, ::sample) { it.railWidth <= collapsedWidth }
-                repeat(10) {
-                    samples += sample()
-                    Thread.sleep(40)
-                }
-
+                repeat(60) { samples += stepFrame() }
                 assertEquals(
                     collapsedWidth,
                     samples.last().railWidth,
+                    0.5f,
                     "sidebar did not finish closing",
                 )
+
                 val logoPositions = samples.map { it.logoLeft to it.logoTop }.distinct()
                 assertEquals(
-                    listOf(16 to 22),
-                    logoPositions,
-                    "logo moved across ${samples.size} frames",
+                    1,
+                    logoPositions.size,
+                    "logo moved across ${samples.size} frames: $logoPositions",
                 )
             }
     }
-
-    private fun pumpUntil(
-        samples: MutableList<SidebarFrame>,
-        sample: () -> SidebarFrame,
-        timeoutMs: Long = 3_000,
-        done: (SidebarFrame) -> Boolean,
-    ): SidebarFrame {
-        val deadline = System.nanoTime() + timeoutMs * 1_000_000L
-        var latest = samples.last()
-        while (System.nanoTime() < deadline) {
-            Thread.sleep(25)
-            latest = sample()
-            samples += latest
-            if (done(latest)) return latest
-        }
-        return latest
-    }
 }
 
-private data class SidebarFrame(val logoLeft: Int, val logoTop: Int, val railWidth: Int)
-
-private fun measureSidebar(image: Image): SidebarFrame {
-    val pixels = image.peekPixels() ?: error("rendered sidebar frame has no readable pixels")
-    val width = pixels.info.width
-    var logoTop = Int.MAX_VALUE
-    var logoBottom = -1
-    for (y in 0 until HeaderHeightPx) {
-        for (x in 0 until width) {
-            if (!pixels.getColor(x, y).isLogoBlue()) continue
-            if (y < logoTop) logoTop = y
-            if (y > logoBottom) logoBottom = y
-        }
-    }
-    check(logoBottom >= logoTop) { headerColorSample(pixels) }
-    val midY = (logoTop + logoBottom) / 2
-    var midLeft = Int.MAX_VALUE
-    for (x in 0 until width) {
-        if (pixels.getColor(x, midY).isLogoBlue()) {
-            midLeft = x
-            break
-        }
-    }
-    check(midLeft != Int.MAX_VALUE) { headerColorSample(pixels) }
-    var railRight = -1
-    for (x in 0 until width) {
-        if (pixels.getColor(x, 4).alpha() > 0.5f) railRight = x
-    }
-    return SidebarFrame(logoLeft = midLeft, logoTop = logoTop, railWidth = railRight + 1)
-}
-
-private fun headerColorSample(pixels: org.jetbrains.skia.Pixmap): String = buildString {
-    append("logo pixels not found; header samples:")
-    for (y in 0 until HeaderHeightPx step 8) {
-        for (x in 0 until 80 step 4) {
-            append(" ($x,$y)=")
-            append(pixels.getColor(x, y).toUInt().toString(16))
-        }
-    }
-}
-
-private fun Int.isLogoBlue(): Boolean {
-    val red = (this shr 16) and 0xFF
-    val green = (this shr 8) and 0xFF
-    val blue = this and 0xFF
-    return kotlin.math.abs(red - 0x0B) <= 12 &&
-        kotlin.math.abs(green - 0x5E) <= 12 &&
-        kotlin.math.abs(blue - 0xD7) <= 12 &&
-        alpha() > 0.9f
-}
-
-private fun Int.alpha(): Float = ((this ushr 24) and 0xFF) / 255f
-
-private const val HeaderHeightPx = 78
+private data class SidebarBoundsSample(
+    val logoLeft: Float,
+    val logoTop: Float,
+    val railWidth: Float,
+)

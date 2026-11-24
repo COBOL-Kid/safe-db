@@ -629,4 +629,99 @@ class PlanParsersTest {
             parseDb2ZosPlan(listOf(Db2ZosPlanRow(1, 1, 1, 0, 0, "APP", null, "R", 0, null, null))),
         )
     }
+
+    @Test
+    fun parsersCoverAdditionalScanAggregateAndJoinVariantsAcrossDialects() {
+        val pg =
+            parsePostgresPlan(
+                """[{"Plan":{"Node Type":"Unique","Plan Rows":5,"Plans":[{"Node Type":"GroupAggregate","Plan Rows":10,"Plans":[{"Node Type":"HashAggregate","Plan Rows":20,"Plans":[{"Node Type":"Bitmap Heap Scan","Relation Name":"orders","Alias":"o","Plan Rows":50,"Plans":[{"Node Type":"Bitmap Index Scan","Index Name":"orders_idx","Plan Rows":50}]},{"Node Type":"Index Scan","Relation Name":"users","Alias":"u","Plan Rows":15,"Index Cond":"(id > 10)"}]}]}]}}]""",
+            )
+        assertNotNull(pg)
+        assertEquals(
+            PlanAccessMethod.BoundedRange,
+            pg.relations.first { it.table == "orders" }.method,
+        )
+        assertEquals(
+            PlanAccessMethod.BoundedRange,
+            pg.relations.first { it.table == "users" }.method,
+        )
+        assertTrue(pg.blockingOperations.any { it.kind == PlanOperationKind.Distinct })
+        assertTrue(pg.blockingOperations.any { it.kind == PlanOperationKind.Grouping })
+
+        val mysql =
+            parseMySqlPlan(
+                """{"operation":"Nested loop inner join","estimated_rows":25,"inputs":[{"table":{"table_name":"orders","access_type":"index","rows":10}},{"table":{"table_name":"items","access_type":"index_merge","rows":5}}],"duplicates_removal":{"table":{"table_name":"logs","access_type":"fulltext","rows":3}}}""",
+            )
+        assertNotNull(mysql)
+        assertEquals(
+            PlanAccessMethod.FullIndexScan,
+            mysql.relations.first { it.table == "orders" }.method,
+        )
+        assertEquals(
+            PlanAccessMethod.BoundedRange,
+            mysql.relations.first { it.table == "items" }.method,
+        )
+        assertEquals(
+            PlanAccessMethod.BoundedRange,
+            mysql.relations.first { it.table == "logs" }.method,
+        )
+        assertTrue(mysql.joins.isNotEmpty())
+        assertTrue(mysql.blockingOperations.any { it.kind == PlanOperationKind.Distinct })
+
+        val mssql =
+            parseSqlServerPlan(
+                """<ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan"><BatchSequence><Batch><Statements><StmtSimple StatementSubTreeCost="1.5"><QueryPlan><RelOp NodeId="1" PhysicalOp="Hash Match" LogicalOp="Aggregate" EstimateRows="20" EstimateRebinds="0" EstimateRewinds="0"><Hash><RelOp NodeId="2" PhysicalOp="Clustered Index Scan" LogicalOp="Clustered Index Scan" EstimateRows="100" EstimateRebinds="0" EstimateRewinds="0"><IndexScan><Object Schema="[dbo]" Table="[orders]" /></IndexScan></RelOp><RelOp NodeId="3" PhysicalOp="Index Seek" LogicalOp="Index Seek" EstimateRows="30" EstimateRebinds="0" EstimateRewinds="0"><IndexScan><Object Schema="[dbo]" Table="[items]" Alias="[i]" /><SeekPredicates><SeekPredicateNew><SeekKeys><Prefix ScanType="GT" /></SeekKeys></SeekPredicateNew></SeekPredicates></IndexScan></RelOp></Hash></RelOp></QueryPlan></StmtSimple></Statements></Batch></BatchSequence></ShowPlanXML>""",
+            )
+        assertNotNull(mssql)
+        assertEquals(
+            PlanAccessMethod.FullIndexScan,
+            mssql.relations.first { it.table == "orders" }.method,
+        )
+        assertEquals(
+            PlanAccessMethod.BoundedRange,
+            mssql.relations.first { it.table == "items" }.method,
+        )
+        assertTrue(mssql.blockingOperations.any { it.kind == PlanOperationKind.Grouping })
+
+        val oracle =
+            normalizeOraclePlan(
+                listOf(
+                    OraclePlanRow(1, 0, "SELECT STATEMENT", "", null, null, null, 10, 2.0),
+                    OraclePlanRow(
+                        2,
+                        1,
+                        "TABLE ACCESS",
+                        "BY INDEX ROWID",
+                        "APP",
+                        "ORDERS",
+                        "O",
+                        10,
+                        null,
+                    ),
+                    OraclePlanRow(3, 2, "FILTER", "", null, null, null, 10, null),
+                    OraclePlanRow(4, 3, "INDEX", "RANGE SCAN", "APP", "ORDERS_IX", null, 5, null),
+                    OraclePlanRow(
+                        5,
+                        1,
+                        "INDEX",
+                        "FAST FULL SCAN",
+                        "APP",
+                        "ITEMS_IX",
+                        "I",
+                        50,
+                        null,
+                    ),
+                ),
+            )
+        assertNotNull(oracle)
+        assertTrue(
+            oracle.relations.any {
+                it.table == "ORDERS" && it.method == PlanAccessMethod.BoundedRange
+            },
+        )
+        assertEquals(
+            PlanAccessMethod.FullIndexScan,
+            oracle.relations.first { it.table == "ITEMS_IX" }.method,
+        )
+    }
 }

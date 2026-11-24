@@ -143,6 +143,55 @@ class FilterTreeOpsTest {
         assertFalse(hasIncompleteFilterValues(FilterGroup.empty()))
     }
 
+    @Test
+    fun nestedGroupsAtDepthTwoSupportLookupAddUpdateAndIdAssignment() {
+        val deepTree =
+            FilterGroup(
+                id = "root",
+                children =
+                    listOf(
+                        FilterNode.Group(
+                            FilterGroup(
+                                id = "",
+                                children =
+                                    listOf(
+                                        FilterNode.Group(
+                                            FilterGroup(
+                                                id = "inner-2",
+                                                children =
+                                                    listOf(FilterNode.Leaf(filter("", "t0"))),
+                                            ),
+                                        ),
+                                    ),
+                            ),
+                        ),
+                    ),
+            )
+
+        assertEquals("inner-2", filterGroupAtPath(deepTree, listOf(0, 0))?.id)
+        val added = addFilterGroup(deepTree, listOf(0, 0), GroupConnector.Or)
+        assertEquals(2, filterGroupAtPath(added, listOf(0, 0))?.children?.size)
+
+        val updated =
+            updateFilterNode(
+                added,
+                listOf(0, 0, 0),
+                FilterNode.Leaf(filter("", "t0").copy(column = "status")),
+            )
+        val leaf = (filterGroupAtPath(updated, listOf(0, 0))!!.children[0] as FilterNode.Leaf).spec
+        assertEquals("status", leaf.column)
+
+        val withIds = ensureFilterNodeIds(updated)
+        val inner1 = filterGroupAtPath(withIds, listOf(0))!!
+        assertTrue(inner1.id.isNotBlank())
+        assertTrue(
+            (filterGroupAtPath(withIds, listOf(0, 0))!!.children[0] as FilterNode.Leaf)
+                .spec
+                .id
+                .isNotBlank(),
+        )
+    }
+
     private fun filter(id: String = "", alias: String) =
         FilterSpec(
             id = id,

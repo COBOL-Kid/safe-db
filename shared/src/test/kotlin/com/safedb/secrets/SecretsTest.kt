@@ -18,6 +18,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -95,12 +96,35 @@ class SecretsTest {
         SecretsManager.initStore("disabled")
         val result = SecretsManager.passwordForDefinition(connectionDef("missing-password"))
         assertTrue(result.isFailure)
-        val message = result.exceptionOrNull()!!.message!!
+        val error = assertIs<PasswordNotFoundException>(result.exceptionOrNull())
+        assertEquals(MissingPasswordReason.DisabledOverride, error.reason)
+        val message = error.message!!
         assertTrue(message.contains("Password not found"))
         assertTrue(message.contains("SAFEDB_KEYCHAIN_BACKEND=disabled"))
         assertTrue(message.contains("Unset SAFEDB_KEYCHAIN_BACKEND"))
         assertTrue(message.contains("do not add the connection again"))
         assertFalse(message.contains("Delete and add the connection again"))
+    }
+
+    @Test
+    fun missingPasswordExplainsInMemorySessionStore() {
+        SecretsManager.initMemoryStore()
+        assertEquals("memory", SecretsManager.activeBackendLabel())
+
+        val def = connectionDef("missing-memory-password")
+        val result = SecretsManager.passwordForDefinition(def)
+        assertTrue(result.isFailure)
+        val error = assertIs<PasswordNotFoundException>(result.exceptionOrNull())
+        assertEquals(MissingPasswordReason.MemoryStore, error.reason)
+        val message = error.message!!
+        assertTrue(message.contains("memory only for this session"))
+        assertTrue(message.contains("Edit the connection to re-enter the password"))
+        assertFalse(message.contains("SAFEDB_KEYCHAIN_BACKEND"))
+        assertFalse(message.contains("do not add the connection again"))
+
+        SecretsManager.savePasswordForDefinition(def, "in-memory-secret").getOrThrow()
+        CredentialSession.lockCredentials()
+        assertEquals("in-memory-secret", SecretsManager.passwordForDefinition(def).getOrThrow())
     }
 
     @Test
@@ -155,7 +179,13 @@ class SecretsTest {
         assertEquals("file", SecretsManager.activeBackendLabel())
 
         SecretsManager.deletePassword(def.id).getOrThrow()
-        assertTrue(SecretsManager.passwordForDefinition(def).isFailure)
+        val missing = SecretsManager.passwordForDefinition(def)
+        assertTrue(missing.isFailure)
+        val error = assertIs<PasswordNotFoundException>(missing.exceptionOrNull())
+        assertEquals(MissingPasswordReason.NotStored, error.reason)
+        val message = error.message!!
+        assertTrue(message.contains("Edit the connection to re-enter the password."))
+        assertFalse(message.contains("Delete and add the connection again"))
     }
 
     @Test
@@ -258,5 +288,48 @@ class SecretsTest {
         } finally {
             pool.shutdownNow()
         }
+    }
+
+    @Test
+    fun rejectsEndpointMismatchLegacyPayloadBadVersionAndFormatsEntitlementErrors() {
+        val original = connectionDef("conn-bound")
+        SecretsManager.savePasswordForDefinition(original, "secret").getOrThrow()
+        CredentialSession.lockCredentials()
+
+        val differentHost = original.copy(host = "other.internal")
+        val mismatchHost = SecretsManager.passwordForDefinition(differentHost)
+        assertTrue(mismatchHost.isFailure)
+        assertTrue(
+            mismatchHost
+                .exceptionOrNull()!!
+                .message!!
+                .contains(
+                    "do not match this connection endpoint or transport configuration",
+                ),
+        )
+
+        val differentTransport =
+            original.copy(
+                transportSecurity = TransportSecurity(TransportSecurityMode.VerifyIdentity),
+            )
+        assertTrue(SecretsManager.passwordForDefinition(differentTransport).isFailure)
+
+        store.setPassword(SERVICE_NAME, "conn-legacy", "plain-text-secret")
+        val legacy = SecretsManager.passwordForDefinition(connectionDef("conn-legacy"))
+        assertTrue(legacy.isFailure)
+        assertTrue(legacy.exceptionOrNull()!!.message!!.contains("predates endpoint binding"))
+
+        store.setPassword(
+            SERVICE_NAME,
+            "conn-v2",
+            """{"version":2,"fingerprint":"${connectionDef("conn-v2").credentialFingerprint()}","password":"pw"}""",
+        )
+        assertTrue(SecretsManager.passwordForDefinition(connectionDef("conn-v2")).isFailure)
+
+        val entitlementError =
+            SecretsManager.formatSaveCredentialError(
+                IllegalStateException("Missing entitlement for keychain"),
+            )
+        assertTrue(entitlementError.contains("SAFEDB_KEYCHAIN_BACKEND=disabled"))
     }
 }
