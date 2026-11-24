@@ -80,14 +80,14 @@ fun ConnectionsScreen(
     val connections by viewModel.connections.collectAsState()
     val loading by viewModel.loading.collectAsState()
     LaunchedEffect(connectionFormRequest, connections, loading) {
-        when (val request = connectionFormRequest) {
+        when (connectionFormRequest) {
             null -> Unit
             ConnectionFormRequest.New -> {
                 formMode = ConnectionFormMode.New
                 onConnectionFormRequestConsumed()
             }
             is ConnectionFormRequest.Edit -> {
-                val target = connections.firstOrNull { it.id == request.connectionId }
+                val target = connections.firstOrNull { it.id == connectionFormRequest.connectionId }
                 if (target != null) {
                     formMode = ConnectionFormMode.Edit(target)
                     onConnectionFormRequestConsumed()

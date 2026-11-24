@@ -66,6 +66,9 @@ private data class PaletteCommand(
     val action: () -> Unit,
 )
 
+private fun connectionCommandHint(connection: ConnectionDef): String =
+    "${connection.dialect.displayName()} · ${connection.database}"
+
 @Composable
 fun CommandPalette(
     open: Boolean,
@@ -193,7 +196,7 @@ fun CommandPalette(
                 PaletteCommand(
                     id = "conn-${connection.id}",
                     label = "Explore: ${connection.name}",
-                    hint = "${connection.dialect.displayName()} · ${connection.database}",
+                    hint = connectionCommandHint(connection),
                     icon = Icons.Filled.Link,
                 ) {
                     onConnectionSelected(connection)
@@ -206,7 +209,7 @@ fun CommandPalette(
                 PaletteCommand(
                     id = "edit-conn-${connection.id}",
                     label = "Edit connection: ${connection.name}",
-                    hint = "${connection.dialect.displayName()} · ${connection.database}",
+                    hint = connectionCommandHint(connection),
                     icon = Icons.Filled.Settings,
                 ) {
                     appState.requestEditConnection(connection.id)
