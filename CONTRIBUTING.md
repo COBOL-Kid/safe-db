@@ -14,7 +14,7 @@ If you change a documented command, environment variable, packaging path, or eng
 
 ## CI
 
-CI does not run on push or on an unlabeled pull request. Only the repository owner can apply the `ci:run` label, and that is what runs `check` plus the required static-MySQL suite. The workflow ignores the label unless the person who applied it is the repository owner. After new commits, remove the label and apply it again. Packaging and other manual workflows are documented in [docs/testing.md](docs/testing.md) and [.github/workflows](.github/workflows/).
+Pushes to `main` run `./gradlew check` automatically. Pull requests do not run CI until the repository owner applies the `ci:run` label, which runs `check` plus the required static-MySQL suite. The workflow ignores the label unless the person who applied it is the repository owner. After new commits, remove the label and apply it again. Packaging and other manual workflows are documented in [docs/testing.md](docs/testing.md) and [.github/workflows](.github/workflows/).
 
 ## AI-assisted submissions
 
