@@ -253,6 +253,7 @@ EOF
 rm_log="$TEST_ROOT/pruned-objects.txt"
 expected="$TEST_ROOT/expected-pruned-objects.txt"
 cat >"$expected" <<'EOF'
+gs://safedb-download/safedb-0.1.6-mac-aarch64.zip
 gs://safedb-download/safedb-0.1.5-mac-aarch64.zip
 gs://safedb-download/safedb-0.1.1-0.1.7-mac-aarch64.delta
 gs://safedb-download/safedb-0.1.0-0.1.7-mac-aarch64.delta

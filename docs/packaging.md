@@ -94,7 +94,7 @@ On macOS or Linux, `./scripts/publish-release.sh ./output` does the same thing. 
 
 The layout must stay flat: `base-url` resolves each file directly under the bucket root. The `.appinstaller`, `metadata.properties`, `safedb-windows-x64.exe`, and `appcast-aarch64.rss` files are uploaded `Cache-Control: no-cache`. Versioned `.msix`, the Apple Silicon `.zip`, and Sparkle `*.delta` patches are immutable. Conveyor writes those patches once a previous Apple Silicon zip is already on the site, and the appcast links to them. The publish scripts check `Cache-Control` on `metadata.properties`, `safedb.appinstaller`, and `appcast-aarch64.rss` after upload.
 
-After uploading, both publish scripts prune older payloads from the bucket. macOS keeps the two newest `*-mac-*.zip` files and the five newest `.delta` patches. Windows keeps the newest `.msix` and `*-windows-*.zip`. Objects are ordered by Cloud Storage update time, so newer releases are retained and older immutable payloads are deleted. You can also confirm:
+After uploading, both publish scripts prune older payloads from the bucket. macOS keeps the newest `*-mac-*.zip` and the five newest `.delta` patches. Windows keeps the newest `.msix` and `*-windows-*.zip`. Objects are ordered by Cloud Storage update time, so newer releases are retained and older immutable payloads are deleted. You can also confirm:
 
 ```powershell
 curl.exe -sI https://storage.googleapis.com/safedb-download/metadata.properties
