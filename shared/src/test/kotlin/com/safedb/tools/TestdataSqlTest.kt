@@ -55,6 +55,8 @@ class TestdataSqlTest {
         val oracle = testdata("testdata_oracle.sql")
         val db2 = testdata("testdata_db2.sql")
 
+        assertTrue(mysql.contains("SET NAMES utf8mb4;"))
+
         assertTrue(insertBlock(postgres, "wide_rows").contains("(g % 2 = 0)"))
         assertTrue(insertBlock(postgres, "scan_events").contains("(g % 2 = 0)"))
         assertTrue(insertBlock(mysql, "wide_rows").contains("(n % 2 = 0)"))

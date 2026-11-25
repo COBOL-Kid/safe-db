@@ -17,6 +17,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 
 @Tag("integration")
 class PostgresAdapterIntegrationTest {
@@ -99,6 +100,93 @@ class PostgresAdapterIntegrationTest {
                     10_000,
                 )
             AdapterIntegrationAssertions.assertEmptyCustomerLookupMetadata(empty)
+        } finally {
+            adapter.close()
+        }
+    }
+
+    @Test
+    fun postgresExplainsScanEventsAsElevatedLargeScan() = runBlocking {
+        IntegrationAssumptions.assumePostgresAvailable()
+        val def = IntegrationAssumptions.postgresConnectionDef()
+        val adapter = Adapter.connect(def, IntegrationAssumptions.postgresPassword)
+        try {
+            val schema = Adapter.introspectWithTimeout(adapter)
+            AdapterIntegrationAssertions.assertScanEventsExplainedAsLargeScan(
+                adapter = adapter,
+                schema = schema,
+                dialect = def.dialect,
+                expectedSchema = "analytics",
+            )
+        } finally {
+            adapter.close()
+        }
+    }
+
+    @Test
+    @Timeout(10)
+    fun postgresQueryExecutionStopsAtTheConfiguredBudget() = runBlocking {
+        IntegrationAssumptions.assumePostgresAvailable()
+        val adapter =
+            Adapter.connect(
+                IntegrationAssumptions.postgresConnectionDef(),
+                IntegrationAssumptions.postgresPassword,
+            )
+        try {
+            // A 20k x 20k self-join aggregate takes well over the 1s budget on a full run.
+            val heavy =
+                CompiledQuery(
+                    sql =
+                        """
+                        SELECT SUM("a"."amount" * "b"."amount")
+                        FROM (SELECT "amount" FROM "analytics"."scan_events" ORDER BY "id" LIMIT 20000) AS "a"
+                        CROSS JOIN (SELECT "amount" FROM "analytics"."scan_events" ORDER BY "id" LIMIT 20000) AS "b"
+                        """
+                            .trimIndent(),
+                    params = emptyList(),
+                )
+            AdapterIntegrationAssertions.assertExecutionTimeout {
+                adapter.executeQuery(heavy, 1_000)
+            }
+        } finally {
+            adapter.close()
+        }
+    }
+
+    @Test
+    fun postgresDecodesWideRowsAndEventNotes() = runBlocking {
+        IntegrationAssumptions.assumePostgresAvailable()
+        val def = IntegrationAssumptions.postgresConnectionDef()
+        val adapter = Adapter.connect(def, IntegrationAssumptions.postgresPassword)
+        try {
+            val schema = Adapter.introspectWithTimeout(adapter)
+            AdapterIntegrationAssertions.assertWideRowsAndEventNotesDecoded(
+                adapter = adapter,
+                schema = schema,
+                dialect = def.dialect,
+                expectedWideRowsSchema = "analytics",
+                expectedEventNotesSchema = "ops",
+                expectedSpecialNoteBody = "東京 ☕",
+            )
+        } finally {
+            adapter.close()
+        }
+    }
+
+    @Test
+    @Timeout(30)
+    fun postgresTruncatesPayloadRowsAtOutputByteCap() = runBlocking {
+        IntegrationAssumptions.assumePostgresAvailable()
+        val def = IntegrationAssumptions.postgresConnectionDef()
+        val adapter = Adapter.connect(def, IntegrationAssumptions.postgresPassword)
+        try {
+            val schema = Adapter.introspectWithTimeout(adapter)
+            AdapterIntegrationAssertions.assertPayloadRowsTruncatedAtOutputCap(
+                adapter = adapter,
+                schema = schema,
+                dialect = def.dialect,
+                expectedSchema = "analytics",
+            )
         } finally {
             adapter.close()
         }

@@ -23,7 +23,6 @@ fun main(args: Array<String>) {
         System.err.println("safe-db agent-gui: ${error.message}")
         exitProcess(2)
     }
-    SecretsManager.initMemoryStore()
     val dataDir =
         Path.of(
                 System.getenv("SAFEDB_AGENT_GUI_DATA_DIR")?.takeIf { it.isNotBlank() }
@@ -31,6 +30,14 @@ fun main(args: Array<String>) {
             )
             .toAbsolutePath()
             .also { Files.createDirectories(it) }
+    val useFileCredentials =
+        System.getenv("SAFEDB_AGENT_GUI_CREDENTIALS")?.trim()?.equals("file", ignoreCase = true) ==
+            true
+    if (useFileCredentials) {
+        SecretsManager.initFileStore(dataDir.resolve("credentials"))
+    } else {
+        SecretsManager.initMemoryStore()
+    }
     val service =
         SafeDbServiceImpl(
             configStore = ConfigStore.new(dataDir),

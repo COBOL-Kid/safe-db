@@ -62,7 +62,7 @@ jobs:
         run: ./scripts/seed_mysql.sh --static
 
       - name: Assemble npm packages and test the Linux jlink image
-        run: ./gradlew :mcp:assembleNpmAllPlatforms :mcp:npmCliTest :mcp:npmPackagedTest --stacktrace
+        run: ./gradlew :mcp:assembleNpmAllPlatforms :mcp:npmCliTest :mcp:verifyNpmPackagedTest --stacktrace
 
       - name: Pack npm tarballs
         run: |
@@ -106,7 +106,7 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Install packed packages and print usage
+      - name: Install packed packages and verify CLI and stdio MCP handshake
         shell: bash
         run: |
           set -euo pipefail
@@ -116,7 +116,95 @@ jobs:
           cd install
           npm init -y >/dev/null
           npm install "../$meta" "../$platform"
-          npx safe-db-mcp --help
+          npx --no-install safe-db-mcp --help
+          node - <<'EOF'
+          const { spawn } = require('child_process');
+          const assert = require('assert');
+
+          const child = spawn('npx', ['--no-install', 'safe-db-mcp'], {
+            shell: process.platform === 'win32',
+            stdio: ['pipe', 'pipe', 'pipe'],
+          });
+
+          let stdoutBuf = '';
+          let stderr = '';
+          let stage = 'init';
+          let settled = false;
+
+          const finish = (err) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            if (err) {
+              child.kill();
+              console.error('MCP smoke handshake failed:', err.message);
+              if (stderr) console.error('stderr:\n' + stderr);
+              process.exit(1);
+            }
+          };
+
+          const timer = setTimeout(() => {
+            finish(new Error(`Timed out after 30s at stage=${stage}`));
+          }, 30000);
+
+          child.stderr.on('data', (chunk) => {
+            stderr += chunk.toString('utf8');
+          });
+
+          child.stdout.on('data', (chunk) => {
+            stdoutBuf += chunk.toString('utf8');
+            const lines = stdoutBuf.split(/\r?\n/);
+            stdoutBuf = lines.pop() ?? '';
+            for (const raw of lines) {
+              const line = raw.trim();
+              if (!line) continue;
+              let msg;
+              try {
+                msg = JSON.parse(line);
+              } catch (e) {
+                return finish(new Error(`Non-JSON line on stdout: ${line}`));
+              }
+              assert.strictEqual(msg.jsonrpc, '2.0', `Unexpected jsonrpc field: ${line}`);
+              if (msg.id === 1 && stage === 'init') {
+                assert(msg.result && msg.result.protocolVersion, `Missing protocolVersion: ${line}`);
+                assert(msg.result.serverInfo && msg.result.serverInfo.name === 'safe-db', `Unexpected serverInfo: ${line}`);
+                assert(msg.result.serverInfo.version, `Missing serverInfo.version: ${line}`);
+                stage = 'tools';
+                child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
+                child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }) + '\n');
+              } else if (msg.id === 2 && stage === 'tools') {
+                assert(msg.result && Array.isArray(msg.result.tools), `Missing tools array: ${line}`);
+                const names = new Set(msg.result.tools.map((t) => t.name));
+                for (const required of ['list_connections', 'list_tables', 'describe_table', 'run_query', 'assess_query', 'export_result', 'delete_connection']) {
+                  assert(names.has(required), `Missing tool ${required} in tools/list`);
+                }
+                stage = 'closing';
+                child.stdin.end();
+              }
+            }
+          });
+
+          child.on('error', (err) => finish(err));
+          child.on('close', (code, signal) => {
+            if (settled) return;
+            if (stage !== 'closing') {
+              return finish(new Error(`Exited early at stage=${stage} code=${code} signal=${signal}`));
+            }
+            if (code !== 0 || signal !== null) {
+              return finish(new Error(`Nonzero exit code=${code} signal=${signal}`));
+            }
+            clearTimeout(timer);
+            settled = true;
+            console.log('MCP stdio JSON-RPC smoke handshake OK');
+          });
+
+          child.stdin.write(JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'initialize',
+            params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'ci-smoke', version: '0' } },
+          }) + '\n');
+          EOF
 
   publish:
     needs: [pack, smoke]

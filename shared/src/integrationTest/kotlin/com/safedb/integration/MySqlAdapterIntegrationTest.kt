@@ -4,23 +4,9 @@ import com.safedb.adapter.Adapter
 import com.safedb.adapter.closeDataSource
 import com.safedb.adapter.createDataSource
 import com.safedb.model.BindValue
-import com.safedb.model.ColumnSel
 import com.safedb.model.CompiledQuery
 import com.safedb.model.Dialect
 import com.safedb.model.DriverProperty
-import com.safedb.model.ExplainResult
-import com.safedb.model.FilterGroup
-import com.safedb.model.GroupConnector
-import com.safedb.model.Outcome
-import com.safedb.model.PlanAccessMethod
-import com.safedb.model.QuerySpec
-import com.safedb.model.Settings
-import com.safedb.model.TableRef
-import com.safedb.query.QueryRiskSeverity
-import com.safedb.query.RiskSignalCode
-import com.safedb.query.assessValidatedQueryRisk
-import com.safedb.query.compileValidated
-import com.safedb.query.refineRiskWithPlan
 import com.safedb.query.sql.SqlTokenType
 import com.safedb.query.sql.mySqlBackslashEscapes
 import com.safedb.query.sql.tokenizeSql
@@ -31,12 +17,12 @@ import com.safedb.testsupport.IntegrationAssumptions
 import com.safedb.testsupport.IntegrationFixtures
 import java.time.LocalDateTime
 import kotlin.test.assertEquals
-import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 
 @Tag("integration")
 class MySqlAdapterIntegrationTest {
@@ -74,73 +60,80 @@ class MySqlAdapterIntegrationTest {
         val adapter = Adapter.connect(def, IntegrationAssumptions.mysqlPassword)
         try {
             val schema = Adapter.introspectWithTimeout(adapter)
-            val table =
-                IntegrationFixtures.requireSeededTable(
-                    schema,
-                    "scan_events",
-                    setOf("id"),
-                    expectedSchema = "safedb_lab",
+            AdapterIntegrationAssertions.assertScanEventsExplainedAsLargeScan(
+                adapter = adapter,
+                schema = schema,
+                dialect = def.dialect,
+                expectedSchema = "safedb_lab",
+            )
+        } finally {
+            adapter.close()
+        }
+    }
+
+    @Test
+    @Timeout(10)
+    fun mysqlQueryExecutionStopsAtTheConfiguredBudget() = runBlocking {
+        IntegrationAssumptions.assumeMysqlAvailable()
+        val adapter =
+            Adapter.connect(
+                IntegrationAssumptions.mysqlConnectionDef(),
+                IntegrationAssumptions.mysqlPassword,
+            )
+        try {
+            // A 20k x 20k self-join aggregate takes well over the 1s budget on a full run.
+            val heavy =
+                CompiledQuery(
+                    sql =
+                        """
+                        SELECT SUM(`a`.`amount` * `b`.`amount`)
+                        FROM (SELECT `amount` FROM `safedb_lab`.`scan_events` ORDER BY `id` LIMIT 20000) AS `a`
+                        CROSS JOIN (SELECT `amount` FROM `safedb_lab`.`scan_events` ORDER BY `id` LIMIT 20000) AS `b`
+                        """
+                            .trimIndent(),
+                    params = emptyList(),
                 )
-            assertTrue(
-                table.schema.equals("safedb_lab", ignoreCase = true),
-                "scan_events must come from safedb_lab, found ${table.schema}.${table.name}",
+            AdapterIntegrationAssertions.assertExecutionTimeout {
+                adapter.executeQuery(heavy, 1_000)
+            }
+        } finally {
+            adapter.close()
+        }
+    }
+
+    @Test
+    fun mysqlDecodesWideRowsAndEventNotes() = runBlocking {
+        IntegrationAssumptions.assumeMysqlAvailable()
+        val def = IntegrationAssumptions.mysqlConnectionDef()
+        val adapter = Adapter.connect(def, IntegrationAssumptions.mysqlPassword)
+        try {
+            val schema = Adapter.introspectWithTimeout(adapter)
+            AdapterIntegrationAssertions.assertWideRowsAndEventNotesDecoded(
+                adapter = adapter,
+                schema = schema,
+                dialect = def.dialect,
+                expectedWideRowsSchema = "safedb_lab",
+                expectedEventNotesSchema = "safedb_lab",
+                expectedSpecialNoteBody = "東京 ☕",
             )
-            val spec =
-                QuerySpec(
-                    tables =
-                        listOf(TableRef(schema = table.schema, name = table.name, alias = "t0")),
-                    columns =
-                        listOf(
-                            ColumnSel(
-                                tableAlias = "t0",
-                                column = IntegrationFixtures.seededColumn(table, "id"),
-                            ),
-                        ),
-                    joins = emptyList(),
-                    filters =
-                        FilterGroup(
-                            id = "integration-scan-events-filters",
-                            connector = GroupConnector.And,
-                            children = emptyList(),
-                        ),
-                    limit = 1,
-                    uncapped = true,
-                )
-            val assessed =
-                when (
-                    val result =
-                        assessValidatedQueryRisk(spec, schema, Settings.default(), def.dialect)
-                ) {
-                    is Outcome.Ok -> result.value
-                    is Outcome.Err -> error(result.message)
-                }
-            val compiled =
-                when (val compilation = compileValidated(assessed.validated, def.dialect)) {
-                    is Outcome.Ok -> compilation.value
-                    is Outcome.Err -> error(compilation.message)
-                }
-            // EXPLAIN only: do not execute, so the client never fetches the million rows.
-            val explain = Adapter.explainWithTimeout(adapter, compiled)
-            val plan = assertIs<ExplainResult.Available>(explain).plan
-            assertTrue(
-                plan.relations.any { it.method != PlanAccessMethod.Unknown },
-                "expected a known access method for scan_events: $plan",
-            )
-            val staticAssessment =
-                requireNotNull(assessed.assessment) { "query risk gate is disabled" }
-            val refined =
-                refineRiskWithPlan(staticAssessment, plan, assessed.normalizedSpec, schema)
-            assertTrue(
-                refined.severity == QueryRiskSeverity.Elevated ||
-                    refined.severity == QueryRiskSeverity.High ||
-                    refined.severity == QueryRiskSeverity.VeryHigh,
-                "expected an Elevated-or-higher live scan_events classification, " +
-                    "got severity=${refined.severity} plan=$plan",
-            )
-            assertTrue(
-                refined.signals.any { it.code == RiskSignalCode.PlanConfirmedLargeScan },
-                "expected PlanConfirmedLargeScan for scan_events, " +
-                    "got signals=${refined.signals.map { it.code }} plan=$plan",
+        } finally {
+            adapter.close()
+        }
+    }
+
+    @Test
+    @Timeout(30)
+    fun mysqlTruncatesPayloadRowsAtOutputByteCap() = runBlocking {
+        IntegrationAssumptions.assumeMysqlAvailable()
+        val def = IntegrationAssumptions.mysqlConnectionDef()
+        val adapter = Adapter.connect(def, IntegrationAssumptions.mysqlPassword)
+        try {
+            val schema = Adapter.introspectWithTimeout(adapter)
+            AdapterIntegrationAssertions.assertPayloadRowsTruncatedAtOutputCap(
+                adapter = adapter,
+                schema = schema,
+                dialect = def.dialect,
+                expectedSchema = "safedb_lab",
             )
         } finally {
             adapter.close()

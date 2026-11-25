@@ -55,6 +55,9 @@ internal const val PROCESS_EXIT_TIMEOUT_SECONDS = 10L
 internal const val PROCESS_CLEANUP_TIMEOUT_SECONDS = 5L
 internal const val STDERR_DRAIN_TIMEOUT_MS = 5_000L
 internal const val SHADOW_JAR_PROPERTY = "safedb.mcp.shadowJar"
+internal const val CLI_JS_PROPERTY = "safedb.mcp.cliJs"
+internal const val NODE_PATH_PROPERTY = "safedb.mcp.nodePath"
+internal const val NODE_EXECUTABLE_PROPERTY = "safedb.mcp.nodeExecutable"
 
 internal suspend fun withIntegrationMcpClient(server: Server, block: suspend (Client) -> Unit) {
     val clientToServer = PipedInputStream(PIPE_BUFFER_SIZE)
@@ -135,6 +138,7 @@ internal fun configureIsolatedEnvironment(
     tempRoot: Path,
     home: Path,
     keychainBackend: String? = "disabled",
+    nodePath: Path? = null,
 ) {
     val inherited = processBuilder.environment().toMap()
     val environment = processBuilder.environment()
@@ -169,6 +173,61 @@ internal fun configureIsolatedEnvironment(
     if (keychainBackend != null) {
         environment["SAFEDB_KEYCHAIN_BACKEND"] = keychainBackend
     }
+    if (nodePath != null) {
+        environment["NODE_PATH"] = nodePath.toString()
+    }
+    // cli.js spawns java without -D flags; Linux uses XDG_DATA_HOME and Windows uses APPDATA,
+    // while macOS resolves McpDataDirectory from Java's user.home property.
+    if (DesktopPlatform.current() == DesktopPlatform.MacOs) {
+        environment["JAVA_TOOL_OPTIONS"] = "-Duser.home=$home"
+    }
+}
+
+private data class PackagedMcpLaunch(
+    val command: List<String>,
+    val nodePath: Path?,
+)
+
+private fun resolvePackagedMcpLaunch(home: Path, args: List<String>): PackagedMcpLaunch {
+    val cliJsProp = System.getProperty(CLI_JS_PROPERTY)?.takeIf { it.isNotBlank() }
+    val nodePathProp = System.getProperty(NODE_PATH_PROPERTY)?.takeIf { it.isNotBlank() }
+    val nodeExeProp = System.getProperty(NODE_EXECUTABLE_PROPERTY)?.takeIf { it.isNotBlank() }
+    val presentCount = listOfNotNull(cliJsProp, nodePathProp, nodeExeProp).size
+    if (presentCount in 1..2) {
+        throw AssertionError(
+            "Partial Node packaged properties set; expected all or none of " +
+                "$CLI_JS_PROPERTY, $NODE_PATH_PROPERTY, $NODE_EXECUTABLE_PROPERTY",
+        )
+    }
+    if (presentCount == 3) {
+        val cliJs = Path.of(checkNotNull(cliJsProp))
+        val nodePath = Path.of(checkNotNull(nodePathProp))
+        val nodeExe = Path.of(checkNotNull(nodeExeProp))
+        assertTrue(Files.isRegularFile(cliJs), "cli.js does not exist: $cliJs")
+        assertTrue(Files.isDirectory(nodePath), "NODE_PATH directory does not exist: $nodePath")
+        assertTrue(Files.isRegularFile(nodeExe), "Node executable does not exist: $nodeExe")
+        return PackagedMcpLaunch(
+            command =
+                buildList {
+                    add(nodeExe.toAbsolutePath().toString())
+                    add(cliJs.toAbsolutePath().toString())
+                    addAll(args)
+                },
+            nodePath = nodePath.toAbsolutePath(),
+        )
+    }
+    val shadowJar = resolveShadowJar()
+    return PackagedMcpLaunch(
+        command =
+            buildList {
+                add(resolveJavaExecutable().toString())
+                add("-Duser.home=$home")
+                add("-jar")
+                add(shadowJar.toAbsolutePath().toString())
+                addAll(args)
+            },
+        nodePath = null,
+    )
 }
 
 internal suspend fun seedMcpConnectionForPackagedJar(
@@ -218,8 +277,29 @@ internal data class PackagedProcessResult(
 )
 
 internal fun runPackagedMcpProcess(args: List<String>): PackagedProcessResult {
-    val shadowJar = resolveShadowJar()
     val tempRoot = Files.createTempDirectory("safedb-mcp-cli-")
+    var failure: Throwable? = null
+    var result: PackagedProcessResult? = null
+    try {
+        result = runPackagedMcpProcessIn(tempRoot, args)
+    } catch (error: Throwable) {
+        failure = error
+    } finally {
+        if (!tempRoot.toFile().deleteRecursively()) {
+            val cleanupFailure = AssertionError("Failed to delete temporary data: $tempRoot")
+            if (failure == null) failure = cleanupFailure else failure.addSuppressed(cleanupFailure)
+        }
+    }
+    failure?.let { throw it }
+    return checkNotNull(result)
+}
+
+internal fun runPackagedMcpProcessIn(
+    tempRoot: Path,
+    args: List<String>,
+    keychainBackend: String? = "disabled",
+    timeoutSeconds: Long = PROCESS_EXIT_TIMEOUT_SECONDS,
+): PackagedProcessResult {
     val stdoutCapture = ByteArrayOutputStream()
     val stderrCapture = ByteArrayOutputStream()
     val stdoutFailure = AtomicReference<Throwable?>()
@@ -232,17 +312,15 @@ internal fun runPackagedMcpProcess(args: List<String>): PackagedProcessResult {
 
     try {
         val home = Files.createDirectories(tempRoot.resolve("home"))
-        val processBuilder =
-            ProcessBuilder(
-                buildList {
-                    add(resolveJavaExecutable().toString())
-                    add("-Duser.home=$home")
-                    add("-jar")
-                    add(shadowJar.toAbsolutePath().toString())
-                    addAll(args)
-                },
-            )
-        configureIsolatedEnvironment(processBuilder, tempRoot, home)
+        val launch = resolvePackagedMcpLaunch(home, args)
+        val processBuilder = ProcessBuilder(launch.command)
+        configureIsolatedEnvironment(
+            processBuilder = processBuilder,
+            tempRoot = tempRoot,
+            home = home,
+            keychainBackend = keychainBackend,
+            nodePath = launch.nodePath,
+        )
         process = processBuilder.start()
         val runningProcess = process
         stdoutThread =
@@ -262,7 +340,7 @@ internal fun runPackagedMcpProcess(args: List<String>): PackagedProcessResult {
                 }
             }
         assertTrue(
-            runningProcess.waitFor(PROCESS_EXIT_TIMEOUT_SECONDS, TimeUnit.SECONDS),
+            runningProcess.waitFor(timeoutSeconds, TimeUnit.SECONDS),
             "MCP CLI process did not exit",
         )
         stdoutThread.join(STDERR_DRAIN_TIMEOUT_MS)
@@ -294,10 +372,6 @@ internal fun runPackagedMcpProcess(args: List<String>): PackagedProcessResult {
         }
         stdoutThread?.join(STDERR_DRAIN_TIMEOUT_MS)
         stderrThread?.join(STDERR_DRAIN_TIMEOUT_MS)
-        if (!tempRoot.toFile().deleteRecursively()) {
-            val cleanupFailure = AssertionError("Failed to delete temporary data: $tempRoot")
-            if (failure == null) failure = cleanupFailure else failure.addSuppressed(cleanupFailure)
-        }
     }
 
     failure?.let { error ->
@@ -321,8 +395,35 @@ internal suspend fun withPackagedMcpClient(
     prepare: suspend (tempRoot: Path, home: Path) -> Unit = { _, _ -> },
     block: suspend (Client) -> Unit,
 ) {
-    val shadowJar = resolveShadowJar()
     val tempRoot = withContext(Dispatchers.IO) { Files.createTempDirectory("safedb-mcp-packaged-") }
+    var failure: Throwable? = null
+    try {
+        withPackagedMcpClientIn(
+            tempRoot = tempRoot,
+            keychainBackend = keychainBackend,
+            timeoutMs = CLIENT_TIMEOUT_MS,
+            prepare = prepare,
+            block = block,
+        )
+    } catch (error: Throwable) {
+        failure = error
+    } finally {
+        if (!tempRoot.toFile().deleteRecursively()) {
+            val cleanupFailure = AssertionError("Failed to delete temporary data: $tempRoot")
+            if (failure == null) failure = cleanupFailure else failure.addSuppressed(cleanupFailure)
+        }
+    }
+    failure?.let { throw it }
+}
+
+internal suspend fun withPackagedMcpClientIn(
+    tempRoot: Path,
+    // null leaves SAFEDB_KEYCHAIN_BACKEND unset so the child can read seeded/CLI-stored secrets.
+    keychainBackend: String? = "disabled",
+    timeoutMs: Long = CLIENT_TIMEOUT_MS,
+    prepare: suspend (tempRoot: Path, home: Path) -> Unit = { _, _ -> },
+    block: suspend (Client) -> Unit,
+) {
     val protocolCapture = ByteArrayOutputStream()
     val stderrCapture = ByteArrayOutputStream()
     val stderrFailure = AtomicReference<Throwable?>()
@@ -332,15 +433,21 @@ internal suspend fun withPackagedMcpClient(
     var failure: Throwable? = null
 
     try {
-        val home = withContext(Dispatchers.IO) { Files.createDirectories(tempRoot.resolve("home")) }
-        val processBuilder =
-            ProcessBuilder(
-                resolveJavaExecutable().toString(),
-                "-Duser.home=$home",
-                "-jar",
-                shadowJar.toAbsolutePath().toString(),
+        val (home, launch) =
+            withContext(Dispatchers.IO) {
+                val createdHome = Files.createDirectories(tempRoot.resolve("home"))
+                createdHome to resolvePackagedMcpLaunch(createdHome, emptyList())
+            }
+        val processBuilder = ProcessBuilder(launch.command)
+        withContext(Dispatchers.IO) {
+            configureIsolatedEnvironment(
+                processBuilder = processBuilder,
+                tempRoot = tempRoot,
+                home = home,
+                keychainBackend = keychainBackend,
+                nodePath = launch.nodePath,
             )
-        configureIsolatedEnvironment(processBuilder, tempRoot, home, keychainBackend)
+        }
         prepare(tempRoot, home)
         process = withContext(Dispatchers.IO) { processBuilder.start() }
 
@@ -363,7 +470,7 @@ internal suspend fun withPackagedMcpClient(
         client =
             Client(clientInfo = Implementation(name = "packaged-integration-test", version = "0"))
 
-        withTimeout(CLIENT_TIMEOUT_MS.milliseconds) {
+        withTimeout(timeoutMs.milliseconds) {
             client.connect(transport)
             block(client)
             client.close()
@@ -406,11 +513,6 @@ internal suspend fun withPackagedMcpClient(
         }
         stderrThread?.let { draining ->
             withContext(Dispatchers.IO) { draining.join(STDERR_DRAIN_TIMEOUT_MS) }
-        }
-
-        if (!tempRoot.toFile().deleteRecursively()) {
-            val cleanupFailure = AssertionError("Failed to delete temporary data: $tempRoot")
-            if (failure == null) failure = cleanupFailure else failure.addSuppressed(cleanupFailure)
         }
     }
 

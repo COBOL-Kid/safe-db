@@ -28,9 +28,10 @@ import kotlinx.serialization.json.jsonObject
 const val CURRENT_SCHEMA_VERSION: Int = 1
 const val MAX_CELL_BYTES: Int = 1024 * 1024
 const val MAX_RESULT_BYTES: Int = 10 * 1024 * 1024
-
-fun byteBudgetTruncationWarning(): String =
+const val RESULT_TRUNCATED_WARNING: String =
     "Result exceeded $MAX_RESULT_BYTES encoded bytes and was truncated"
+
+fun byteBudgetTruncationWarning(): String = RESULT_TRUNCATED_WARNING
 
 @Serializable
 data class QuerySpec(

@@ -577,10 +577,216 @@ test_data_dir_and_cli_validation() {
   done
 }
 
+test_smoke_cli_validation() {
+  local help_out cli_status
+  help_out="$("$REPO_ROOT/scripts/agent_gui.sh" --help)"
+  assert_contains "$help_out" "smoke [--require-db]" "help smoke command"
+  assert_contains "$help_out" "SAFEDB_AGENT_GUI_CREDENTIALS" "help credentials env"
+
+  local cli_case
+  local -a cli_args
+  for cli_case in \
+    "smoke:--bogus" \
+    "smoke:extra"; do
+    IFS=':' read -r -a cli_args <<<"$cli_case"
+    set +e
+    "$REPO_ROOT/scripts/agent_gui.sh" "${cli_args[@]}" >/dev/null 2>&1
+    cli_status=$?
+    set -e
+    [[ "$cli_status" -eq 2 ]] ||
+      fail "smoke CLI validation for (${cli_args[*]}) exited $cli_status instead of 2"
+  done
+}
+
+test_resolve_repo_mcp_cli() {
+  local fake_repo="$TEST_ROOT/fake-repo"
+  local fake_bin="$TEST_ROOT/mcp-fake-bin"
+  local fake_bin_no_node="$TEST_ROOT/mcp-fake-bin-no-node"
+  local call_log="$TEST_ROOT/mcp-cli-calls.log"
+  mkdir -p \
+    "$fake_repo/mcp/build/npm/@safe-db/mcp" \
+    "$fake_repo/mcp/build/npm/@safe-db/mcp-linux-x64/jre/bin" \
+    "$fake_repo/mcp/build/libs" \
+    "$fake_bin" \
+    "$fake_bin_no_node"
+
+  printf 'console.log("fake cli");\n' >"$fake_repo/mcp/build/npm/@safe-db/mcp/cli.js"
+  printf '#!/usr/bin/env bash\nexit 0\n' >"$fake_repo/mcp/build/npm/@safe-db/mcp-linux-x64/jre/bin/java"
+  chmod +x "$fake_repo/mcp/build/npm/@safe-db/mcp-linux-x64/jre/bin/java"
+  printf 'non-fat' >"$fake_repo/mcp/build/libs/mcp-1.0.0.jar"
+  printf 'fat-jar' >"$fake_repo/mcp/build/libs/safe-db-mcp-1.0.0-all.jar"
+
+  cat >"$fake_bin/safe-db-mcp" <<'EOF'
+#!/usr/bin/env bash
+exit 99
+EOF
+  cat >"$fake_bin/node" <<EOF
+#!/usr/bin/env bash
+printf 'node|NODE_PATH=%s|%s\n' "\${NODE_PATH:-}" "\$*" >>"$call_log"
+EOF
+  cat >"$fake_bin/java" <<EOF
+#!/usr/bin/env bash
+printf 'java|%s\n' "\$*" >>"$call_log"
+EOF
+  chmod +x "$fake_bin/safe-db-mcp" "$fake_bin/node" "$fake_bin/java"
+  cp "$fake_bin/safe-db-mcp" "$fake_bin_no_node/safe-db-mcp"
+  cp "$fake_bin/java" "$fake_bin_no_node/java"
+
+  (
+    ROOT="$fake_repo"
+    PATH="$fake_bin:$PATH"
+    run_repo_mcp_cli setup --name "Smoke MySQL"
+  )
+  local node_call
+  node_call="$(<"$call_log")"
+  assert_contains "$node_call" "node|NODE_PATH=$fake_repo/mcp/build/npm|" "node NODE_PATH"
+  assert_contains "$node_call" "$fake_repo/mcp/build/npm/@safe-db/mcp/cli.js setup --name Smoke MySQL" "node cli.js args"
+
+  : >"$call_log"
+  (
+    ROOT="$fake_repo"
+    PATH="$fake_bin_no_node:/usr/bin:/bin"
+    run_repo_mcp_cli connections list
+  )
+  local jar_call
+  jar_call="$(<"$call_log")"
+  assert_contains "$jar_call" "java|-jar $fake_repo/mcp/build/libs/safe-db-mcp-1.0.0-all.jar connections list" "shadowJar fallback"
+  assert_not_contains "$jar_call" "mcp-1.0.0.jar" "skip non-fat jar"
+}
+
+test_smoke_require_db_and_cleanup() {
+  local smoke_tmp="$TEST_ROOT/smoke-tmp"
+  mkdir -p "$smoke_tmp"
+  local stderr_file="$TEST_ROOT/smoke-require-db.err"
+  local status=0
+  set +e
+  (
+    TMPDIR="$smoke_tmp"
+    check_prereqs() { :; }
+    is_tcp_reachable() { return 1; }
+    SAFEDB_TEST_MYSQL_HOST="127.0.0.1"
+    SAFEDB_TEST_MYSQL_PORT="39999"
+    cmd_smoke --require-db
+  ) >"$TEST_ROOT/smoke-require-db.out" 2>"$stderr_file"
+  status=$?
+  set -e
+  [[ "$status" -ne 0 ]] || fail "expected cmd_smoke --require-db with unreachable DB to fail"
+  local err_text
+  err_text="$(<"$stderr_file")"
+  assert_contains "$err_text" "127.0.0.1:39999" "unreachable host:port message"
+  local leftovers
+  leftovers="$(find "$smoke_tmp" -maxdepth 1 -name 'safedb-agent-gui-smoke.*')"
+  [[ -z "$leftovers" ]] || fail "expected smoke temp dir to be cleaned up, found: $leftovers"
+}
+
+test_smoke_screenshot_validation() {
+  local shot_dir="$TEST_ROOT/smoke-shots"
+  local fake_bin="$TEST_ROOT/shot-fake-bin"
+  mkdir -p "$shot_dir" "$fake_bin"
+  cat >"$fake_bin/identify" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+file="${@: -1}"
+cat "$file.ident"
+EOF
+  chmod +x "$fake_bin/identify"
+
+  make_fake_png() {
+    local path="$1" ident_line="$2"
+    printf '\x89PNG\r\n\x1a\npayload' >"$path"
+    printf '%s\n' "$ident_line" >"$path.ident"
+  }
+
+  local i
+  for i in 1 2 3 4 5; do
+    make_fake_png "$shot_dir/good-$i.png" "1600 1000 0.125 hash-$i"
+  done
+
+  (
+    PATH="$fake_bin:$PATH"
+    validate_smoke_screenshots 5 "$shot_dir"/good-*.png
+  ) || fail "expected 5 distinct non-blank PNGs to pass"
+
+  if (
+    PATH="$fake_bin:$PATH"
+    validate_smoke_screenshots 5 "$shot_dir"/good-1.png "$shot_dir"/good-2.png
+  ) 2>/dev/null; then
+    fail "expected fewer than min_count screenshots to fail"
+  fi
+
+  : >"$shot_dir/empty.png"
+  printf '1600 1000 0.125 hash-empty\n' >"$shot_dir/empty.png.ident"
+  if (
+    PATH="$fake_bin:$PATH"
+    validate_smoke_screenshots 1 "$shot_dir/empty.png"
+  ) 2>/dev/null; then
+    fail "expected empty PNG to fail"
+  fi
+
+  printf 'NOTAPNG!' >"$shot_dir/bad-magic.png"
+  printf '1600 1000 0.125 hash-magic\n' >"$shot_dir/bad-magic.png.ident"
+  if (
+    PATH="$fake_bin:$PATH"
+    validate_smoke_screenshots 1 "$shot_dir/bad-magic.png"
+  ) 2>/dev/null; then
+    fail "expected non-PNG magic bytes to fail"
+  fi
+
+  make_fake_png "$shot_dir/blank.png" "1600 1000 0 hash-blank"
+  if (
+    PATH="$fake_bin:$PATH"
+    validate_smoke_screenshots 1 "$shot_dir/blank.png"
+  ) 2>/dev/null; then
+    fail "expected blank (stddev=0) PNG to fail"
+  fi
+
+  make_fake_png "$shot_dir/dup.png" "1600 1000 0.125 hash-1"
+  if (
+    PATH="$fake_bin:$PATH"
+    validate_smoke_screenshots 2 "$shot_dir/good-1.png" "$shot_dir/dup.png"
+  ) 2>/dev/null; then
+    fail "expected duplicate PNG hash to fail"
+  fi
+}
+
+test_smoke_log_validation() {
+  local log_dir="$TEST_ROOT/smoke-logs"
+  mkdir -p "$log_dir"
+
+  if validate_smoke_log "$log_dir/missing.log" true 2>/dev/null; then
+    fail "expected missing app.log to fail"
+  fi
+
+  : >"$log_dir/empty.log"
+  if validate_smoke_log "$log_dir/empty.log" true 2>/dev/null; then
+    fail "expected empty app.log to fail"
+  fi
+
+  local marker
+  for marker in \
+    "Exception in thread \"main\" java.lang.RuntimeException: boom" \
+    "BUILD FAILED in 2s" \
+    "PasswordNotFoundException: missing" \
+    "WARN: using in-memory credential store: credentials are held in process memory only"; do
+    printf '> Task :runAgentGui\n%s\n' "$marker" >"$log_dir/bad.log"
+    if validate_smoke_log "$log_dir/bad.log" true 2>/dev/null; then
+      fail "expected app.log containing '$marker' to fail"
+    fi
+  done
+
+  printf '> Task :runAgentGui\nSafe-DB started\n' >"$log_dir/good.log"
+  validate_smoke_log "$log_dir/good.log" true || fail "expected clean app.log to pass"
+}
+
 test_reset_targets
 test_cmd_reset_composition
 test_pid_and_kill_boundaries
 test_window_matching
 test_data_dir_and_cli_validation
+test_smoke_cli_validation
+test_resolve_repo_mcp_cli
+test_smoke_require_db_and_cleanup
+test_smoke_screenshot_validation
+test_smoke_log_validation
 
 echo "agent_gui reset tests passed"

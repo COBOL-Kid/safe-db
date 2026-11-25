@@ -1,5 +1,6 @@
 import com.safedb.buildlogic.ExtractMacSkikoNative
 import com.safedb.buildlogic.WriteVersionResource
+import com.safedb.buildlogic.logIntegrationFailures
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
@@ -71,6 +72,28 @@ configurations[render.runtimeOnlyConfigurationName].extendsFrom(configurations.r
 
 dependencies { add(render.implementationConfigurationName, testFixtures(project(":shared"))) }
 
+val integrationTest = sourceSets.create("integrationTest")
+
+integrationTest.compileClasspath += sourceSets.main.get().output
+
+integrationTest.runtimeClasspath += sourceSets.main.get().output
+
+configurations[integrationTest.implementationConfigurationName].extendsFrom(
+    configurations.testImplementation.get(),
+)
+
+configurations[integrationTest.runtimeOnlyConfigurationName].extendsFrom(
+    configurations.testRuntimeOnly.get(),
+)
+
+dependencies {
+    add(integrationTest.implementationConfigurationName, kotlin("test"))
+    add(integrationTest.implementationConfigurationName, testFixtures(project(":shared")))
+    add(integrationTest.implementationConfigurationName, libs.kotlinx.coroutines.test)
+    add(integrationTest.implementationConfigurationName, libs.junit.jupiter)
+    add(integrationTest.runtimeOnlyConfigurationName, libs.junit.platform.launcher)
+}
+
 val generateAppVersion =
     tasks.register<WriteVersionResource>("generateAppVersion") {
         appVersion.set(provider { version.toString() })
@@ -100,6 +123,10 @@ tasks.named<KotlinCompile>("compileRenderKotlin") {
     friendPaths.from(
         tasks.named<KotlinCompile>("compileKotlin").flatMap { it.destinationDirectory },
     )
+}
+
+kotlin.target.compilations.named("integrationTest") {
+    associateWith(kotlin.target.compilations.getByName("main"))
 }
 
 qodana { resultsPath.set(layout.buildDirectory.dir("qodana/results").get().asFile.absolutePath) }
@@ -185,6 +212,10 @@ val koverExcludedClasses =
     )
 
 kover {
+    currentProject {
+        instrumentation { disabledForTestTasks.add("desktopIntegrationTest") }
+        sources { excludedSourceSets.add("integrationTest") }
+    }
     reports {
         filters {
             includes { classes(*koverIncludedClasses.toTypedArray()) }
@@ -218,6 +249,20 @@ compose.desktop {
 }
 
 tasks.test { useJUnitPlatform() }
+
+tasks.named("check") { dependsOn("compileIntegrationTestKotlin") }
+
+tasks.register<Test>("desktopIntegrationTest") {
+    description = "Runs desktop app integration tests tagged @Tag(\"integration\")."
+    group = "verification"
+    testClassesDirs = integrationTest.output.classesDirs
+    classpath = integrationTest.runtimeClasspath
+    useJUnitPlatform { includeTags("integration") }
+    // Render ExploreWindowContent headlessly on Linux/CI without an X display.
+    jvmArgs("-Djava.awt.headless=true")
+    logIntegrationFailures()
+    shouldRunAfter(tasks.test)
+}
 
 // Applied scripts have no type-safe accessors, so plugin DSL stays above. Dev tasks need the
 // render source set, which is created before these scripts run.

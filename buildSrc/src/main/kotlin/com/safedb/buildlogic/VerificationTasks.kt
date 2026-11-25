@@ -157,6 +157,10 @@ abstract class VerifyIntegrationTestDiscovery : DefaultTask() {
 
     @get:InputDirectory
     @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val desktopResultsDirectory: DirectoryProperty
+
+    @get:InputDirectory
+    @get:PathSensitive(PathSensitivity.RELATIVE)
     abstract val mcpResultsDirectory: DirectoryProperty
 
     @get:Input abstract val requireMysql: Property<Boolean>
@@ -194,6 +198,20 @@ abstract class VerifyIntegrationTestDiscovery : DefaultTask() {
                         "${result.discovered} executed tests",
                 )
             }
+
+            val desktopResultsDir = desktopResultsDirectory.get().asFile
+            val desktopResults =
+                verifyDesktopIntegrationTestDiscovery(
+                    junitReports(desktopResultsDir).map(File::readText),
+                    requiredEngines,
+                    desktopResultsDir.toString(),
+                )
+            for (result in desktopResults) {
+                logger.lifecycle(
+                    "${result.engine} integration discovery verified: " +
+                        "${result.discovered} executed tests",
+                )
+            }
         }
 
         val mcpResultsDir = mcpResultsDirectory.get().asFile
@@ -205,9 +223,47 @@ abstract class VerifyIntegrationTestDiscovery : DefaultTask() {
                 requireMssql = "mssql" in requiredEngines,
                 requireOracle = "oracle" in requiredEngines,
                 requireDb2 = "db2" in requiredEngines,
+                includeUserJourney = true,
                 resultsLocation = mcpResultsDir.toString(),
             )
         for (result in mcpResults) {
+            logger.lifecycle(
+                "${result.engine} integration discovery verified: " +
+                    "${result.discovered} executed tests",
+            )
+        }
+    }
+}
+
+abstract class VerifyMcpNpmPackagedDiscovery : DefaultTask() {
+    @get:InputDirectory
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val resultsDirectory: DirectoryProperty
+
+    @get:Input abstract val requireMysql: Property<Boolean>
+
+    @get:Input abstract val requirePostgres: Property<Boolean>
+
+    @get:Input abstract val requireMssql: Property<Boolean>
+
+    @get:Input abstract val requireOracle: Property<Boolean>
+
+    @get:Input abstract val requireDb2: Property<Boolean>
+
+    @TaskAction
+    fun verify() {
+        val resultsDir = resultsDirectory.get().asFile
+        val results =
+            verifyMcpNpmPackagedDiscovery(
+                junitReports(resultsDir).map(File::readText),
+                requireMysql = requireMysql.get(),
+                requirePostgres = requirePostgres.get(),
+                requireMssql = requireMssql.get(),
+                requireOracle = requireOracle.get(),
+                requireDb2 = requireDb2.get(),
+                resultsLocation = resultsDir.toString(),
+            )
+        for (result in results) {
             logger.lifecycle(
                 "${result.engine} integration discovery verified: " +
                     "${result.discovered} executed tests",
@@ -369,11 +425,25 @@ private data class IntegrationSuite(
 
 private val integrationSuites =
     listOf(
-        IntegrationSuite("mysql", "MySql", 6),
-        IntegrationSuite("postgres", "Postgres", 3),
-        IntegrationSuite("mssql", "Mssql", 2),
-        IntegrationSuite("oracle", "Oracle", 2),
-        IntegrationSuite("db2", "Db2", 3),
+        IntegrationSuite("mysql", "MySql", 13),
+        IntegrationSuite("postgres", "Postgres", 11),
+        IntegrationSuite("mssql", "Mssql", 11),
+        IntegrationSuite("oracle", "Oracle", 11),
+        IntegrationSuite("db2", "Db2", 11),
+    )
+
+private val desktopIntegrationSuites =
+    listOf(
+        IntegrationSuite("desktop mysql", "DesktopLiveUserJourneyIntegrationTest", 1, "mysql"),
+        IntegrationSuite(
+            "desktop postgres",
+            "DesktopLiveUserJourneyIntegrationTest",
+            1,
+            "postgres",
+        ),
+        IntegrationSuite("desktop mssql", "DesktopLiveUserJourneyIntegrationTest", 1, "mssql"),
+        IntegrationSuite("desktop oracle", "DesktopLiveUserJourneyIntegrationTest", 1, "oracle"),
+        IntegrationSuite("desktop db2", "DesktopLiveUserJourneyIntegrationTest", 1, "db2"),
     )
 
 internal fun verifyIntegrationTestDiscovery(
@@ -382,43 +452,27 @@ internal fun verifyIntegrationTestDiscovery(
     resultsLocation: String = "the integration test results directory",
 ): List<IntegrationDiscoveryResult> {
     if (requiredEngines.isEmpty()) return emptyList()
-    check(reports.isNotEmpty()) { "Integration tests produced no JUnit XML in $resultsLocation" }
+    return verifySuitesInReports(
+        reports = reports,
+        suites = integrationSuites.filter { it.engine in requiredEngines },
+        emptyReportsMessage = "Integration tests produced no JUnit XML in $resultsLocation",
+    )
+}
 
-    val counts = integrationSuites.associate { it.engine to intArrayOf(0, 0) }
-    for (report in reports) {
-        val document =
-            DocumentBuilderFactory.newInstance()
-                .newDocumentBuilder()
-                .parse(ByteArrayInputStream(report.toByteArray(Charsets.UTF_8)))
-        val testcases = document.getElementsByTagName("testcase")
-        for (index in 0 until testcases.length) {
-            val testcase = testcases.item(index)
-            val className = testcase.attributes.getNamedItem("classname")?.nodeValue ?: continue
-            val suite =
-                integrationSuites.firstOrNull { className.contains(it.classNameFragment) }
-                    ?: continue
-            counts.getValue(suite.engine)[0] += 1
-            val children = testcase.childNodes
-            for (childIndex in 0 until children.length) {
-                if (children.item(childIndex).nodeName == "skipped") {
-                    counts.getValue(suite.engine)[1] += 1
-                }
-            }
-        }
+internal fun verifyDesktopIntegrationTestDiscovery(
+    reports: List<String>,
+    requiredEngines: Set<String>,
+    resultsLocation: String = "the desktop integration test results directory",
+): List<IntegrationDiscoveryResult> {
+    if (requiredEngines.isEmpty()) return emptyList()
+    val suites = desktopIntegrationSuites.filter {
+        it.engine.removePrefix("desktop ") in requiredEngines
     }
-
-    return integrationSuites
-        .filter { it.engine in requiredEngines }
-        .map { suite ->
-            val (discovered, skipped) = counts.getValue(suite.engine)
-            check(discovered >= suite.minimum) {
-                "${suite.engine} integration discovery found $discovered tests; expected at least ${suite.minimum}"
-            }
-            check(skipped == 0) {
-                "${suite.engine} is required but $skipped of $discovered integration tests were skipped"
-            }
-            IntegrationDiscoveryResult(suite.engine, discovered, skipped)
-        }
+    return verifySuitesInReports(
+        reports = reports,
+        suites = suites,
+        emptyReportsMessage = "Desktop integration tests produced no JUnit XML in $resultsLocation",
+    )
 }
 
 internal fun verifyMcpIntegrationTestDiscovery(
@@ -428,70 +482,179 @@ internal fun verifyMcpIntegrationTestDiscovery(
     requireMssql: Boolean = false,
     requireOracle: Boolean = false,
     requireDb2: Boolean = false,
+    includeUserJourney: Boolean = false,
     resultsLocation: String = "the MCP integration test results directory",
-): List<IntegrationDiscoveryResult> {
-    check(reports.isNotEmpty()) {
-        "MCP integration tests produced no JUnit XML in $resultsLocation"
-    }
-    val suites = buildList {
-        add(IntegrationSuite("mcp packaged stdio", "McpPackagedStdioIntegrationTest", 1))
-        if (requireMysql) {
-            add(IntegrationSuite("mcp mysql", "McpMySqlIntegrationTest", 1))
+): List<IntegrationDiscoveryResult> =
+    verifySuitesInReports(
+        reports = reports,
+        suites =
+            buildMcpSuites(
+                stdioMinimum = 1,
+                mysqlMinimum = 1,
+                postgresMinimum = 1,
+                requireMysql = requireMysql,
+                requirePostgres = requirePostgres,
+                requireMssql = requireMssql,
+                requireOracle = requireOracle,
+                requireDb2 = requireDb2,
+                includeUserJourney = includeUserJourney,
+            ),
+        emptyReportsMessage = "MCP integration tests produced no JUnit XML in $resultsLocation",
+    )
+
+internal fun verifyMcpNpmPackagedDiscovery(
+    reports: List<String>,
+    requireMysql: Boolean,
+    requirePostgres: Boolean = false,
+    requireMssql: Boolean = false,
+    requireOracle: Boolean = false,
+    requireDb2: Boolean = false,
+    resultsLocation: String = "the packaged MCP test results directory",
+): List<IntegrationDiscoveryResult> =
+    verifySuitesInReports(
+        reports = reports,
+        suites =
+            buildMcpSuites(
+                stdioMinimum = 4,
+                mysqlMinimum = 2,
+                postgresMinimum = 2,
+                requireMysql = requireMysql,
+                requirePostgres = requirePostgres,
+                requireMssql = requireMssql,
+                requireOracle = requireOracle,
+                requireDb2 = requireDb2,
+                includeUserJourney = true,
+            ),
+        emptyReportsMessage = "Packaged MCP tests produced no JUnit XML in $resultsLocation",
+    )
+
+private fun buildMcpSuites(
+    stdioMinimum: Int,
+    mysqlMinimum: Int,
+    postgresMinimum: Int,
+    requireMysql: Boolean,
+    requirePostgres: Boolean,
+    requireMssql: Boolean,
+    requireOracle: Boolean,
+    requireDb2: Boolean,
+    includeUserJourney: Boolean,
+): List<IntegrationSuite> = buildList {
+    add(IntegrationSuite("mcp packaged stdio", "McpPackagedStdioIntegrationTest", stdioMinimum))
+    if (requireMysql) {
+        add(IntegrationSuite("mcp mysql", "McpMySqlIntegrationTest", mysqlMinimum))
+        add(
+            IntegrationSuite(
+                "mcp packaged mysql",
+                "McpPackagedDialectsIntegrationTest",
+                1,
+                methodNameFragment = "Mysql",
+            ),
+        )
+        if (includeUserJourney) {
             add(
                 IntegrationSuite(
-                    "mcp packaged mysql",
-                    "McpPackagedDialectsIntegrationTest",
+                    "mcp packaged user journey mysql",
+                    "McpPackagedUserJourneyIntegrationTest",
                     1,
                     methodNameFragment = "Mysql",
                 ),
             )
         }
-        if (requirePostgres) {
-            add(IntegrationSuite("mcp postgres", "McpPostgresIntegrationTest", 1))
+    }
+    if (requirePostgres) {
+        add(IntegrationSuite("mcp postgres", "McpPostgresIntegrationTest", postgresMinimum))
+        add(
+            IntegrationSuite(
+                "mcp packaged postgres",
+                "McpPackagedDialectsIntegrationTest",
+                1,
+                methodNameFragment = "Postgres",
+            ),
+        )
+        if (includeUserJourney) {
             add(
                 IntegrationSuite(
-                    "mcp packaged postgres",
-                    "McpPackagedDialectsIntegrationTest",
+                    "mcp packaged user journey postgres",
+                    "McpPackagedUserJourneyIntegrationTest",
                     1,
                     methodNameFragment = "Postgres",
                 ),
             )
         }
-        if (requireMssql) {
+    }
+    if (requireMssql) {
+        add(
+            IntegrationSuite(
+                "mcp packaged mssql",
+                "McpPackagedDialectsIntegrationTest",
+                1,
+                methodNameFragment = "Mssql",
+            ),
+        )
+        if (includeUserJourney) {
             add(
                 IntegrationSuite(
-                    "mcp packaged mssql",
-                    "McpPackagedDialectsIntegrationTest",
+                    "mcp packaged user journey mssql",
+                    "McpPackagedUserJourneyIntegrationTest",
                     1,
                     methodNameFragment = "Mssql",
                 ),
             )
         }
-        if (requireOracle) {
+    }
+    if (requireOracle) {
+        add(
+            IntegrationSuite(
+                "mcp packaged oracle",
+                "McpPackagedDialectsIntegrationTest",
+                1,
+                methodNameFragment = "Oracle",
+            ),
+        )
+        if (includeUserJourney) {
             add(
                 IntegrationSuite(
-                    "mcp packaged oracle",
-                    "McpPackagedDialectsIntegrationTest",
+                    "mcp packaged user journey oracle",
+                    "McpPackagedUserJourneyIntegrationTest",
                     1,
                     methodNameFragment = "Oracle",
                 ),
             )
         }
-        if (requireDb2) {
+    }
+    if (requireDb2) {
+        add(
+            IntegrationSuite(
+                "mcp packaged db2",
+                "McpPackagedDialectsIntegrationTest",
+                1,
+                methodNameFragment = "Db2",
+            ),
+        )
+        if (includeUserJourney) {
             add(
                 IntegrationSuite(
-                    "mcp packaged db2",
-                    "McpPackagedDialectsIntegrationTest",
+                    "mcp packaged user journey db2",
+                    "McpPackagedUserJourneyIntegrationTest",
                     1,
                     methodNameFragment = "Db2",
                 ),
             )
         }
     }
+}
+
+private fun verifySuitesInReports(
+    reports: List<String>,
+    suites: List<IntegrationSuite>,
+    emptyReportsMessage: String,
+): List<IntegrationDiscoveryResult> {
+    check(reports.isNotEmpty()) { emptyReportsMessage }
     val counts = suites.associate { it.engine to intArrayOf(0, 0) }
+    val factory = DocumentBuilderFactory.newInstance()
     for (report in reports) {
         val document =
-            DocumentBuilderFactory.newInstance()
+            factory
                 .newDocumentBuilder()
                 .parse(ByteArrayInputStream(report.toByteArray(Charsets.UTF_8)))
         val testcases = document.getElementsByTagName("testcase")
@@ -503,7 +666,7 @@ internal fun verifyMcpIntegrationTestDiscovery(
                 suites.firstOrNull { candidate ->
                     className.contains(candidate.classNameFragment) &&
                         (candidate.methodNameFragment == null ||
-                            methodName.contains(candidate.methodNameFragment))
+                            methodName.contains(candidate.methodNameFragment, ignoreCase = true))
                 } ?: continue
             counts.getValue(suite.engine)[0] += 1
             val children = testcase.childNodes

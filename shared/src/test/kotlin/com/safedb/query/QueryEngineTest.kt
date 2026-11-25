@@ -21,10 +21,12 @@ import com.safedb.model.GroupSpec
 import com.safedb.model.IndexInfo
 import com.safedb.model.JoinSpec
 import com.safedb.model.LiteralKind
+import com.safedb.model.MAX_RESULT_BYTES
 import com.safedb.model.NormalizedQueryPlan
 import com.safedb.model.Outcome
 import com.safedb.model.QueryResult
 import com.safedb.model.QuerySpec
+import com.safedb.model.RESULT_TRUNCATED_WARNING
 import com.safedb.model.ResultCell
 import com.safedb.model.ResultColumn
 import com.safedb.model.Schema
@@ -33,6 +35,7 @@ import com.safedb.model.SortDirection
 import com.safedb.model.SortSpec
 import com.safedb.model.TableInfo
 import com.safedb.model.TableRef
+import com.safedb.model.byteBudgetTruncationWarning
 import com.safedb.model.classifyColumn
 import com.safedb.model.parseDateTimeLiteral
 import kotlin.test.Test
@@ -739,6 +742,12 @@ class QueryEngineTest {
         assertEquals(ColumnCategory.DateTime, classifyColumn("datetime"))
         assertEquals(LiteralKind.Int, literalKindForColumn("int"))
         assertTrue(opsForColumn("int").contains(FilterOp.Between))
+    }
+
+    @Test
+    fun resultTruncatedWarningConstantMatchesByteBudgetTruncationWarning() {
+        assertEquals(RESULT_TRUNCATED_WARNING, byteBudgetTruncationWarning())
+        assertTrue(RESULT_TRUNCATED_WARNING.contains(MAX_RESULT_BYTES.toString()))
     }
 
     @Test
