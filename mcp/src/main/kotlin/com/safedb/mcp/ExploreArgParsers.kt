@@ -19,6 +19,7 @@ import com.safedb.explore.WorksheetFilterOp
 import com.safedb.explore.WorksheetSort
 import com.safedb.explore.WorksheetValueRef
 import com.safedb.explore.displayColumnLabel
+import java.math.BigDecimal
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -134,10 +135,17 @@ private fun parseGrouping(element: JsonElement?, parentPath: String): Arg<PivotG
             if (size.isNullOrBlank()) {
                 return invalidArgument("grouping objects require bin_size")
             }
+            val parsedSize = size.trim().toBigDecimalOrNull()
+            if (parsedSize == null || parsedSize <= BigDecimal.ZERO) {
+                return invalidArgument("$path.bin_size must be a positive number")
+            }
             val start =
                 element.optionalStringField("bin_start", path).getOrElse {
                     return Arg.Err(it)
                 }
+            if (start != null && start.trim().toBigDecimalOrNull() == null) {
+                return invalidArgument("$path.bin_start must be a number")
+            }
             Arg.Ok(PivotGrouping.NumberBin(size = size, start = start))
         }
         else -> invalidArgument("grouping must be a string or object")
@@ -182,11 +190,21 @@ internal fun parseMeasures(array: JsonArray, columns: Set<String>): Arg<List<Piv
             obj.requireNonBlankString("alias", path).getOrElse {
                 return Arg.Err(it)
             }
-        val fnText =
-            obj.requireNonBlankString("fn", path).getOrElse {
+        val formula =
+            obj.optionalStringField("formula", path).getOrElse {
                 return Arg.Err(it)
             }
-        val fn = parseMeasureFn(fnText) ?: return invalidArgument("Unknown measure fn '$fnText'")
+        val fnText =
+            obj.optionalStringField("fn", path).getOrElse {
+                return Arg.Err(it)
+            }
+        val fn =
+            when {
+                !fnText.isNullOrBlank() ->
+                    parseMeasureFn(fnText) ?: return invalidArgument("Unknown measure fn '$fnText'")
+                !formula.isNullOrBlank() -> MeasureFn.Sum
+                else -> return invalidArgument("$path.fn is required")
+            }
         val sourceColumn =
             obj.optionalStringField("source_column", path).getOrElse {
                 return Arg.Err(it)
@@ -196,10 +214,6 @@ internal fun parseMeasures(array: JsonArray, columns: Set<String>): Arg<List<Piv
         }
         val showAs =
             parseShowAs(obj["show_as"]).getOrElse {
-                return Arg.Err(it)
-            }
-        val formula =
-            obj.optionalStringField("formula", path).getOrElse {
                 return Arg.Err(it)
             }
         val label =
@@ -259,14 +273,14 @@ internal fun parsePivotFilters(array: JsonArray, columns: Set<String>): Arg<List
                         return Arg.Err(it)
                     }
                     val includedKeys =
-                        obj.optionalStringListField("included_keys", path).getOrElse {
+                        obj.requireNonEmptyStringListField("included_keys", path).getOrElse {
                             return Arg.Err(it)
                         }
                     PivotFilter.Members(
                         id = id,
                         column = column,
                         label = label,
-                        includedKeys = includedKeys?.toSet().orEmpty(),
+                        includedKeys = includedKeys.toSet(),
                     )
                 }
                 else -> {
@@ -276,7 +290,7 @@ internal fun parsePivotFilters(array: JsonArray, columns: Set<String>): Arg<List
                             return Arg.Err(it)
                         }
                         val value =
-                            obj.optionalStringField("value", path).getOrElse {
+                            obj.requirePresentStringField("value", path).getOrElse {
                                 return Arg.Err(it)
                             }
                         PivotFilter.Label(
@@ -284,57 +298,119 @@ internal fun parsePivotFilters(array: JsonArray, columns: Set<String>): Arg<List
                             column = column,
                             label = label,
                             op = labelOp,
-                            value = value.orEmpty(),
+                            value = value,
                         )
                     } else {
                         val valueOp =
                             parseValueFilterOp(op)
                                 ?: return invalidArgument("Unknown filter op '$op'")
-                        requireKnownKeys(
-                                obj,
-                                path,
-                                "column",
-                                "op",
-                                "measure_alias",
-                                "value",
-                                "second_value",
-                                "count",
-                            )
-                            .getOrElse {
-                                return Arg.Err(it)
-                            }
-                        val measureAlias =
-                            obj.requireNonBlankString("measure_alias", path).getOrElse {
-                                return Arg.Err(it)
-                            }
-                        val value =
-                            obj.optionalStringField("value", path).getOrElse {
-                                return Arg.Err(it)
-                            }
-                        val secondValue =
-                            obj.optionalStringField("second_value", path).getOrElse {
-                                return Arg.Err(it)
-                            }
-                        val count =
-                            obj.optionalIntField("count", path).getOrElse {
-                                return Arg.Err(it)
-                            }
-                        PivotFilter.Value(
-                            id = id,
-                            column = column,
-                            label = label,
-                            measureAlias = measureAlias,
-                            op = valueOp,
-                            value = value.orEmpty(),
-                            secondValue = secondValue,
-                            count = count ?: 10,
-                        )
+                        parsePivotValueFilter(obj, path, id, column, label, valueOp).getOrElse {
+                            return Arg.Err(it)
+                        }
                     }
                 }
             }
         filters += filter
     }
     return Arg.Ok(filters)
+}
+
+private fun parsePivotValueFilter(
+    obj: JsonObject,
+    path: String,
+    id: String,
+    column: String,
+    label: String,
+    op: ValueFilterOp,
+): Arg<PivotFilter.Value> {
+    when (op) {
+        ValueFilterOp.Top,
+        ValueFilterOp.Bottom ->
+            requireKnownKeys(obj, path, "column", "op", "measure_alias", "count").getOrElse {
+                return Arg.Err(it)
+            }
+        ValueFilterOp.Between ->
+            requireKnownKeys(obj, path, "column", "op", "measure_alias", "value", "second_value")
+                .getOrElse {
+                    return Arg.Err(it)
+                }
+        ValueFilterOp.GreaterThan,
+        ValueFilterOp.GreaterThanOrEqual,
+        ValueFilterOp.LessThan,
+        ValueFilterOp.LessThanOrEqual ->
+            requireKnownKeys(obj, path, "column", "op", "measure_alias", "value").getOrElse {
+                return Arg.Err(it)
+            }
+    }
+    val measureAlias =
+        obj.requireNonBlankString("measure_alias", path).getOrElse {
+            return Arg.Err(it)
+        }
+    return when (op) {
+        ValueFilterOp.Top,
+        ValueFilterOp.Bottom -> {
+            val count =
+                obj.optionalIntField("count", path).getOrElse {
+                    return Arg.Err(it)
+                }
+            if (count != null && count <= 0) {
+                return invalidArgument("$path.count must be 1 or more")
+            }
+            Arg.Ok(
+                PivotFilter.Value(
+                    id = id,
+                    column = column,
+                    label = label,
+                    measureAlias = measureAlias,
+                    op = op,
+                    value = "",
+                    secondValue = null,
+                    count = count ?: 10,
+                ),
+            )
+        }
+        ValueFilterOp.Between -> {
+            val value =
+                obj.requirePresentStringField("value", path).getOrElse {
+                    return Arg.Err(it)
+                }
+            val secondValue =
+                obj.requirePresentStringField("second_value", path).getOrElse {
+                    return Arg.Err(it)
+                }
+            Arg.Ok(
+                PivotFilter.Value(
+                    id = id,
+                    column = column,
+                    label = label,
+                    measureAlias = measureAlias,
+                    op = op,
+                    value = value,
+                    secondValue = secondValue,
+                ),
+            )
+        }
+        ValueFilterOp.GreaterThan,
+        ValueFilterOp.GreaterThanOrEqual,
+        ValueFilterOp.LessThan,
+        ValueFilterOp.LessThanOrEqual -> {
+            val value =
+                obj.requirePresentStringField("value", path).getOrElse {
+                    return Arg.Err(it)
+                }
+            Arg.Ok(
+                PivotFilter.Value(
+                    id = id,
+                    column = column,
+                    label = label,
+                    measureAlias = measureAlias,
+                    op = op,
+                    value = value,
+                    secondValue = null,
+                ),
+            )
+        }
+    }
 }
 
 private fun parseLabelFilterOp(value: String): LabelFilterOp? =
@@ -406,10 +482,6 @@ internal fun parseWorksheetFilters(
         }
     for ((index, obj) in objects.withIndex()) {
         val path = "filters[$index]"
-        requireKnownKeys(obj, path, "column", "op", "value", "second_value", "included_keys")
-            .getOrElse {
-                return Arg.Err(it)
-            }
         val column =
             requireColumn(obj, columns, path).getOrElse {
                 return Arg.Err(it)
@@ -420,28 +492,80 @@ internal fun parseWorksheetFilters(
             }
         val op =
             parseWorksheetFilterOp(opText) ?: return invalidArgument("Unknown filter op '$opText'")
-        val value =
-            obj.optionalStringField("value", path).getOrElse {
-                return Arg.Err(it)
+        val id = "filter-$index"
+        val label = displayColumnLabel(column)
+        val filter =
+            when (op) {
+                WorksheetFilterOp.Members -> {
+                    requireKnownKeys(obj, path, "column", "op", "included_keys").getOrElse {
+                        return Arg.Err(it)
+                    }
+                    val includedKeys =
+                        obj.requireNonEmptyStringListField("included_keys", path).getOrElse {
+                            return Arg.Err(it)
+                        }
+                    WorksheetFilter(
+                        id = id,
+                        column = column,
+                        label = label,
+                        op = op,
+                        includedKeys = includedKeys.toSet(),
+                    )
+                }
+                WorksheetFilterOp.IsNull,
+                WorksheetFilterOp.IsNotNull -> {
+                    requireKnownKeys(obj, path, "column", "op").getOrElse {
+                        return Arg.Err(it)
+                    }
+                    WorksheetFilter(id = id, column = column, label = label, op = op)
+                }
+                WorksheetFilterOp.Between -> {
+                    requireKnownKeys(obj, path, "column", "op", "value", "second_value").getOrElse {
+                        return Arg.Err(it)
+                    }
+                    val value =
+                        obj.requirePresentStringField("value", path).getOrElse {
+                            return Arg.Err(it)
+                        }
+                    val secondValue =
+                        obj.requirePresentStringField("second_value", path).getOrElse {
+                            return Arg.Err(it)
+                        }
+                    WorksheetFilter(
+                        id = id,
+                        column = column,
+                        label = label,
+                        op = op,
+                        value = value,
+                        secondValue = secondValue,
+                    )
+                }
+                WorksheetFilterOp.Equals,
+                WorksheetFilterOp.NotEquals,
+                WorksheetFilterOp.Contains,
+                WorksheetFilterOp.StartsWith,
+                WorksheetFilterOp.EndsWith,
+                WorksheetFilterOp.GreaterThan,
+                WorksheetFilterOp.GreaterThanOrEqual,
+                WorksheetFilterOp.LessThan,
+                WorksheetFilterOp.LessThanOrEqual -> {
+                    requireKnownKeys(obj, path, "column", "op", "value").getOrElse {
+                        return Arg.Err(it)
+                    }
+                    val value =
+                        obj.requirePresentStringField("value", path).getOrElse {
+                            return Arg.Err(it)
+                        }
+                    WorksheetFilter(
+                        id = id,
+                        column = column,
+                        label = label,
+                        op = op,
+                        value = value,
+                    )
+                }
             }
-        val secondValue =
-            obj.optionalStringField("second_value", path).getOrElse {
-                return Arg.Err(it)
-            }
-        val includedKeys =
-            obj.optionalStringListField("included_keys", path).getOrElse {
-                return Arg.Err(it)
-            }
-        filters +=
-            WorksheetFilter(
-                id = "filter-$index",
-                column = column,
-                label = displayColumnLabel(column),
-                op = op,
-                value = value.orEmpty(),
-                secondValue = secondValue,
-                includedKeys = includedKeys?.toSet().orEmpty(),
-            )
+        filters += filter
     }
     return Arg.Ok(filters)
 }
@@ -589,6 +713,25 @@ private fun JsonObject.requireNonBlankString(name: String, path: String): Arg<St
         }
     if (value.isNullOrBlank()) return invalidArgument("$path.$name is required")
     return Arg.Ok(value)
+}
+
+private fun JsonObject.requirePresentStringField(name: String, path: String): Arg<String> =
+    Arg.Ok(
+        optionalStringField(name, path).getOrElse {
+            return Arg.Err(it)
+        } ?: return invalidArgument("$path.$name is required"),
+    )
+
+private fun JsonObject.requireNonEmptyStringListField(
+    name: String,
+    path: String,
+): Arg<List<String>> {
+    val list =
+        optionalStringListField(name, path).getOrElse {
+            return Arg.Err(it)
+        } ?: return invalidArgument("$path.$name is required")
+    if (list.isEmpty()) return invalidArgument("$path.$name must not be empty")
+    return Arg.Ok(list)
 }
 
 private fun normalize(value: String): String = value.lowercase().filter { it.isLetterOrDigit() }

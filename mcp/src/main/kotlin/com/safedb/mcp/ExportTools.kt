@@ -112,7 +112,8 @@ private fun resolveExportFilename(resultId: String, filename: String?): Arg<Stri
         !SAFE_EXPORT_FILENAME.matches(filename) ||
             filename == "." ||
             filename == ".." ||
-            filename.startsWith(".")
+            filename.startsWith(".") ||
+            filename.endsWith(".")
     ) {
         return Arg.Err(
             toolError(

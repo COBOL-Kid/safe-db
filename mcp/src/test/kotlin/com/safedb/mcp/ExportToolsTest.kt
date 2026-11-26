@@ -78,24 +78,24 @@ class ExportToolsTest {
         withExportClient(service) { client, resultsDir, exportsDir ->
             val resultId = storeExportResult(client)
             val exportsBefore = directoryNames(exportsDir)
-            listOf("../evil", "sub/evil", "..", ".", ".hidden", "a b.csv", """a\b.csv""").forEach {
-                filename ->
-                val result =
-                    client.callTool(
-                        "export_result",
-                        mapOf("result_id" to resultId, "filename" to filename),
+            listOf("../evil", "sub/evil", "..", ".", ".hidden", "file.", "a b.csv", """a\b.csv""")
+                .forEach { filename ->
+                    val result =
+                        client.callTool(
+                            "export_result",
+                            mapOf("result_id" to resultId, "filename" to filename),
+                        )
+                    assertEquals(true, result.isError, "expected failure for $filename")
+                    assertEquals(
+                        "invalid_arguments",
+                        result.json().string("error"),
+                        "expected invalid_arguments for $filename",
                     )
-                assertEquals(true, result.isError, "expected failure for $filename")
-                assertEquals(
-                    "invalid_arguments",
-                    result.json().string("error"),
-                    "expected invalid_arguments for $filename",
-                )
-                assertEquals(
-                    "filename must be a simple file name without path separators",
-                    result.json().string("message"),
-                )
-            }
+                    assertEquals(
+                        "filename must be a simple file name without path separators",
+                        result.json().string("message"),
+                    )
+                }
             assertFalse(Files.exists(resultsDir.resolve("evil.csv")))
             assertFalse(Files.exists(resultsDir.resolve("evil")))
             assertFalse(Files.exists(exportsDir.resolve("evil")))

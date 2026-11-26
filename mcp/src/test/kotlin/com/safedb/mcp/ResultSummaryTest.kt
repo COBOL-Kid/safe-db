@@ -225,4 +225,24 @@ class ResultSummaryTest {
         assertNull(columns[1].min)
         assertNull(columns[1].max)
     }
+
+    @Test
+    fun mixedIntegerAndInfiniteFloatColumnResolvesMinMaxWithoutThrowing() {
+        val result =
+            QueryResult(
+                columns = listOf(ResultColumn("val", "float8")),
+                rows =
+                    listOf(
+                        listOf(ResultCell.integer(42L)),
+                        listOf(ResultCell.float(Double.POSITIVE_INFINITY)),
+                        listOf(ResultCell.float(Double.NEGATIVE_INFINITY)),
+                    ),
+                rowCount = 3,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val column = summarizeColumns(result).single()
+        assertEquals(JsonPrimitive("-Infinity"), column.min)
+        assertEquals(JsonPrimitive("Infinity"), column.max)
+    }
 }

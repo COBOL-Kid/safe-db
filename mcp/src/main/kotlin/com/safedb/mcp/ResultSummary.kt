@@ -124,7 +124,13 @@ private fun compareNumeric(left: ResultCell, right: ResultCell): Int =
             left.value.compareTo(right.value)
         is ResultCell.FloatCell if right is ResultCell.FloatCell ->
             left.value.compareTo(right.value)
-        else -> numericDecimal(left).compareTo(numericDecimal(right))
+        is ResultCell.FloatCell if left.value.isInfinite() -> if (left.value > 0.0) 1 else -1
+        else ->
+            when {
+                right is ResultCell.FloatCell && right.value.isInfinite() ->
+                    if (right.value > 0.0) -1 else 1
+                else -> numericDecimal(left).compareTo(numericDecimal(right))
+            }
     }
 
 private fun numericDecimal(cell: ResultCell): BigDecimal =

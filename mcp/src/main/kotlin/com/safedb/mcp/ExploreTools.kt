@@ -32,9 +32,11 @@ internal fun registerExploreTools(server: Server, resultStore: ResultStore) {
                 "column_dimensions accept column " +
                 "names or objects with column, label, grouping (exact, year, quarter, month, " +
                 "iso_week, day, or {bin_size, bin_start}), sort_mode, sort_measure_alias, and " +
-                "show_subtotals. measures accept alias, fn, source_column, label, formula, and " +
-                "show_as; label names the output column (defaults to the function label) while " +
-                "alias is for formulas and sort.measure_alias. Use receipt column names " +
+                "show_subtotals. measures accept alias and fn (or formula with [alias] " +
+                "references, e.g. '[sum_total] / [row_count]', where fn may be omitted), " +
+                "plus optional source_column, label, and show_as; label names the output " +
+                "column (defaults to the function label) while alias is for formulas and " +
+                "sort.measure_alias. Use receipt column names " +
                 "verbatim (dialect casing). filters support members, label, and value " +
                 "comparison objects. sort " +
                 "accepts column or measure_alias with asc/desc. Returns pivoted columns, " +
@@ -61,8 +63,9 @@ internal fun registerExploreTools(server: Server, resultStore: ResultStore) {
                         put(
                             "measures",
                             arrayProp(
-                                "Measure objects with alias and fn, plus optional " +
-                                    "source_column, label, formula, and show_as.",
+                                "Measure objects with alias and fn (optional when formula is " +
+                                    "set), plus optional source_column, label, formula (using " +
+                                    "[alias] references), and show_as.",
                             ),
                         )
                         put(

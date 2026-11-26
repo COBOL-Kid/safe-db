@@ -1001,6 +1001,82 @@ class ExploreToolsTest {
             assertEquals(listOf("customers.id", "Max orders.id"), collidingMeasures)
         }
     }
+
+    @Test
+    fun filterResultRowsRejectsInvalidMembersAndPivotEvaluatesFormulaWithoutFn() = runBlocking {
+        val service = exploreSampleService()
+        withTempMcpClient(service) { client ->
+            val resultId = storeExploreResult(client)
+
+            val membersWithValue =
+                client.callTool(
+                    "filter_result_rows",
+                    mapOf(
+                        "result_id" to resultId,
+                        "filters" to
+                            listOf(
+                                Json.parseToJsonElement(
+                                    """{"column":"region","op":"members","value":"east"}""",
+                                ),
+                            ),
+                    ),
+                )
+            assertEquals(true, membersWithValue.isError)
+            assertEquals(
+                "invalid_arguments",
+                membersWithValue.json().getValue("error").jsonPrimitive.content,
+            )
+
+            val emptyMembers =
+                client.callTool(
+                    "filter_result_rows",
+                    mapOf(
+                        "result_id" to resultId,
+                        "filters" to
+                            listOf(
+                                Json.parseToJsonElement(
+                                    """{"column":"region","op":"members","included_keys":[]}""",
+                                ),
+                            ),
+                    ),
+                )
+            assertEquals(true, emptyMembers.isError)
+            assertEquals(
+                "invalid_arguments",
+                emptyMembers.json().getValue("error").jsonPrimitive.content,
+            )
+
+            val formulaPivot =
+                client
+                    .callTool(
+                        "pivot_result",
+                        mapOf(
+                            "result_id" to resultId,
+                            "row_dimensions" to listOf("region"),
+                            "measures" to
+                                listOf(
+                                    Json.parseToJsonElement(
+                                        """{"alias":"s","fn":"sum","source_column":"amount"}""",
+                                    ),
+                                    Json.parseToJsonElement("""{"alias":"c","fn":"count"}"""),
+                                    Json.parseToJsonElement(
+                                        """{"alias":"avg_calc","formula":"[s] / [c]","label":"AvgCalc"}""",
+                                    ),
+                                ),
+                            "show_column_totals" to false,
+                        ),
+                    )
+                    .json()
+            assertTrue(formulaPivot.getValue("warnings").jsonArray.isEmpty())
+            val eastRow =
+                formulaPivot
+                    .getValue("rows")
+                    .jsonArray
+                    .first { it.jsonObject.getValue("region").jsonPrimitive.content == "east" }
+                    .jsonObject
+            assertEquals("15", eastRow.getValue("AvgCalc").jsonPrimitive.content)
+        }
+    }
 }
 
 private fun CallToolResult.columnNames(): List<String> =
