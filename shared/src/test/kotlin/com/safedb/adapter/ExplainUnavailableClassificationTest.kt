@@ -147,8 +147,7 @@ class ExplainUnavailableClassificationTest {
             unavailablePlanFromError(mysql1013).reasonCode,
         )
 
-        val oracleByMessage =
-            SQLException("ORA-01013: user requested cancel of current operation", "72000", 1013)
+        val oracleByMessage = SQLException("ORA-01013: user requested cancel of current operation")
         assertTrue(formatQueryExecutionError(oracleByMessage, 5_000).contains("timed out after 5s"))
         assertEquals(
             PlanUnavailableReason.TimedOut,

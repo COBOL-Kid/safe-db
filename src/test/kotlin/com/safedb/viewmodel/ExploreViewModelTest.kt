@@ -500,6 +500,28 @@ class ExploreViewModelTest {
         assertTrue(viewModel.recipeDirty())
         viewModel.clearAppliedRecipe()
         assertEquals(null, viewModel.appliedRecipeId)
+
+        assertEquals(0, viewModel.visualizationConfigReplacementRevision)
+        val vizRecipe =
+            ExploreRecipe(
+                id = "r_viz",
+                name = "Visualization",
+                createdAt = "1",
+                updatedAt = "1",
+                defaultMode = ExploreMode.Visualization,
+                visualization =
+                    VisualizationConfig(
+                        chartType = ChartType.Bar,
+                        x = VisualizationField("t0__status", "Status"),
+                        values = listOf(VisualizationMeasure.countRows()),
+                    ),
+                requiredFields = listOf(RecipeField("t0__status", "status", "varchar", "orders")),
+            )
+        viewModel.requestRecipe(vizRecipe)
+        assertEquals(1, viewModel.visualizationConfigReplacementRevision)
+
+        viewModel.updateVisualization { it.copy(title = "Updated title") }
+        assertEquals(1, viewModel.visualizationConfigReplacementRevision)
     }
 
     @Test

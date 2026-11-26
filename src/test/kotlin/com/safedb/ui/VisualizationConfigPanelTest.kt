@@ -705,4 +705,84 @@ class VisualizationConfigPanelTest {
             assertNull(config.series)
         }
     }
+
+    @Test
+    fun configReplacementRevisionClearsChartSwitchMemoryOnSameSample() {
+        val sample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__category", "varchar"),
+                        ResultColumn("t0__amount", "decimal"),
+                    ),
+                rows =
+                    listOf(
+                        listOf(
+                            ResultCell.text("Services"),
+                            ResultCell.float(100.0),
+                        ),
+                    ),
+                rowCount = 1,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val fields = buildExploreFieldOptions(sample, emptyList())
+        val sumAmount =
+            VisualizationMeasure("sum_amount", MeasureFn.Sum, "t0__amount", "Sum amount")
+        val countRows = VisualizationMeasure.countRows("count_rows")
+        var config by
+            mutableStateOf(
+                VisualizationConfig(
+                    chartType = ChartType.Bar,
+                    x = VisualizationField("t0__category", "category"),
+                    values = listOf(sumAmount, countRows),
+                ),
+            )
+        var revision by mutableStateOf(0)
+
+        withComposeScene(
+            width = 480,
+            height = 1200,
+            content = {
+                SafeDbTheme(isDark = false) {
+                    VisualizationConfigPanel(
+                        config = config,
+                        sample = sample,
+                        tables = emptyList(),
+                        fields = fields,
+                        memberOptionsFor = { emptyList() },
+                        onConfigChange = { config = it },
+                        onApplyTemplate = { config = it },
+                        onReset = {},
+                        onHide = {},
+                        configReplacementRevision = revision,
+                    )
+                }
+            },
+        ) { scene ->
+            var frameNanos = 0L
+            fun advance() {
+                repeat(4) {
+                    frameNanos += 100_000_000L
+                    scene.render(frameNanos)
+                }
+            }
+
+            // Bar([Sum amount, Count rows], x=category) -> KPI stashes x and both measures.
+            scene.click(scene.requireExact("KPI").boundsInRoot.center)
+            advance()
+            assertNull(config.x)
+            assertEquals(listOf("sum_amount"), config.values.map { it.alias })
+
+            // Simulate applyRecipe replacing visualization on the same sample.
+            config = VisualizationConfig(chartType = ChartType.Kpi, values = listOf(sumAmount))
+            revision += 1
+            advance()
+
+            scene.click(scene.requireExact("Bar").boundsInRoot.center)
+            advance()
+            assertNull(config.x)
+            assertEquals(listOf("sum_amount"), config.values.map { it.alias })
+        }
+    }
 }

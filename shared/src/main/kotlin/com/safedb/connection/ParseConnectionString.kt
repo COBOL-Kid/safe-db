@@ -175,6 +175,17 @@ private fun parseSqlServerUri(raw: String): ParsedConnection {
             else -> "" to null
         }
     val consumedKeys = setOfNotNull("encrypt", "trustservercertificate", consumedDatabaseKey)
+    val databaseWarnings =
+        if (
+            consumedDatabaseKey != null &&
+                paramValues(url, consumedDatabaseKey).count { it.isNotBlank() } > 1
+        ) {
+            listOf(
+                "Driver parameter '$consumedDatabaseKey' appeared more than once; the first value was imported.",
+            )
+        } else {
+            emptyList()
+        }
     val extracted = extractDriverProperties(Dialect.Mssql, urlQueryPairs(url), consumedKeys)
     return baseResult(
         dialect = Dialect.Mssql,
@@ -185,7 +196,7 @@ private fun parseSqlServerUri(raw: String): ParsedConnection {
         password = passwordFromUrl(raw, url),
         transport = sqlServerTransport(encrypt, trustServerCertificate, url.host),
         driverProperties = extracted.properties,
-        warnings = extracted.warnings,
+        warnings = databaseWarnings + extracted.warnings,
         sanitizedInput = sanitizeUrlPassword(url),
     )
 }
@@ -767,31 +778,48 @@ private fun parseSqlServerHost(value: String): Pair<String, Int?> {
 
 private val BEST_EFFORT_KV_PASSWORD_REGEX =
     Regex(
-        """(?i)((?:^|[;:])\s*(?:password|pwd)\s*=)(?:[ \t]*\{(?:[^}]|\}\})*\}?[^;]*|[ \t]*"(?:[^"]|"")*"?[^;]*|[ \t]*'(?:[^']|'')*'?[^;]*|[^;]*)""",
+        """(?i)((?:^|[;:])\s*(?:password|pwd)\s*=)(?:[ \t]*\{(?:[^}]|}})*}?[^;]*|[ \t]*"(?:[^"]|"")*"?[^;]*|[ \t]*'(?:[^']|'')*'?[^;]*|[^;]*)""",
     )
 
 private val BEST_EFFORT_URI_QUERY_PASSWORD_REGEX =
     Regex(
-        """(?i)([?&]\s*(?:password|pwd)\s*=)(?:[ \t]*\{(?:[^}]|\}\})*\}?[^&#]*|[ \t]*"(?:[^"]|"")*"?[^&#]*|[ \t]*'(?:[^']|'')*'?[^&#]*|[^&#]*)""",
+        """(?i)([?&]\s*(?:password|pwd)\s*=)(?:[ \t]*\{(?:[^}]|}})*}?[^&#]*|[ \t]*"(?:[^"]|"")*"?[^&#]*|[ \t]*'(?:[^']|'')*'?[^&#]*|[^&#]*)""",
     )
+
+private val ORACLE_CONNECT_MARKER_REGEX = Regex("@(?://|tcps?:|\\()", RegexOption.IGNORE_CASE)
 
 private fun scrubBestEffortOracleAuth(raw: String): String {
     val prefix = Regex("^jdbc:oracle:thin:", RegexOption.IGNORE_CASE).find(raw)?.value.orEmpty()
     val rest = raw.substring(prefix.length)
     if (rest.startsWith("@")) return raw
-    val queryStart = Regex("[?#]").find(rest)?.range?.first ?: rest.length
-    val schemeStart = rest.indexOf("://")
-    if (schemeStart in 0 until queryStart && '@' !in rest.substring(0, schemeStart)) {
-        return raw
-    }
-    val authLimit = if (schemeStart in 0 until queryStart) schemeStart else queryStart
-    val atIndex = rest.substring(0, authLimit).lastIndexOf('@')
+    val atIndex = findBestEffortOracleAuthSeparator(rest, hasOraclePrefix = prefix.isNotEmpty())
     if (atIndex <= 0) return raw
     val auth = rest.substring(0, atIndex)
     if (prefix.isEmpty() && auth.any { it == ';' || it == '=' || it.isWhitespace() }) return raw
     val slashIndex = auth.indexOf('/')
     if (slashIndex < 0) return raw
     return prefix + auth.substring(0, slashIndex) + rest.substring(atIndex)
+}
+
+private fun findBestEffortOracleAuthSeparator(rest: String, hasOraclePrefix: Boolean): Int {
+    if (hasOraclePrefix) {
+        ORACLE_CONNECT_MARKER_REGEX.findAll(rest).lastOrNull()?.let {
+            return it.range.first
+        }
+    }
+    val queryStart = Regex("[?#]").find(rest)?.range?.first ?: rest.length
+    val schemeStart = rest.indexOf("://")
+    if (schemeStart in 0 until queryStart && '@' !in rest.substring(0, schemeStart)) {
+        return -1
+    }
+    val authLimit = if (schemeStart in 0 until queryStart) schemeStart else queryStart
+    val beforeQueryAt = rest.substring(0, authLimit).lastIndexOf('@')
+    if (beforeQueryAt > 0 || !hasOraclePrefix) return beforeQueryAt
+    val firstAt = rest.indexOf('@')
+    if (firstAt <= 0) return -1
+    val trailingQuery =
+        Regex("[?#]").find(rest, startIndex = firstAt + 1)?.range?.first ?: rest.length
+    return rest.substring(0, trailingQuery).lastIndexOf('@')
 }
 
 fun sanitizeBestEffortConnectionString(raw: String): String {

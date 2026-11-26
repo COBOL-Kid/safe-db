@@ -879,6 +879,28 @@ class ApplyWorksheetTest {
         assertEquals(emptyList(), precedingWorksheetCalculations(calcs, "c1"))
         assertEquals(listOf(first), precedingWorksheetCalculations(calcs, "c2"))
         assertEquals(calcs, precedingWorksheetCalculations(calcs, null))
+
+        val duplicateDisplaySample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__amount", "decimal"),
+                        ResultColumn("t1__amount", "decimal"),
+                    ),
+                rows = listOf(listOf(ResultCell.FloatCell(10.0), ResultCell.FloatCell(20.0))),
+                rowCount = 1,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val calcNamedAmount = WorksheetCalculation.RowFormula("r1", "amount", "[t0__amount] * 2")
+        assertEquals(
+            listOf(
+                "t0__amount" to "amount",
+                "t1__amount" to "amount",
+                "amount" to "amount",
+            ),
+            worksheetFormulaTokens(duplicateDisplaySample.columns, listOf(calcNamedAmount)),
+        )
     }
 
     private fun WorksheetPreview.detailValues(column: String): List<String> {

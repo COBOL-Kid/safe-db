@@ -221,17 +221,24 @@ internal fun transitionVisualizationChartType(
     memory: VisualizationChartSwitchMemory,
 ): Pair<VisualizationConfig, VisualizationChartSwitchMemory> {
     val converted = current.forChartType(target, fields)
+    val currentByAlias = current.values.associateBy { it.alias }
+    val syncedMemoryValues =
+        memory.values.map { stashed ->
+            currentByAlias[stashed.alias]?.let { active ->
+                stashed.copy(numberFormat = active.numberFormat)
+            } ?: stashed
+        }
     val nextMemory =
         VisualizationChartSwitchMemory(
             x = if (current.x != null && converted.x == null) current.x else memory.x,
             values =
                 if (
                     current.values.size > converted.values.size &&
-                        current.values.size >= memory.values.size
+                        current.values.size >= syncedMemoryValues.size
                 ) {
                     current.values
                 } else {
-                    memory.values
+                    syncedMemoryValues
                 },
             series =
                 if (current.series != null && converted.series == null) {

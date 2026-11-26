@@ -27,7 +27,7 @@ fun worksheetFormulaTokens(
     }
     val reservedNames =
         sampleColumns.mapTo(mutableSetOf()) { it.name } +
-            labelCounts.keys +
+            labelCounts.filterValues { it == 1 }.keys +
             priorCalculations.map { it.id }
     val calcLabelCounts = priorCalculations.groupingBy { it.label }.eachCount()
     val calcTokens = priorCalculations.map { calc ->

@@ -6,9 +6,11 @@ import com.safedb.explore.ExploreConfig
 import com.safedb.explore.ExplorePivotLayout
 import com.safedb.explore.ExploreSortTarget
 import com.safedb.explore.MeasureFn
+import com.safedb.explore.NumberFormatKind
 import com.safedb.explore.PivotDimension
 import com.safedb.explore.PivotFilter
 import com.safedb.explore.PivotMeasure
+import com.safedb.explore.PivotNumberFormat
 import com.safedb.explore.PivotShowAs
 import com.safedb.explore.ShowAsMode
 import com.safedb.explore.SortDir
@@ -614,6 +616,55 @@ class ExploreUiModelTest {
         assertEquals(listOf("count_rows"), restoredCountWithSeries.values.map { it.alias })
         assertEquals("region", restoredCountWithSeries.series?.column)
         assertEquals(emptyList(), restoredCountWithSeriesMem.values)
+
+        // Editing numberFormat on KPI preserves the format edit when returning directly or via
+        // Histogram to a multi-measure Bar chart.
+        val currencyFormat = PivotNumberFormat(kind = NumberFormatKind.Currency, decimals = 2)
+        val (kpiBeforeEdit, kpiBeforeEditMem) =
+            transitionVisualizationChartType(
+                multiBar,
+                ChartType.Kpi,
+                fields,
+                VisualizationChartSwitchMemory(),
+            )
+        val kpiEditedFormat =
+            kpiBeforeEdit.copy(
+                values = kpiBeforeEdit.values.map { it.copy(numberFormat = currencyFormat) },
+            )
+        val (barDirectAfterFormatEdit, barDirectAfterFormatEditMem) =
+            transitionVisualizationChartType(
+                kpiEditedFormat,
+                ChartType.Bar,
+                fields,
+                kpiBeforeEditMem,
+            )
+        assertEquals(
+            listOf("sum_amount", "sum_qty"),
+            barDirectAfterFormatEdit.values.map { it.alias },
+        )
+        assertEquals(currencyFormat, barDirectAfterFormatEdit.values.first().numberFormat)
+        assertEquals(emptyList(), barDirectAfterFormatEditMem.values)
+
+        val (histAfterFormatEdit, histAfterFormatEditMem) =
+            transitionVisualizationChartType(
+                kpiEditedFormat,
+                ChartType.Histogram,
+                fields,
+                kpiBeforeEditMem,
+            )
+        val (barViaHistAfterFormatEdit, barViaHistAfterFormatEditMem) =
+            transitionVisualizationChartType(
+                histAfterFormatEdit,
+                ChartType.Bar,
+                fields,
+                histAfterFormatEditMem,
+            )
+        assertEquals(
+            listOf("sum_amount", "sum_qty"),
+            barViaHistAfterFormatEdit.values.map { it.alias },
+        )
+        assertEquals(currencyFormat, barViaHistAfterFormatEdit.values.first().numberFormat)
+        assertEquals(emptyList(), barViaHistAfterFormatEditMem.values)
     }
 
     private fun buildField(name: String, type: String): ExploreFieldOption =

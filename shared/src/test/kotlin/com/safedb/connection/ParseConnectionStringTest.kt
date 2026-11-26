@@ -839,6 +839,44 @@ class ParseConnectionStringTest {
             "jdbc:oracle:thin:@(DESCRIPTION=(USER=a/b@c))",
             sanitizeBestEffortConnectionString("jdbc:oracle:thin:@(DESCRIPTION=(USER=a/b@c))"),
         )
+        // jdbc:oracle:thin: passwords containing '?', '#', or '@' before the connect target.
+        assertEquals(
+            "jdbc:oracle:thin:scott@//host:1521/svc",
+            sanitizeBestEffortConnectionString("jdbc:oracle:thin:scott/p?ss@//host:1521/svc"),
+        )
+        assertEquals(
+            "jdbc:oracle:thin:scott@tcps://host:2484/svc",
+            sanitizeBestEffortConnectionString("jdbc:oracle:thin:scott/p#ss@tcps://host:2484/svc"),
+        )
+        assertEquals(
+            "jdbc:oracle:thin:scott@(DESCRIPTION=(ADDRESS=(HOST=h)))",
+            sanitizeBestEffortConnectionString(
+                "jdbc:oracle:thin:scott/p?ss@(DESCRIPTION=(ADDRESS=(HOST=h)))",
+            ),
+        )
+        assertEquals(
+            "jdbc:oracle:thin:scott@//host:1521/svc?wallet_location=/w&x=a@b",
+            sanitizeBestEffortConnectionString(
+                "jdbc:oracle:thin:scott/p@?s@//host:1521/svc?wallet_location=/w&x=a@b",
+            ),
+        )
+        assertEquals(
+            "jdbc:oracle:thin:scott@host:1521/svc?wallet_location=/w",
+            sanitizeBestEffortConnectionString(
+                "jdbc:oracle:thin:scott/p?ss@host:1521/svc?wallet_location=/w",
+            ),
+        )
+
+        val repeatedSameDatabaseKey =
+            parseConnectionString(
+                "sqlserver://sa:secret@db.example.com:1433?database=app_db&database=other_db",
+            )
+        assertEquals("app_db", repeatedSameDatabaseKey.database)
+        assertTrue(
+            repeatedSameDatabaseKey.warnings.any {
+                "database" in it && "appeared more than once" in it
+            },
+        )
     }
 
     @Test

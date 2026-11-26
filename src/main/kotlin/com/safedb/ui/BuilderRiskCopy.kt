@@ -43,9 +43,9 @@ internal fun formatBuilderValidationError(
     }
     val nameCounts = tables.groupingBy { it.name }.eachCount()
     var formatted = rawError
-    for (table in tables) {
-        if (nameCounts[table.name] == 1) {
-            formatted = formatted.replace("'${table.alias}.", "'${table.name}.")
+    for ((_, name, alias) in tables) {
+        if (nameCounts[name] == 1) {
+            formatted = formatted.replace("'$alias.", "'$name.")
         }
     }
     return formatted

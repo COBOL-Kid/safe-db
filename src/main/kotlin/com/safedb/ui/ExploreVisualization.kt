@@ -87,12 +87,16 @@ internal fun VisualizationConfigPanel(
     onHide: () -> Unit,
     modifier: Modifier = Modifier,
     resolvedChartType: ChartType? = null,
+    configReplacementRevision: Int = 0,
 ) {
     var templatesOpen by remember { mutableStateOf(false) }
     var optionsExpanded by remember { mutableStateOf(false) }
     var editingFilter by remember { mutableStateOf<PivotFilter?>(null) }
     var transitionNotice by remember { mutableStateOf<Pair<VisualizationConfig, String>?>(null) }
-    var switchMemory by remember(sample) { mutableStateOf(VisualizationChartSwitchMemory()) }
+    var switchMemory by
+        remember(sample, configReplacementRevision) {
+            mutableStateOf(VisualizationChartSwitchMemory())
+        }
     LaunchedEffect(config) {
         if (transitionNotice?.first != config) {
             transitionNotice = null
