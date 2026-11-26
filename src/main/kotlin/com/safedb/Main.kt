@@ -70,6 +70,7 @@ internal fun dispatchStartup(
 internal fun runSmokeCheck(
     platform: DesktopPlatform,
     createTempDir: () -> Path = { Files.createTempDirectory("safe-db-smoke-") },
+    configureHeadless: () -> Unit = { System.setProperty("java.awt.headless", "true") },
     loadVersion: () -> String = ::loadAppVersion,
     loadIcon: () -> BufferedImage = ::loadAppWindowIconImage,
     renderFrame: () -> Unit = ::renderSmokeComposeFrame,
@@ -84,23 +85,35 @@ internal fun runSmokeCheck(
             tempDir = dir
             val version = loadVersion()
             require(version.isNotBlank()) { "app-version.txt is blank" }
-            SecretsManager.initStore(envValue = "disabled", platform = platform)
+            SecretsManager.initStore(envValue = "disabled", platform = platform, warn = false)
             ConfigStore.new(dir).list()
             QueryStore.new(dir).listSaved()
             SettingsStore.new(dir).load()
             RecipeStore.new(dir).list()
+            configureHeadless()
             val icon = loadIcon()
             require(icon.width > 0 && icon.height > 0) { "window icon is empty" }
             renderFrame()
             reportOutput("safe-db $version smoke-check ok")
             0
         } catch (error: Throwable) {
-            reportError("safe-db: smoke-check failed: ${error.message ?: error}")
+            reportError("safe-db: smoke-check failed: ${formatSmokeCheckFailure(error)}")
             1
         } finally {
             tempDir?.toFile()?.deleteRecursively()
         }
     exit(exitCode)
+}
+
+private fun formatSmokeCheckFailure(error: Throwable): String {
+    val type = error::class.simpleName
+    val message = error.message?.takeIf { it.isNotBlank() }
+    return when {
+        type != null && message != null -> "$type: $message"
+        message != null -> message
+        type != null -> type
+        else -> error.toString()
+    }
 }
 
 internal fun renderSmokeComposeFrame() {

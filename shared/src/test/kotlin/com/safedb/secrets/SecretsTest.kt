@@ -8,6 +8,8 @@ import com.safedb.model.TransportSecurityMode
 import com.safedb.persist.isPosix
 import com.safedb.platform.DesktopPlatform
 import com.safedb.platform.DesktopStoreUnavailableException
+import java.io.ByteArrayOutputStream
+import java.io.PrintStream
 import java.nio.file.Files
 import java.nio.file.attribute.PosixFilePermissions
 import java.util.concurrent.CountDownLatch
@@ -89,6 +91,17 @@ class SecretsTest {
     fun initDisabledBackendLabel() {
         SecretsManager.initStore("disabled")
         assertEquals("disabled", SecretsManager.activeBackendLabel())
+
+        val originalOut = System.out
+        val captured = ByteArrayOutputStream()
+        try {
+            System.setOut(PrintStream(captured, true, Charsets.UTF_8))
+            SecretsManager.initStore("disabled", warn = false)
+        } finally {
+            System.setOut(originalOut)
+        }
+        assertEquals("disabled", SecretsManager.activeBackendLabel())
+        assertEquals("", captured.toString(Charsets.UTF_8))
     }
 
     @Test

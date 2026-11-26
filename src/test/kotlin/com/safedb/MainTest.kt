@@ -3,6 +3,8 @@ package com.safedb
 import com.safedb.platform.DesktopPlatform
 import com.safedb.secrets.SecretsManager
 import java.awt.image.BufferedImage
+import java.io.ByteArrayOutputStream
+import java.io.PrintStream
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.AfterTest
@@ -121,30 +123,49 @@ class MainTest {
         var createdTempDir: Path? = null
         val outputs = mutableListOf<String>()
         val errors = mutableListOf<String>()
+        val events = mutableListOf<String>()
         val expectedVersion = loadAppVersion()
+        val originalOut = System.out
+        val capturedOut = ByteArrayOutputStream()
 
         val exit =
-            assertFailsWith<ExitInvoked> {
-                runSmokeCheck(
-                    platform = DesktopPlatform.MacOs,
-                    createTempDir = {
-                        Files.createTempDirectory("safe-db-smoke-test-").also {
-                            createdTempDir = it
-                        }
-                    },
-                    reportOutput = { outputs += it },
-                    reportError = { errors += it },
-                    exit = { status ->
-                        assertFalse(
-                            Files.exists(checkNotNull(createdTempDir)),
-                            "temp dir must be deleted before exit($status)",
-                        )
-                        throw ExitInvoked(status)
-                    },
-                )
+            try {
+                System.setOut(PrintStream(capturedOut, true, Charsets.UTF_8))
+                assertFailsWith<ExitInvoked> {
+                    runSmokeCheck(
+                        platform = DesktopPlatform.MacOs,
+                        createTempDir = {
+                            Files.createTempDirectory("safe-db-smoke-test-").also {
+                                createdTempDir = it
+                            }
+                        },
+                        configureHeadless = { events += "headless" },
+                        loadIcon = {
+                            events += "icon"
+                            loadAppWindowIconImage()
+                        },
+                        renderFrame = {
+                            events += "frame"
+                            renderSmokeComposeFrame()
+                        },
+                        reportOutput = { outputs += it },
+                        reportError = { errors += it },
+                        exit = { status ->
+                            assertFalse(
+                                Files.exists(checkNotNull(createdTempDir)),
+                                "temp dir must be deleted before exit($status)",
+                            )
+                            throw ExitInvoked(status)
+                        },
+                    )
+                }
+            } finally {
+                System.setOut(originalOut)
             }
 
         assertEquals(0, exit.status)
+        assertEquals(listOf("headless", "icon", "frame"), events)
+        assertEquals("", capturedOut.toString(Charsets.UTF_8))
         assertEquals(listOf("safe-db $expectedVersion smoke-check ok"), outputs)
         assertTrue(errors.isEmpty())
         assertEquals("disabled", SecretsManager.activeBackendLabel())
@@ -169,6 +190,7 @@ class MainTest {
                                         tempDir = it
                                     }
                                 },
+                                configureHeadless = {},
                                 loadVersion = { "   " },
                                 loadIcon = { BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB) },
                                 renderFrame = {},
@@ -200,6 +222,7 @@ class MainTest {
                                         tempDir = it
                                     }
                                 },
+                                configureHeadless = {},
                                 loadVersion = { "1.0.0" },
                                 loadIcon = { error("missing icon") },
                                 renderFrame = {},
@@ -230,6 +253,7 @@ class MainTest {
                                         tempDir = it
                                     }
                                 },
+                                configureHeadless = {},
                                 loadVersion = { "1.0.0" },
                                 loadIcon = { BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB) },
                                 renderFrame = { throw UnsatisfiedLinkError("skiko missing") },
@@ -256,6 +280,7 @@ class MainTest {
                             runSmokeCheck(
                                 platform = DesktopPlatform.Windows,
                                 createTempDir = { error("temp dir creation failed") },
+                                configureHeadless = {},
                                 loadVersion = { "1.0.0" },
                                 loadIcon = { BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB) },
                                 renderFrame = {},
@@ -266,6 +291,36 @@ class MainTest {
                         }
                     assertTrue(outputs.isEmpty())
                     assertTrue(errors.single().contains("temp dir creation failed"))
+                    exit
+                },
+                {
+                    val outputs = mutableListOf<String>()
+                    val errors = mutableListOf<String>()
+                    var tempDir: Path? = null
+                    val exit =
+                        assertFailsWith<ExitInvoked> {
+                            runSmokeCheck(
+                                platform = DesktopPlatform.MacOs,
+                                createTempDir = {
+                                    Files.createTempDirectory("safe-db-smoke-fail-").also {
+                                        tempDir = it
+                                    }
+                                },
+                                configureHeadless = {},
+                                loadVersion = { "1.0.0" },
+                                loadIcon = { BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB) },
+                                renderFrame = { throw IllegalStateException("") },
+                                reportOutput = { outputs += it },
+                                reportError = { errors += it },
+                                exit = { status -> throw ExitInvoked(status) },
+                            )
+                        }
+                    assertTrue(outputs.isEmpty())
+                    assertEquals(
+                        "safe-db: smoke-check failed: IllegalStateException",
+                        errors.single(),
+                    )
+                    assertFalse(Files.exists(checkNotNull(tempDir)))
                     exit
                 },
             )

@@ -98,13 +98,10 @@ pid_process_alive() {
   local pid="$1"
   local stat state
   is_safe_pid "$pid" || return 1
-  [[ -d "/proc/$pid" ]] || return 1
-  if [[ -r "/proc/$pid/stat" ]]; then
-    { stat="$(<"/proc/$pid/stat")"; } 2>/dev/null || return 1
-    state="${stat##*) }"
-    state="${state%% *}"
-    [[ "$state" == "Z" ]] && return 1
-  fi
+  { stat="$(<"/proc/$pid/stat")"; } 2>/dev/null || return 1
+  state="${stat##*) }"
+  state="${state%% *}"
+  [[ "$state" == "Z" ]] && return 1
   return 0
 }
 

@@ -56,6 +56,12 @@ class TestdataSqlTest {
         val db2 = testdata("testdata_db2.sql")
 
         assertTrue(mysql.contains("SET NAMES utf8mb4;"))
+        assertTrue(
+            mysql.contains("CREATE DATABASE IF NOT EXISTS safedb_test CHARACTER SET utf8mb4;"),
+        )
+        assertTrue(
+            mysql.contains("CREATE DATABASE IF NOT EXISTS safedb_lab CHARACTER SET utf8mb4;"),
+        )
 
         assertTrue(insertBlock(postgres, "wide_rows").contains("(g % 2 = 0)"))
         assertTrue(insertBlock(postgres, "scan_events").contains("(g % 2 = 0)"))

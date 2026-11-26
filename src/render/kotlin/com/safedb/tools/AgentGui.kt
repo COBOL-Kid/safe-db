@@ -30,13 +30,17 @@ fun main(args: Array<String>) {
             )
             .toAbsolutePath()
             .also { Files.createDirectories(it) }
-    val useFileCredentials =
-        System.getenv("SAFEDB_AGENT_GUI_CREDENTIALS")?.trim()?.equals("file", ignoreCase = true) ==
-            true
-    if (useFileCredentials) {
-        SecretsManager.initFileStore(dataDir.resolve("credentials"))
-    } else {
-        SecretsManager.initMemoryStore()
+    val rawCredentials = System.getenv("SAFEDB_AGENT_GUI_CREDENTIALS")?.trim().orEmpty()
+    when (rawCredentials.lowercase()) {
+        "",
+        "memory" -> SecretsManager.initMemoryStore()
+        "file" -> SecretsManager.initFileStore(dataDir.resolve("credentials"))
+        else -> {
+            System.err.println(
+                "safe-db agent-gui: unsupported SAFEDB_AGENT_GUI_CREDENTIALS '$rawCredentials' (expected 'memory' or 'file')",
+            )
+            exitProcess(2)
+        }
     }
     val service =
         SafeDbServiceImpl(

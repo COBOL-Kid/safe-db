@@ -420,6 +420,23 @@ test_pid_and_kill_boundaries() {
   if pidfile_process_alive "$XVFB_PID_FILE"; then
     fail "pidfile_process_alive reported true for exited pid"
   fi
+  local alive_err
+  alive_err="$(
+    set -euo pipefail
+    { pid_process_alive "$exited_pid" && echo "unexpected-alive"; } 2>&1 || true
+  )"
+  [[ -z "$alive_err" ]] || fail "pid_process_alive emitted output on exited pid: $alive_err"
+  local burst_err="" burst_pid
+  for ((i = 0; i < 10; i++)); do
+    bash -c 'exit 0' &
+    burst_pid=$!
+    burst_err+="$(
+      set -euo pipefail
+      pid_process_alive "$burst_pid" >/dev/null 2>&1 || true
+    )"
+    wait "$burst_pid" || true
+  done
+  [[ -z "$burst_err" ]] || fail "pid_process_alive emitted output during exit race: $burst_err"
   rm -f -- "$XVFB_PID_FILE"
 
   # stop_pidfile with kill_group=true terminates a live setsid group and child.
