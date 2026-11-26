@@ -743,6 +743,90 @@ class ApplyWorksheetTest {
         assertEquals(listOf("Cyan"), missingNull.detailValues("name"))
     }
 
+    @Test
+    fun formulaCyclesAreDetectedAcrossLabelReferences() {
+        val rowCycle =
+            applyWorksheet(
+                sample(),
+                WorksheetConfig(
+                    calculations =
+                        listOf(
+                            WorksheetCalculation.RowFormula("r1", "First", "[Second] + 1"),
+                            WorksheetCalculation.RowFormula("r2", "Second", "[First] + 1"),
+                        ),
+                ),
+            )
+        assertTrue("Calculated columns contain a circular reference" in rowCycle.warnings)
+
+        val selfRowCycle =
+            applyWorksheet(
+                sample(),
+                WorksheetConfig(
+                    calculations =
+                        listOf(
+                            WorksheetCalculation.RowFormula("r1", "First", "[First] + 1"),
+                        ),
+                ),
+            )
+        assertTrue("Calculated columns contain a circular reference" in selfRowCycle.warnings)
+
+        val groupCycle =
+            applyWorksheet(
+                sample(),
+                WorksheetConfig(
+                    groups = listOf(WorksheetGroup("g", "region")),
+                    calculations =
+                        listOf(
+                            WorksheetCalculation.GroupFormula(
+                                "g1",
+                                "Alpha",
+                                "[Beta] + 1",
+                                "region",
+                            ),
+                            WorksheetCalculation.GroupFormula(
+                                "g2",
+                                "Beta",
+                                "[Alpha] + 1",
+                                "region",
+                            ),
+                        ),
+                ),
+            )
+        assertTrue("Calculated columns contain a circular reference" in groupCycle.warnings)
+    }
+
+    @Test
+    fun formulaTokensAvoidRawColumnCollisionsAndPrecedingFiltersAfterEditingIndex() {
+        val prefixedSample =
+            QueryResult(
+                columns = listOf(ResultColumn("t0__amount", "decimal")),
+                rows = listOf(listOf(ResultCell.FloatCell(10.0))),
+                rowCount = 1,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val first = WorksheetCalculation.RowFormula("c1", "t0__amount", "[amount] * 2")
+        val second = WorksheetCalculation.RowFormula("c2", "Later", "[c1] + 1")
+
+        val tokens = worksheetFormulaTokens(prefixedSample.columns, listOf(first))
+        assertEquals(listOf("amount" to "amount", "c1" to "t0__amount"), tokens)
+
+        val values =
+            worksheetFormulaValues(
+                sampleColumns = prefixedSample.columns,
+                sourceValue = { java.math.BigDecimal.TEN },
+                priorCalculations = listOf(first),
+                calculationValue = { java.math.BigDecimal.valueOf(20) },
+            )
+        assertEquals(java.math.BigDecimal.TEN, values["t0__amount"])
+        assertEquals(java.math.BigDecimal.valueOf(20), values["c1"])
+
+        val calcs = listOf(first, second)
+        assertEquals(emptyList(), precedingWorksheetCalculations(calcs, "c1"))
+        assertEquals(listOf(first), precedingWorksheetCalculations(calcs, "c2"))
+        assertEquals(calcs, precedingWorksheetCalculations(calcs, null))
+    }
+
     private fun WorksheetPreview.detailValues(column: String): List<String> {
         val index = columns.indexOfFirst { it.sourceColumn == column }
         return rows

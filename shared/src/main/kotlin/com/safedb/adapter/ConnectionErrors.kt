@@ -109,7 +109,7 @@ internal fun isServerPlanTimeout(chain: List<Throwable>, texts: String): Boolean
             error is SQLException &&
                 (error.errorCode == 3024 ||
                     error.sqlState == "57014" ||
-                    error.errorCode == 1013 ||
+                    (error.errorCode == 1013 && error.sqlState == "72000") ||
                     error.errorCode == -952)
         }
     ) {

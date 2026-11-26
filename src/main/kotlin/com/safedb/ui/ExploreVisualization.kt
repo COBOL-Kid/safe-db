@@ -92,7 +92,7 @@ internal fun VisualizationConfigPanel(
     var optionsExpanded by remember { mutableStateOf(false) }
     var editingFilter by remember { mutableStateOf<PivotFilter?>(null) }
     var transitionNotice by remember { mutableStateOf<Pair<VisualizationConfig, String>?>(null) }
-    var switchMemory by remember { mutableStateOf(VisualizationChartSwitchMemory()) }
+    var switchMemory by remember(sample) { mutableStateOf(VisualizationChartSwitchMemory()) }
     LaunchedEffect(config) {
         if (transitionNotice?.first != config) {
             transitionNotice = null
@@ -249,6 +249,7 @@ internal fun VisualizationConfigPanel(
                             "Not compatible with ${chartTypeLabel(config.chartType).lowercase()}"
                         },
                         onSelect = { field ->
+                            switchMemory = switchMemory.copy(x = null)
                             val grouping =
                                 if (field.category.isTemporal()) {
                                     PivotGrouping.Date(DateGroupUnit.Month)
@@ -276,6 +277,7 @@ internal fun VisualizationConfigPanel(
                             canAssignSecondary = primaryCount > 1,
                             horizontalBars = horizontalBars,
                             onChange = { updated ->
+                                switchMemory = switchMemory.copy(values = emptyList())
                                 onConfigChange(
                                     config.copy(
                                         values =
@@ -349,6 +351,7 @@ internal fun VisualizationConfigPanel(
                         },
                         incompatibleReason = { "Series fields must be categorical" },
                         onSelect = {
+                            switchMemory = switchMemory.copy(series = null)
                             onConfigChange(
                                 config.copy(
                                     series = VisualizationField(it.column, it.label),
@@ -378,6 +381,7 @@ internal fun VisualizationConfigPanel(
                         compatible = { it.category.isNumeric() },
                         incompatibleReason = { "Size needs a numeric field" },
                         onSelect = {
+                            switchMemory = switchMemory.copy(size = null)
                             onConfigChange(
                                 config.copy(size = VisualizationField(it.column, it.label)),
                             )

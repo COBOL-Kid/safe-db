@@ -7,6 +7,14 @@ import com.safedb.model.TableRef
 import java.math.BigDecimal
 import java.math.MathContext
 
+fun precedingWorksheetCalculations(
+    calculations: List<WorksheetCalculation>,
+    editingId: String?,
+): List<WorksheetCalculation> {
+    val editingIndex = editingId?.let { id -> calculations.indexOfFirst { it.id == id } } ?: -1
+    return if (editingIndex >= 0) calculations.take(editingIndex) else calculations
+}
+
 fun worksheetFormulaTokens(
     sampleColumns: List<ResultColumn>,
     priorCalculations: List<WorksheetCalculation>,
@@ -17,10 +25,17 @@ fun worksheetFormulaTokens(
         val token = if (labelCounts[display] == 1) display else col.name
         token to display
     }
+    val reservedNames =
+        sampleColumns.mapTo(mutableSetOf()) { it.name } +
+            labelCounts.keys +
+            priorCalculations.map { it.id }
     val calcLabelCounts = priorCalculations.groupingBy { it.label }.eachCount()
     val calcTokens = priorCalculations.map { calc ->
         val token =
-            if (calcLabelCounts[calc.label] == 1 && labelCounts[calc.label] == null) {
+            if (
+                calcLabelCounts[calc.label] == 1 &&
+                    (calc.label !in reservedNames || calc.label == calc.id)
+            ) {
                 calc.label
             } else {
                 calc.id
@@ -46,11 +61,11 @@ fun worksheetFormulaValues(
         }
     }
     val calcLabelCounts = priorCalculations.groupingBy { it.label }.eachCount()
+    val resolvedValues = priorCalculations.associate { it.id to calculationValue(it.id) }
+    priorCalculations.forEach { calc -> put(calc.id, resolvedValues[calc.id]) }
     priorCalculations.forEach { calc ->
-        val value = calculationValue(calc.id)
-        put(calc.id, value)
         if (calcLabelCounts[calc.label] == 1 && !containsKey(calc.label)) {
-            put(calc.label, value)
+            put(calc.label, resolvedValues[calc.id])
         }
     }
 }
@@ -175,15 +190,43 @@ private class WorksheetEngine(
     }
 
     private fun validateCalculationDependencies() {
+        val calcById = config.calculations.associateBy { it.id }
+        val rowSampleNames =
+            sample.columns.flatMapTo(mutableSetOf()) {
+                listOf(it.name, displayColumnLabel(it.name))
+            }
+        val rowCalcs = config.calculations.filterIsInstance<WorksheetCalculation.RowFormula>()
+        val rowLabelCounts = rowCalcs.groupingBy { it.label }.eachCount()
+        val rowCalcByLabel =
+            rowCalcs
+                .filter {
+                    rowLabelCounts[it.label] == 1 &&
+                        it.label !in rowSampleNames &&
+                        it.label !in calcById
+                }
+                .associateBy { it.label }
+        val groupCalcs =
+            config.calculations.filter {
+                it is WorksheetCalculation.Aggregate || it is WorksheetCalculation.GroupFormula
+            }
+        val groupLabelCounts = groupCalcs.groupingBy { it.label }.eachCount()
+        val groupCalcByLabel =
+            groupCalcs
+                .filter { groupLabelCounts[it.label] == 1 && it.label !in calcById }
+                .associateBy { it.label }
         val dependencies =
             config.calculations.associate { calculation ->
                 val ids =
                     when (calculation) {
                         is WorksheetCalculation.GroupFormula ->
-                            formulaReferences(calculation.formula)
+                            formulaReferences(calculation.formula).mapNotNullTo(mutableSetOf()) {
+                                ref ->
+                                calcById[ref]?.id ?: groupCalcByLabel[ref]?.id
+                            }
                         is WorksheetCalculation.RowFormula ->
-                            formulaReferences(calculation.formula).filterTo(mutableSetOf()) { ref ->
-                                config.calculations.any { it.id == ref }
+                            formulaReferences(calculation.formula).mapNotNullTo(mutableSetOf()) {
+                                ref ->
+                                calcById[ref]?.id ?: rowCalcByLabel[ref]?.id
                             }
                         is WorksheetCalculation.Window ->
                             setOfNotNull((calculation.source as? WorksheetValueRef.Calculation)?.id)

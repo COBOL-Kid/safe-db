@@ -225,7 +225,7 @@ internal fun transitionVisualizationChartType(
         VisualizationChartSwitchMemory(
             x = if (current.x != null && converted.x == null) current.x else memory.x,
             values =
-                if (current.values.isNotEmpty() && converted.values.isEmpty()) {
+                if (current.values.size > converted.values.size) {
                     current.values
                 } else {
                     memory.values
@@ -256,25 +256,29 @@ internal fun transitionVisualizationChartType(
                 }
             }
     val restoredValues =
-        converted.values.ifEmpty {
-            if (target == ChartType.Histogram) {
-                emptyList()
+        if (target == ChartType.Histogram) {
+            emptyList()
+        } else if (converted.values.isNotEmpty()) {
+            if (
+                target !in setOf(ChartType.Kpi, ChartType.Scatter) &&
+                    nextMemory.values.size > converted.values.size &&
+                    converted.values.firstOrNull()?.alias == nextMemory.values.firstOrNull()?.alias
+            ) {
+                nextMemory.values
             } else {
-                val base =
-                    nextMemory.values.let { stashed ->
-                        if (target == ChartType.Scatter) {
-                            stashed
-                                .filter {
-                                    fieldByColumn(it.sourceColumn)?.category?.isNumeric() == true
-                                }
-                                .take(1)
-                        } else if (target == ChartType.Kpi) {
-                            stashed.take(1)
-                        } else {
-                            stashed
-                        }
-                    }
-                base
+                converted.values
+            }
+        } else {
+            nextMemory.values.let { stashed ->
+                if (target == ChartType.Scatter) {
+                    stashed
+                        .filter { fieldByColumn(it.sourceColumn)?.category?.isNumeric() == true }
+                        .take(1)
+                } else if (target == ChartType.Kpi) {
+                    stashed.take(1)
+                } else {
+                    stashed
+                }
             }
         }
     val restoredSeries =
@@ -301,7 +305,9 @@ internal fun transitionVisualizationChartType(
     val finalMemory =
         nextMemory.copy(
             x = if (restored.x != null) null else nextMemory.x,
-            values = if (restored.values.isNotEmpty()) emptyList() else nextMemory.values,
+            values =
+                if (restored.values.size >= nextMemory.values.size) emptyList()
+                else nextMemory.values,
             series = if (restored.series != null) null else nextMemory.series,
             size = if (restored.size != null) null else nextMemory.size,
         )

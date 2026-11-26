@@ -34,6 +34,7 @@ import com.safedb.explore.WorksheetWindowFn
 import com.safedb.explore.displayColumnLabel
 import com.safedb.explore.evaluatePivotFormula
 import com.safedb.explore.formatExploreNumber
+import com.safedb.explore.precedingWorksheetCalculations
 import com.safedb.explore.worksheetFormulaTokens
 import com.safedb.explore.worksheetFormulaValues
 import com.safedb.model.QueryResult
@@ -126,15 +127,12 @@ internal fun WorksheetCalculationEditor(
         groupColumn = reconciledSelection.groupColumn
         grain = reconciledSelection.grain
     }
-    val groupCalculations =
-        config.calculations.filter {
-            it is WorksheetCalculation.Aggregate || it is WorksheetCalculation.GroupFormula
-        }
+    val precedingCalculations = precedingWorksheetCalculations(config.calculations, existing?.id)
     val priorRowCalculations =
-        config.calculations.filterIsInstance<WorksheetCalculation.RowFormula>().filterNot {
-            it.id == id
-        }
-    val priorGroupCalculations = groupCalculations.filterNot { it.id == id }
+        precedingCalculations.filterIsInstance<WorksheetCalculation.RowFormula>()
+    val priorGroupCalculations = precedingCalculations.filter {
+        it is WorksheetCalculation.Aggregate || it is WorksheetCalculation.GroupFormula
+    }
     val formulaTokens =
         if (kind == CalculationKind.GroupFormula) {
             worksheetFormulaTokens(emptyList(), priorGroupCalculations)

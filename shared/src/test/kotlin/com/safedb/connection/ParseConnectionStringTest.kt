@@ -693,6 +693,49 @@ class ParseConnectionStringTest {
                 "custom://user:topsecret@host:1234/db?password=abc&token=1",
             ),
         )
+        assertEquals(
+            "jdbc:db2://127.0.0.1:50000/SAFEDB:password=;broken",
+            sanitizeBestEffortConnectionString(
+                "jdbc:db2://127.0.0.1:50000/SAFEDB:password=secret;broken",
+            ),
+        )
+        assertEquals(
+            "jdbc:oracle:thin:scott@(DESCRIPTION=(ADDRESS=(HOST=h)))",
+            sanitizeBestEffortConnectionString(
+                "jdbc:oracle:thin:scott/tiger@(DESCRIPTION=(ADDRESS=(HOST=h)))",
+            ),
+        )
+        assertEquals(
+            "jdbc:oracle:thin:scott@tcps://host:2484/svc",
+            sanitizeBestEffortConnectionString(
+                "jdbc:oracle:thin:scott/tiger@tcps://host:2484/svc",
+            ),
+        )
+        assertEquals(
+            "Server=host;Password=;Database=app",
+            sanitizeBestEffortConnectionString("Server=host;Password={ab;cd};Database=app"),
+        )
+
+        val queryDb =
+            parseConnectionString(
+                "sqlserver://sa:secret@db.example.com:1433?database=app_db&encrypt=true",
+            )
+        assertEquals("app_db", queryDb.database)
+        assertEquals(emptyList(), queryDb.warnings)
+
+        val queryDbName =
+            parseConnectionString("sqlserver://sa:secret@db.example.com:1433?databaseName=app_db")
+        assertEquals("app_db", queryDbName.database)
+        assertEquals(emptyList(), queryDbName.warnings)
+
+        val conflicting =
+            parseConnectionString(
+                "sqlserver://sa:pw@db.example.com/app?password=leak&database=other",
+            )
+        assertEquals("app", conflicting.database)
+        assertTrue(conflicting.warnings.any { "password" in it })
+        assertTrue(conflicting.warnings.any { "database" in it })
+        assertEquals("sqlserver://sa@db.example.com/app?database=other", conflicting.sanitizedInput)
     }
 
     @Test

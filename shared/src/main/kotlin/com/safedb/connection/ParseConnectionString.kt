@@ -163,16 +163,23 @@ private fun parseMysqlJdbc(raw: String): ParsedConnection =
 private fun parseSqlServerUri(raw: String): ParsedConnection {
     val url = parseUrl(raw, "SQL Server")
     val encrypt = lowercaseParam(url, "encrypt")
-    val trustServerCertificate =
-        lowercaseParam(url, "trustservercertificate")
-            ?: lowercaseParam(url, "trustServerCertificate")
-    val extracted =
-        extractDriverProperties(Dialect.Mssql, urlQueryPairs(url), SQL_SERVER_MANAGED_KEYS)
+    val trustServerCertificate = lowercaseParam(url, "trustservercertificate")
+    val pathDatabase = pathnameDatabase(url.rawPath)
+    val database = pathDatabase.ifEmpty {
+        paramValue(url, "database") ?: paramValue(url, "databaseName").orEmpty()
+    }
+    val consumedKeys =
+        if (pathDatabase.isEmpty()) {
+            setOf("encrypt", "trustservercertificate", "database", "databasename")
+        } else {
+            setOf("encrypt", "trustservercertificate")
+        }
+    val extracted = extractDriverProperties(Dialect.Mssql, urlQueryPairs(url), consumedKeys)
     return baseResult(
         dialect = Dialect.Mssql,
         host = url.host,
         port = parsePort(url, Dialect.Mssql),
-        database = pathnameDatabase(url.rawPath),
+        database = database,
         username = decodeComponent(url.rawUserInfo?.substringBefore(':')),
         password = passwordFromUrl(raw, url),
         transport = sqlServerTransport(encrypt, trustServerCertificate, url.host),
@@ -755,10 +762,28 @@ private fun parseSqlServerHost(value: String): Pair<String, Int?> {
     return host to port
 }
 
+private fun scrubBestEffortOracleAuth(raw: String): String {
+    val prefix = Regex("^jdbc:oracle:thin:", RegexOption.IGNORE_CASE).find(raw)?.value.orEmpty()
+    val rest = raw.substring(prefix.length)
+    val queryStart = Regex("[?#]").find(rest)?.range?.first ?: rest.length
+    val schemeStart = rest.indexOf("://")
+    if (schemeStart in 0 until queryStart && '@' !in rest.substring(0, schemeStart)) {
+        return raw
+    }
+    val authLimit = if (schemeStart in 0 until queryStart) schemeStart else queryStart
+    val atIndex = rest.substring(0, authLimit).lastIndexOf('@')
+    if (atIndex <= 0) return raw
+    val auth = rest.substring(0, atIndex)
+    if (auth.any { it == ';' || it == '=' || it.isWhitespace() }) return raw
+    val slashIndex = auth.indexOf('/')
+    if (slashIndex < 0) return raw
+    return prefix + auth.substring(0, slashIndex) + rest.substring(atIndex)
+}
+
 fun sanitizeBestEffortConnectionString(raw: String): String {
     val trimmed = raw.trim()
     if (trimmed.isEmpty()) return ""
-    var sanitized = trimmed
+    var sanitized = scrubBestEffortOracleAuth(trimmed)
     val schemeEnd = sanitized.indexOf("://")
     if (schemeEnd >= 0) {
         val authorityStart = schemeEnd + 3
@@ -783,7 +808,9 @@ fun sanitizeBestEffortConnectionString(raw: String): String {
         }
     }
     return sanitized.replace(
-        Regex("(?i)((?:^|[;&?])\\s*(?:password|pwd)\\s*=)[^;&]*"),
+        Regex(
+            """(?i)((?:^|[;&?:])\s*(?:password|pwd)\s*=)(?:\{(?:[^}]|\}\})*\}|"[^"]*"|'[^']*'|[^;&?#]*)""",
+        ),
         "$1",
     )
 }

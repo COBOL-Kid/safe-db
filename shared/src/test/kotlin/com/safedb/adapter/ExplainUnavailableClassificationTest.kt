@@ -125,4 +125,41 @@ class ExplainUnavailableClassificationTest {
         val nonTimeout = formatQueryExecutionError(IllegalStateException("syntax error"), 10_000)
         assertEquals("syntax error", nonTimeout)
     }
+
+    @Test
+    fun errorCode1013RequiresOracleContextForTimeoutClassification() {
+        val mssql1013 =
+            SQLException(
+                "The objects 'a' and 'a' in the FROM clause have the same exposed names.",
+                "S0001",
+                1013,
+            )
+        assertEquals(mssql1013.message, formatQueryExecutionError(mssql1013, 10_000))
+        assertEquals(
+            PlanUnavailableReason.ExecutionFailure,
+            unavailablePlanFromError(mssql1013).reasonCode,
+        )
+
+        val mysql1013 = SQLException("Can't get stat of 'foo'", "HY000", 1013)
+        assertEquals(mysql1013.message, formatQueryExecutionError(mysql1013, 10_000))
+        assertEquals(
+            PlanUnavailableReason.ExecutionFailure,
+            unavailablePlanFromError(mysql1013).reasonCode,
+        )
+
+        val oracleByMessage =
+            SQLException("ORA-01013: user requested cancel of current operation", "72000", 1013)
+        assertTrue(formatQueryExecutionError(oracleByMessage, 5_000).contains("timed out after 5s"))
+        assertEquals(
+            PlanUnavailableReason.TimedOut,
+            unavailablePlanFromError(oracleByMessage).reasonCode,
+        )
+
+        val oracleByState = SQLException("user requested cancel", "72000", 1013)
+        assertTrue(formatQueryExecutionError(oracleByState, 5_000).contains("timed out after 5s"))
+        assertEquals(
+            PlanUnavailableReason.TimedOut,
+            unavailablePlanFromError(oracleByState).reasonCode,
+        )
+    }
 }

@@ -402,6 +402,51 @@ class ExploreUiModelTest {
         assertNull(mem2.x)
     }
 
+    @Test
+    fun chartTypeSwitchPreservesMultipleMeasuresAcrossKpiAndScatter() {
+        val createdAt = buildField("created_at", "timestamp")
+        val amount = buildField("amount", "decimal")
+        val qty = buildField("qty", "int")
+        val fields = listOf(createdAt, amount, qty)
+        val m1 =
+            VisualizationMeasure(
+                alias = "sum_amount",
+                fn = MeasureFn.Sum,
+                sourceColumn = "amount",
+                label = "Sum amount",
+            )
+        val m2 =
+            VisualizationMeasure(
+                alias = "sum_qty",
+                fn = MeasureFn.Sum,
+                sourceColumn = "qty",
+                label = "Sum qty",
+            )
+        val initial =
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("created_at", "created_at"),
+                values = listOf(m1, m2),
+            )
+        val (kpi, mem1) =
+            transitionVisualizationChartType(
+                initial,
+                ChartType.Kpi,
+                fields,
+                VisualizationChartSwitchMemory(),
+            )
+        assertEquals(1, kpi.values.size)
+        assertEquals(2, mem1.values.size)
+
+        val (scatter, mem2) = transitionVisualizationChartType(kpi, ChartType.Scatter, fields, mem1)
+        assertEquals(1, scatter.values.size)
+        assertEquals(2, mem2.values.size)
+
+        val (bar, mem3) = transitionVisualizationChartType(scatter, ChartType.Bar, fields, mem2)
+        assertEquals(listOf("sum_amount", "sum_qty"), bar.values.map { it.alias })
+        assertEquals(emptyList(), mem3.values)
+    }
+
     private fun buildField(name: String, type: String): ExploreFieldOption =
         buildExploreFieldOptions(
                 QueryResult(
