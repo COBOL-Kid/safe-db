@@ -10,14 +10,20 @@ class IntegrationTestDiscoveryTest {
     fun acceptsSufficientUnskippedTests() {
         val result =
             verifyIntegrationTestDiscovery(
-                reports = listOf(report("MySql", 6), report("Mssql", 2)),
+                reports =
+                    listOf(
+                        report("MySql", 9),
+                        nestedSreReport("MySql", 4),
+                        report("Mssql", 7),
+                        nestedSreReport("Mssql", 4),
+                    ),
                 requiredEngines = setOf("mysql", "mssql"),
             )
 
         assertEquals(
             listOf(
-                IntegrationDiscoveryResult("mysql", 6, 0),
-                IntegrationDiscoveryResult("mssql", 2, 0),
+                IntegrationDiscoveryResult("mysql", 13, 0),
+                IntegrationDiscoveryResult("mssql", 11, 0),
             ),
             result,
         )
@@ -28,12 +34,12 @@ class IntegrationTestDiscoveryTest {
         val failure =
             assertFailsWith<IllegalStateException> {
                 verifyIntegrationTestDiscovery(
-                    reports = listOf(report("Oracle", 1)),
+                    reports = listOf(report("Oracle", 10)),
                     requiredEngines = setOf("oracle"),
                 )
             }
 
-        assertTrue(failure.message!!.contains("found 1 tests; expected at least 2"))
+        assertTrue(failure.message!!.contains("found 10 tests; expected at least 11"))
     }
 
     @Test
@@ -41,12 +47,12 @@ class IntegrationTestDiscoveryTest {
         val failure =
             assertFailsWith<IllegalStateException> {
                 verifyIntegrationTestDiscovery(
-                    reports = listOf(report("Postgres", 3, skipped = setOf(2))),
+                    reports = listOf(report("Postgres", 11, skipped = setOf(2))),
                     requiredEngines = setOf("postgres"),
                 )
             }
 
-        assertTrue(failure.message!!.contains("1 of 3 integration tests were skipped"))
+        assertTrue(failure.message!!.contains("1 of 11 integration tests were skipped"))
     }
 
     @Test
@@ -347,6 +353,324 @@ class IntegrationTestDiscoveryTest {
         )
     }
 
+    @Test
+    fun mcpIntegrationDiscoveryEnforcesUserJourneyWhenEnabled() {
+        val missing =
+            assertFailsWith<IllegalStateException> {
+                verifyMcpIntegrationTestDiscovery(
+                    reports =
+                        listOf(
+                            mcpReport("McpPackagedStdioIntegrationTest"),
+                            mcpReport("McpMySqlIntegrationTest"),
+                            mcpReport(
+                                "McpPackagedDialectsIntegrationTest",
+                                name = "packagedJarQueriesMysql()",
+                            ),
+                        ),
+                    requireMysql = true,
+                    includeUserJourney = true,
+                )
+            }
+        assertTrue(
+            missing.message!!.contains(
+                "mcp packaged user journey mysql integration discovery found 0 tests",
+            ),
+        )
+    }
+
+    @Test
+    fun desktopDiscoveryIgnoresEmptyRequiredEngines() {
+        val result =
+            verifyDesktopIntegrationTestDiscovery(
+                reports = emptyList(),
+                requiredEngines = emptySet(),
+            )
+        assertEquals(emptyList(), result)
+    }
+
+    @Test
+    fun desktopDiscoveryAcceptsMysqlOnlyAndFiveEngineRuns() {
+        val mysqlOnly =
+            verifyDesktopIntegrationTestDiscovery(
+                reports =
+                    listOf(
+                        desktopReport("mysqlFullUserJourneyAndRestartPersistence()"),
+                        desktopReport(
+                            "postgresFullUserJourneyAndRestartPersistence()",
+                            skipped = true,
+                        ),
+                        desktopReport("mssqlLiveConnectSchemaAndQuery()", skipped = true),
+                        desktopReport("oracleLiveConnectSchemaAndQuery()", skipped = true),
+                        desktopReport("db2LiveConnectSchemaAndQuery()", skipped = true),
+                    ),
+                requiredEngines = setOf("mysql"),
+            )
+        assertEquals(
+            listOf(IntegrationDiscoveryResult("desktop mysql", 1, 0)),
+            mysqlOnly,
+        )
+
+        val allFive =
+            verifyDesktopIntegrationTestDiscovery(
+                reports =
+                    listOf(
+                        desktopReport("mysqlFullUserJourneyAndRestartPersistence()"),
+                        desktopReport("postgresFullUserJourneyAndRestartPersistence()"),
+                        desktopReport("mssqlLiveConnectSchemaAndQuery()"),
+                        desktopReport("oracleLiveConnectSchemaAndQuery()"),
+                        desktopReport("db2LiveConnectSchemaAndQuery()"),
+                    ),
+                requiredEngines = setOf("mysql", "postgres", "mssql", "oracle", "db2"),
+            )
+        assertEquals(
+            listOf(
+                IntegrationDiscoveryResult("desktop mysql", 1, 0),
+                IntegrationDiscoveryResult("desktop postgres", 1, 0),
+                IntegrationDiscoveryResult("desktop mssql", 1, 0),
+                IntegrationDiscoveryResult("desktop oracle", 1, 0),
+                IntegrationDiscoveryResult("desktop db2", 1, 0),
+            ),
+            allFive,
+        )
+    }
+
+    @Test
+    fun desktopDiscoveryRejectsEmptyMissingOrSkippedRequiredDialect() {
+        val empty =
+            assertFailsWith<IllegalStateException> {
+                verifyDesktopIntegrationTestDiscovery(
+                    reports = emptyList(),
+                    requiredEngines = setOf("mysql"),
+                    resultsLocation = "/tmp/desktop-results",
+                )
+            }
+        assertEquals(
+            "Desktop integration tests produced no JUnit XML in /tmp/desktop-results",
+            empty.message,
+        )
+
+        val missing =
+            assertFailsWith<IllegalStateException> {
+                verifyDesktopIntegrationTestDiscovery(
+                    reports = listOf(desktopReport("mysqlFullUserJourneyAndRestartPersistence()")),
+                    requiredEngines = setOf("mysql", "db2"),
+                )
+            }
+        assertTrue(missing.message!!.contains("desktop db2 integration discovery found 0 tests"))
+
+        val skipped =
+            assertFailsWith<IllegalStateException> {
+                verifyDesktopIntegrationTestDiscovery(
+                    reports =
+                        listOf(
+                            desktopReport(
+                                "postgresFullUserJourneyAndRestartPersistence()",
+                                skipped = true,
+                            ),
+                        ),
+                    requiredEngines = setOf("postgres"),
+                )
+            }
+        assertTrue(skipped.message!!.contains("desktop postgres is required but 1 of 1"))
+    }
+
+    @Test
+    fun npmPackagedDiscoveryRequiresFourStdioTestsEvenOffline() {
+        val offline =
+            verifyMcpNpmPackagedDiscovery(
+                reports =
+                    listOf(
+                        mcpReportCount("McpPackagedStdioIntegrationTest", 4),
+                        mcpReport("McpMySqlIntegrationTest", skipped = true),
+                        mcpReport(
+                            "McpPackagedUserJourneyIntegrationTest",
+                            name = "packagedUserJourneyMysql()",
+                            skipped = true,
+                        ),
+                    ),
+                requireMysql = false,
+            )
+        assertEquals(
+            listOf(IntegrationDiscoveryResult("mcp packaged stdio", 4, 0)),
+            offline,
+        )
+
+        val tooFewStdio =
+            assertFailsWith<IllegalStateException> {
+                verifyMcpNpmPackagedDiscovery(
+                    reports = listOf(mcpReportCount("McpPackagedStdioIntegrationTest", 3)),
+                    requireMysql = false,
+                )
+            }
+        assertTrue(
+            tooFewStdio.message!!.contains(
+                "mcp packaged stdio integration discovery found 3 tests; expected at least 4",
+            ),
+        )
+
+        val skippedStdio =
+            assertFailsWith<IllegalStateException> {
+                verifyMcpNpmPackagedDiscovery(
+                    reports =
+                        listOf(
+                            mcpReportCount(
+                                "McpPackagedStdioIntegrationTest",
+                                4,
+                                skipped = setOf(1),
+                            ),
+                        ),
+                    requireMysql = false,
+                )
+            }
+        assertTrue(
+            skippedStdio.message!!.contains("mcp packaged stdio is required but 1 of 4"),
+        )
+    }
+
+    @Test
+    fun npmPackagedDiscoverySupportsMysqlOnlyCiAndAllFiveEngines() {
+        val mysqlOnly =
+            verifyMcpNpmPackagedDiscovery(
+                reports =
+                    listOf(
+                        mcpReportCount("McpPackagedStdioIntegrationTest", 4),
+                        mcpReportCount("McpMySqlIntegrationTest", 2),
+                        mcpReport(
+                            "McpPackagedDialectsIntegrationTest",
+                            name = "packagedJarQueriesMysql()",
+                        ),
+                        mcpReport(
+                            "McpPackagedUserJourneyIntegrationTest",
+                            name = "packagedUserJourneyMysql()",
+                        ),
+                        mcpReportCount("McpPostgresIntegrationTest", 2, skipped = setOf(0, 1)),
+                        mcpReport(
+                            "McpPackagedDialectsIntegrationTest",
+                            name = "packagedJarQueriesPostgres()",
+                            skipped = true,
+                        ),
+                        mcpReport(
+                            "McpPackagedUserJourneyIntegrationTest",
+                            name = "packagedUserJourneyDb2()",
+                            skipped = true,
+                        ),
+                    ),
+                requireMysql = true,
+            )
+        assertEquals(
+            listOf(
+                IntegrationDiscoveryResult("mcp packaged stdio", 4, 0),
+                IntegrationDiscoveryResult("mcp mysql", 2, 0),
+                IntegrationDiscoveryResult("mcp packaged mysql", 1, 0),
+                IntegrationDiscoveryResult("mcp packaged user journey mysql", 1, 0),
+            ),
+            mysqlOnly,
+        )
+
+        val allFive =
+            verifyMcpNpmPackagedDiscovery(
+                reports = allNpmPackagedReports(),
+                requireMysql = true,
+                requirePostgres = true,
+                requireMssql = true,
+                requireOracle = true,
+                requireDb2 = true,
+            )
+        assertEquals(18, allFive.sumOf { it.discovered })
+        assertTrue(allFive.all { it.skipped == 0 })
+    }
+
+    @Test
+    fun npmPackagedDiscoveryRejectsMissingSecondTestSkippedDialectAndEmptyReports() {
+        val empty =
+            assertFailsWith<IllegalStateException> {
+                verifyMcpNpmPackagedDiscovery(
+                    reports = emptyList(),
+                    requireMysql = false,
+                    resultsLocation = "/tmp/npm-results",
+                )
+            }
+        assertEquals(
+            "Packaged MCP tests produced no JUnit XML in /tmp/npm-results",
+            empty.message,
+        )
+
+        val missingSecondMysql =
+            assertFailsWith<IllegalStateException> {
+                verifyMcpNpmPackagedDiscovery(
+                    reports =
+                        listOf(
+                            mcpReportCount("McpPackagedStdioIntegrationTest", 4),
+                            mcpReportCount("McpMySqlIntegrationTest", 1),
+                            mcpReport(
+                                "McpPackagedDialectsIntegrationTest",
+                                name = "packagedJarQueriesMysql()",
+                            ),
+                            mcpReport(
+                                "McpPackagedUserJourneyIntegrationTest",
+                                name = "packagedUserJourneyMysql()",
+                            ),
+                        ),
+                    requireMysql = true,
+                )
+            }
+        assertTrue(
+            missingSecondMysql.message!!.contains(
+                "mcp mysql integration discovery found 1 tests; expected at least 2",
+            ),
+        )
+
+        val skippedJourney =
+            assertFailsWith<IllegalStateException> {
+                verifyMcpNpmPackagedDiscovery(
+                    reports =
+                        listOf(
+                            mcpReportCount("McpPackagedStdioIntegrationTest", 4),
+                            mcpReport(
+                                "McpPackagedDialectsIntegrationTest",
+                                name = "packagedJarQueriesOracle()",
+                            ),
+                            mcpReport(
+                                "McpPackagedUserJourneyIntegrationTest",
+                                name = "packagedUserJourneyOracle()",
+                                skipped = true,
+                            ),
+                        ),
+                    requireMysql = false,
+                    requireOracle = true,
+                )
+            }
+        assertTrue(
+            skippedJourney.message!!.contains(
+                "mcp packaged user journey oracle is required but 1 of 1",
+            ),
+        )
+
+        val skippedDialect =
+            assertFailsWith<IllegalStateException> {
+                verifyMcpNpmPackagedDiscovery(
+                    reports =
+                        listOf(
+                            mcpReportCount("McpPackagedStdioIntegrationTest", 4),
+                            mcpReport(
+                                "McpPackagedDialectsIntegrationTest",
+                                name = "packagedJarQueriesMssql()",
+                                skipped = true,
+                            ),
+                            mcpReport(
+                                "McpPackagedUserJourneyIntegrationTest",
+                                name = "packagedUserJourneyMssql()",
+                            ),
+                        ),
+                    requireMysql = false,
+                    requireMssql = true,
+                )
+            }
+        assertTrue(
+            skippedDialect.message!!.contains("mcp packaged mssql is required but 1 of 1"),
+        )
+    }
+
     private fun report(
         classNameFragment: String,
         count: Int,
@@ -365,6 +689,23 @@ class IntegrationTestDiscoveryTest {
         append("</testsuite>")
     }
 
+    private fun nestedSreReport(engine: String, count: Int): String = buildString {
+        append("<testsuite>")
+        repeat(count) { index ->
+            append("<testcase classname=\"com.safedb.integration.SreResilienceIntegrationTest\$")
+            append(engine)
+            append("\" name=\"sreTest")
+            append(index)
+            append("\"/>")
+        }
+        append("</testsuite>")
+    }
+
+    private fun desktopReport(name: String, skipped: Boolean = false): String =
+        "<testsuite><testcase classname=\"com.safedb.DesktopLiveUserJourneyIntegrationTest\" name=\"$name\">" +
+            (if (skipped) "<skipped/>" else "") +
+            "</testcase></testsuite>"
+
     private fun mcpReport(
         className: String,
         skipped: Boolean = false,
@@ -373,4 +714,51 @@ class IntegrationTestDiscoveryTest {
         "<testsuite><testcase classname=\"com.safedb.mcp.$className\" name=\"$name\">" +
             (if (skipped) "<skipped/>" else "") +
             "</testcase></testsuite>"
+
+    private fun mcpReportCount(
+        className: String,
+        count: Int,
+        skipped: Set<Int> = emptySet(),
+    ): String = buildString {
+        append("<testsuite>")
+        repeat(count) { index ->
+            append("<testcase classname=\"com.safedb.mcp.")
+            append(className)
+            append("\" name=\"test")
+            append(index)
+            append("\">")
+            if (index in skipped) append("<skipped/>")
+            append("</testcase>")
+        }
+        append("</testsuite>")
+    }
+
+    private fun allNpmPackagedReports(): List<String> =
+        listOf(
+            mcpReportCount("McpPackagedStdioIntegrationTest", 4),
+            mcpReportCount("McpMySqlIntegrationTest", 2),
+            mcpReportCount("McpPostgresIntegrationTest", 2),
+            mcpReport("McpPackagedDialectsIntegrationTest", name = "packagedJarQueriesMysql()"),
+            mcpReport("McpPackagedDialectsIntegrationTest", name = "packagedJarQueriesPostgres()"),
+            mcpReport("McpPackagedDialectsIntegrationTest", name = "packagedJarQueriesMssql()"),
+            mcpReport("McpPackagedDialectsIntegrationTest", name = "packagedJarQueriesOracle()"),
+            mcpReport("McpPackagedDialectsIntegrationTest", name = "packagedJarQueriesDb2()"),
+            mcpReport(
+                "McpPackagedUserJourneyIntegrationTest",
+                name = "packagedUserJourneyMysql()",
+            ),
+            mcpReport(
+                "McpPackagedUserJourneyIntegrationTest",
+                name = "packagedUserJourneyPostgres()",
+            ),
+            mcpReport(
+                "McpPackagedUserJourneyIntegrationTest",
+                name = "packagedUserJourneyMssql()",
+            ),
+            mcpReport(
+                "McpPackagedUserJourneyIntegrationTest",
+                name = "packagedUserJourneyOracle()",
+            ),
+            mcpReport("McpPackagedUserJourneyIntegrationTest", name = "packagedUserJourneyDb2()"),
+        )
 }

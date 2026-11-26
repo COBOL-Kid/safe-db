@@ -76,7 +76,10 @@ class SeedMysqlTest {
         val second = generate(options)
 
         assertEquals(first, second)
-        assertTrue(first.contains("CREATE DATABASE IF NOT EXISTS `fixture_db`"))
+        assertTrue(first.contains("SET NAMES utf8mb4;"))
+        assertTrue(
+            first.contains("CREATE DATABASE IF NOT EXISTS `fixture_db` CHARACTER SET utf8mb4;"),
+        )
         assertTrue(first.contains("INSERT INTO customers"))
         assertTrue(first.contains("INSERT INTO orders"))
         assertTrue(first.count { it == '\n' } > 20)

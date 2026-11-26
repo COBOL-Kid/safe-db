@@ -101,6 +101,8 @@ jobs:
           name: integration-test-reports
           retention-days: 7
           path: |
+            build/reports/tests/desktopIntegrationTest/
+            build/test-results/desktopIntegrationTest/
             shared/build/reports/tests/integrationTest/
             shared/build/test-results/integrationTest/
             mcp/build/reports/tests/integrationTest/

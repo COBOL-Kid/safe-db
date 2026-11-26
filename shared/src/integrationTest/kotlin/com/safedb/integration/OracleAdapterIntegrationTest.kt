@@ -138,4 +138,61 @@ class OracleAdapterIntegrationTest {
             adapter.close()
         }
     }
+
+    @Test
+    fun oracleExplainsScanEventsAsElevatedLargeScan() = runBlocking {
+        IntegrationAssumptions.assumeOracleAvailable()
+        val def = IntegrationAssumptions.oracleConnectionDef()
+        val adapter = Adapter.connect(def, IntegrationAssumptions.oraclePassword)
+        try {
+            val schema = Adapter.introspectWithTimeout(adapter)
+            AdapterIntegrationAssertions.assertScanEventsExplainedAsLargeScan(
+                adapter = adapter,
+                schema = schema,
+                dialect = def.dialect,
+                expectedSchema = "SAFEDB",
+            )
+        } finally {
+            adapter.close()
+        }
+    }
+
+    @Test
+    fun oracleDecodesWideRowsAndEventNotes() = runBlocking {
+        IntegrationAssumptions.assumeOracleAvailable()
+        val def = IntegrationAssumptions.oracleConnectionDef()
+        val adapter = Adapter.connect(def, IntegrationAssumptions.oraclePassword)
+        try {
+            val schema = Adapter.introspectWithTimeout(adapter)
+            AdapterIntegrationAssertions.assertWideRowsAndEventNotesDecoded(
+                adapter = adapter,
+                schema = schema,
+                dialect = def.dialect,
+                expectedWideRowsSchema = "SAFEDB",
+                expectedEventNotesSchema = "SAFEDB",
+                expectedSpecialNoteBody = "東京",
+            )
+        } finally {
+            adapter.close()
+        }
+    }
+
+    @Test
+    @Timeout(60)
+    fun oracleTruncatesPayloadRowsAtOutputByteCap() = runBlocking {
+        IntegrationAssumptions.assumeOracleAvailable()
+        val def = IntegrationAssumptions.oracleConnectionDef()
+        val adapter = Adapter.connect(def, IntegrationAssumptions.oraclePassword)
+        try {
+            val schema = Adapter.introspectWithTimeout(adapter)
+            AdapterIntegrationAssertions.assertPayloadRowsTruncatedAtOutputCap(
+                adapter = adapter,
+                schema = schema,
+                dialect = def.dialect,
+                expectedSchema = "SAFEDB",
+            )
+        } finally {
+            adapter.close()
+        }
+    }
 }

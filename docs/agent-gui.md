@@ -1,7 +1,7 @@
 # Agent-driven GUI testing on Linux / WSL
 
 > [!WARNING]
-> **Dev-only and unsupported on Linux.** Production `safe-db` supports macOS and Windows only; [`Main.kt`](../src/main/kotlin/com/safedb/Main.kt) and [`DataDirectory.kt`](../shared/src/main/kotlin/com/safedb/platform/DataDirectory.kt) continue to reject Linux. The `runAgentGui` entry point lives in the `render` source set, which is never packaged into shipped artifacts, and uses an in-memory credential store (`SecretsManager.initMemoryStore()`) rather than `SAFEDB_KEYCHAIN_BACKEND=disabled` so credentials stay in process memory. Font rendering, Swing file choosers, and window chrome may differ slightly from macOS and Windows.
+> **Dev-only and unsupported on Linux.** Production `safe-db` supports macOS and Windows only; [`Main.kt`](../src/main/kotlin/com/safedb/Main.kt) and [`DataDirectory.kt`](../shared/src/main/kotlin/com/safedb/platform/DataDirectory.kt) continue to reject Linux. The `runAgentGui` entry point lives in the `render` source set, which is never packaged into shipped artifacts, and defaults to an in-memory credential store (`SecretsManager.initMemoryStore()`) rather than `SAFEDB_KEYCHAIN_BACKEND=disabled` so credentials stay in process memory (unless `SAFEDB_AGENT_GUI_CREDENTIALS=file` is set). Font rendering, Swing file choosers, and window chrome may differ slightly from macOS and Windows.
 
 This workflow lets any CLI agent manually test the real Compose Desktop GUI on a Linux or WSL dev box using a headless virtual X display (`Xvfb`), a lightweight window manager (`openbox`), `xdotool` for input, and ImageMagick (`import`) for screenshots.
 
@@ -61,7 +61,7 @@ Tips:
 - Coordinates are absolute screen pixels (including the `openbox` title bar at the top of the window).
 - Click the center of elements read from the latest screenshot. Clicking on a text field's border or label can leave focus in the previously focused field.
 - Pasting a connection string and clicking **Apply** is the fastest way to fill the New Connection form.
-- The New Connection screen says "OS keychain", but in this dev-only mode `AgentGui.kt` uses an in-memory credential store (`SecretsManager.initMemoryStore()`) rather than `SAFEDB_KEYCHAIN_BACKEND=disabled`. Saved connections persist across restarts while passwords do not — after a restart, edit the connection (from the card gear or Command Palette `Edit connection: ...`) to re-enter its password.
+- The New Connection screen says "OS keychain", but by default in this dev-only mode `AgentGui.kt` uses an in-memory credential store (`SecretsManager.initMemoryStore()`) rather than `SAFEDB_KEYCHAIN_BACKEND=disabled`. Saved connections persist across restarts while passwords do not — after a restart, edit the connection (from the card gear or Command Palette `Edit connection: ...`) to re-enter its password, or set `SAFEDB_AGENT_GUI_CREDENTIALS=file` to persist credentials under `dataDir/credentials`.
 
 ## Script commands
 
@@ -80,8 +80,19 @@ Tips:
 | `scripts/agent_gui.sh key <combo>...` | Press key(s), e.g. `ctrl+a`, `Return`, `Tab`, `Escape`. |
 | `scripts/agent_gui.sh logs [N]` | Tail the last `N` lines of `build/agent-gui/app.log` (default `50`). |
 | `scripts/agent_gui.sh reset` | Stop everything and delete `build/agent-gui/data` and `build/agent-gui/shots` (an overridden `SAFEDB_AGENT_GUI_DATA_DIR` outside those paths is left in place). |
+| `scripts/agent_gui.sh smoke [--require-db]` | Run an isolated headless Xvfb + `Ctrl+K` Command Palette smoke test in a temp directory (`SAFEDB_AGENT_GUI_CREDENTIALS=file`, seeds `"Smoke MySQL"` via the repo-built MCP CLI when reachable, validates 5 distinct PNGs and `app.log`, and cleans up on exit). |
 
-Environment overrides: `AGENT_GUI_DISPLAY` (default `:99`), `AGENT_GUI_SCREEN` (default `1600x1000`), and `SAFEDB_AGENT_GUI_DATA_DIR` (default `build/agent-gui/data`).
+Environment overrides: `AGENT_GUI_DISPLAY` (default `:99`), `AGENT_GUI_SCREEN` (default `1600x1000`), `SAFEDB_AGENT_GUI_DATA_DIR` (default `build/agent-gui/data`), and `SAFEDB_AGENT_GUI_CREDENTIALS` (`memory|file`, default `memory`; `file` initializes `SecretsManager.initFileStore(dataDir.resolve("credentials"))`).
+
+## Automated smoke test
+
+`scripts/agent_gui.sh smoke [--require-db]` verifies the live desktop GUI end-to-end without touching `build/agent-gui`:
+
+- Isolates state in a temporary directory, picks a free display in `:99`–`:120` (unless `AGENT_GUI_DISPLAY` is set), exports `SAFEDB_AGENT_GUI_CREDENTIALS=file`, and registers an `EXIT` trap to tear down processes and remove the temporary directory.
+- Checks TCP reachability at `SAFEDB_TEST_MYSQL_HOST` (default `127.0.0.1`) and `SAFEDB_TEST_MYSQL_PORT` (default `3306`). When reachable, it seeds `"Smoke MySQL"` using the repo-built MCP CLI (`mcp/build/npm/@safe-db/mcp/cli.js` with `node` when available, or `mcp/build/libs/safe-db-mcp-*-all.jar` fallback—never a globally installed binary). Passing `--require-db` fails if MySQL is unreachable or seeding fails; otherwise the smoke run continues offline.
+- Navigates solely via keyboard `Ctrl+K` Command Palette shortcuts (no hardcoded pixel coordinates), captures 5 screenshots (`smoke-01-home` through `smoke-05-*`), and verifies all 5 PNGs are non-blank and distinct and that `app.log` contains no exceptions, `BUILD FAILED`, `PasswordNotFoundException`, or in-memory credential-store warnings.
+
+`scripts/test_agent_gui_reset.sh` (run by `./gradlew check` on Linux via `testAgentGuiReset`) unit-tests `smoke` flag validation, repo MCP CLI resolution, `--require-db` failure cleanup, screenshot validation, and log validation without requiring Xvfb.
 
 ## Docker fixture connections
 

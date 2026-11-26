@@ -72,7 +72,8 @@ internal class RelationalFixtureGenerator(
 
     private fun emitMysqlSchema() {
         write("-- Generated safe-db MySQL fixture")
-        write("CREATE DATABASE IF NOT EXISTS `${options.database}`;")
+        write("SET NAMES utf8mb4;")
+        write("CREATE DATABASE IF NOT EXISTS `${options.database}` CHARACTER SET utf8mb4;")
         write("USE `${options.database}`;")
         write()
         write("SET FOREIGN_KEY_CHECKS = 0;")

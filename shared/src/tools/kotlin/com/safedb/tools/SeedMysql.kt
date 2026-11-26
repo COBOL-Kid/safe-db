@@ -248,7 +248,7 @@ private class SeedMysql(rawArgs: List<String>) {
 
         println("-> generating fixture SQL and loading it into '$database'")
         mysqlRunWithInput(emptyList()) { writer ->
-                BufferedWriter(OutputStreamWriter(writer)).use { sql ->
+                BufferedWriter(OutputStreamWriter(writer, Charsets.UTF_8)).use { sql ->
                     RelationalFixtureGenerator(
                             options.generator.copy(database = database),
                             GeneratedSqlDialect.Mysql,
@@ -314,6 +314,7 @@ private class SeedMysql(rawArgs: List<String>) {
                 "MYSQL_PWD=$password",
                 dockerContainer,
                 "mysql",
+                "--default-character-set=utf8mb4",
                 "-h",
                 "127.0.0.1",
                 "-P",
@@ -322,7 +323,10 @@ private class SeedMysql(rawArgs: List<String>) {
                 user,
             ) + args
         } else {
-            listOf("mysql", "--defaults-file=${defaultsFile ?: error("missing defaults file")}") +
-                args
+            listOf(
+                "mysql",
+                "--defaults-file=${defaultsFile ?: error("missing defaults file")}",
+                "--default-character-set=utf8mb4",
+            ) + args
         }
 }

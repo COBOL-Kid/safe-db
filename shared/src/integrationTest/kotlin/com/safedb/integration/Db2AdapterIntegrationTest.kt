@@ -141,4 +141,61 @@ class Db2AdapterIntegrationTest {
             adapter.close()
         }
     }
+
+    @Test
+    fun db2ExplainsScanEventsAsElevatedLargeScan() = runBlocking {
+        IntegrationAssumptions.assumeDb2Available()
+        val def = IntegrationAssumptions.db2ConnectionDef()
+        val adapter = Adapter.connect(def, IntegrationAssumptions.db2Password)
+        try {
+            val schema = Adapter.introspectWithTimeout(adapter)
+            AdapterIntegrationAssertions.assertScanEventsExplainedAsLargeScan(
+                adapter = adapter,
+                schema = schema,
+                dialect = def.dialect,
+                expectedSchema = "ANALYTICS",
+            )
+        } finally {
+            adapter.close()
+        }
+    }
+
+    @Test
+    fun db2DecodesWideRowsAndEventNotes() = runBlocking {
+        IntegrationAssumptions.assumeDb2Available()
+        val def = IntegrationAssumptions.db2ConnectionDef()
+        val adapter = Adapter.connect(def, IntegrationAssumptions.db2Password)
+        try {
+            val schema = Adapter.introspectWithTimeout(adapter)
+            AdapterIntegrationAssertions.assertWideRowsAndEventNotesDecoded(
+                adapter = adapter,
+                schema = schema,
+                dialect = def.dialect,
+                expectedWideRowsSchema = "ANALYTICS",
+                expectedEventNotesSchema = "ANALYTICS",
+                expectedSpecialNoteBody = "tokyo",
+            )
+        } finally {
+            adapter.close()
+        }
+    }
+
+    @Test
+    @Timeout(60)
+    fun db2TruncatesPayloadRowsAtOutputByteCap() = runBlocking {
+        IntegrationAssumptions.assumeDb2Available()
+        val def = IntegrationAssumptions.db2ConnectionDef()
+        val adapter = Adapter.connect(def, IntegrationAssumptions.db2Password)
+        try {
+            val schema = Adapter.introspectWithTimeout(adapter)
+            AdapterIntegrationAssertions.assertPayloadRowsTruncatedAtOutputCap(
+                adapter = adapter,
+                schema = schema,
+                dialect = def.dialect,
+                expectedSchema = "ANALYTICS",
+            )
+        } finally {
+            adapter.close()
+        }
+    }
 }

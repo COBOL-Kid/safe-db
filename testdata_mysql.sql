@@ -6,8 +6,10 @@
 --   payload_rows    20,000  ~2 KiB text so a column select approaches 10 MiB
 --   event_notes     10,000  unicode/nulls (InnoDB auto-indexes FKs)
 
-CREATE DATABASE IF NOT EXISTS safedb_test;
-CREATE DATABASE IF NOT EXISTS safedb_lab;
+SET NAMES utf8mb4;
+
+CREATE DATABASE IF NOT EXISTS safedb_test CHARACTER SET utf8mb4;
+CREATE DATABASE IF NOT EXISTS safedb_lab CHARACTER SET utf8mb4;
 CREATE USER IF NOT EXISTS 'safedb'@'%' IDENTIFIED BY 'safedb';
 GRANT ALL PRIVILEGES ON safedb_lab.* TO 'safedb'@'%';
 FLUSH PRIVILEGES;

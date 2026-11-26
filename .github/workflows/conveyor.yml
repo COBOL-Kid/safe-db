@@ -281,6 +281,54 @@ jobs:
             }
           }
 
+      - name: Run Windows MSIX smoke check
+        shell: pwsh
+        run: |
+          $output = Join-Path (Get-Location) "output"
+          $msixFiles = @(Get-ChildItem -LiteralPath $output -File -Filter "*.msix" -ErrorAction SilentlyContinue)
+          if ($msixFiles.Count -ne 1) {
+            throw "expected exactly one .msix in output, found $($msixFiles.Count)"
+          }
+          $metadataPath = Join-Path $output "metadata.properties"
+          $versionLine = Get-Content -LiteralPath $metadataPath | Where-Object { $_ -like "app.version=*" } | Select-Object -First 1
+          if (-not $versionLine) {
+            throw "missing app.version in $metadataPath"
+          }
+          $version = $versionLine.Substring("app.version=".Length).Trim()
+          if (-not $version) {
+            throw "empty app.version in $metadataPath"
+          }
+          $extractDir = Join-Path ([IO.Path]::GetTempPath()) ("safedb-msix-smoke-" + [Guid]::NewGuid().ToString("N"))
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          try {
+            [System.IO.Compression.ZipFile]::ExtractToDirectory($msixFiles[0].FullName, $extractDir)
+            $manifestPath = Join-Path $extractDir "AppxManifest.xml"
+            if (-not (Test-Path -LiteralPath $manifestPath)) {
+              throw "missing AppxManifest.xml in extracted MSIX"
+            }
+            [xml]$manifest = Get-Content -LiteralPath $manifestPath -Raw
+            $apps = @($manifest.Package.Applications.Application)
+            if ($apps.Count -eq 0 -or [string]::IsNullOrWhiteSpace($apps[0].Executable)) {
+              throw "missing Application/@Executable in AppxManifest.xml"
+            }
+            $appExe = Join-Path $extractDir $apps[0].Executable
+            if (-not (Test-Path -LiteralPath $appExe)) {
+              throw "missing MSIX executable $appExe"
+            }
+            $smokeLines = @(& $appExe --smoke-check)
+            $smokeExit = $LASTEXITCODE
+            $smokeLines | ForEach-Object { Write-Host $_ }
+            if ($smokeExit -ne 0) {
+              throw "$appExe --smoke-check exited $smokeExit"
+            }
+            $expected = "safe-db $version smoke-check ok"
+            if (-not ($smokeLines | Where-Object { $_.Trim() -eq $expected })) {
+              throw "expected '$expected' in smoke-check output"
+            }
+          } finally {
+            Remove-Item -LiteralPath $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
   smoke-mac:
     name: Smoke (macOS Developer ID)
     needs: package
@@ -298,6 +346,7 @@ jobs:
           version="$(awk -F= '/^app\.version=/{ sub(/\r$/, ""); print substr($0, index($0, "=") + 1); exit }' output/metadata.properties)"
           [ -n "${version}" ]
           work="$(mktemp -d)"
+          trap 'rm -rf "${work}"' EXIT
           zip="output/safedb-${version}-mac-aarch64.zip"
           [ -s "${zip}" ]
           unzip -q "${zip}" -d "${work}"
@@ -350,6 +399,27 @@ jobs:
               exit 1
               ;;
           esac
+          bundle_exec="$(python3 - "${app}/Contents/Info.plist" <<'PY'
+          import plistlib
+          import sys
+
+          with open(sys.argv[1], "rb") as f:
+              plist = plistlib.load(f)
+          exe = plist.get("CFBundleExecutable", "")
+          if not exe:
+              sys.stderr.write("CFBundleExecutable is missing from Info.plist\n")
+              sys.exit(1)
+          print(exe)
+          PY
+          )"
+          mac_bin="${app}/Contents/MacOS/${bundle_exec}"
+          if [[ ! -x "${mac_bin}" ]]; then
+            echo "macOS bundle executable is missing or not executable: ${mac_bin}" >&2
+            exit 1
+          fi
+          smoke_out="$("${mac_bin}" --smoke-check)"
+          printf '%s\n' "${smoke_out}"
+          printf '%s\n' "${smoke_out}" | grep -Fxq "safe-db ${version} smoke-check ok"
 
   publish:
     needs: [package, smoke, smoke-mac]

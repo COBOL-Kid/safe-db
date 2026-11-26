@@ -1,4 +1,6 @@
+import com.safedb.buildlogic.VerifyMcpNpmPackagedDiscovery
 import com.safedb.buildlogic.logIntegrationFailures
+import java.io.File
 
 plugins {
     kotlin("jvm")
@@ -205,11 +207,28 @@ tasks.register<Exec>("npmCliTest") {
     onlyIf { com.safedb.buildlogic.nodeOnPath() }
 }
 
+val nodeExecutable =
+    providers.environmentVariable("PATH").orElse("").zip(
+        providers.systemProperty("os.name").orElse(""),
+    ) { path, osName ->
+        val nodeName = if (osName.startsWith("Windows", ignoreCase = true)) "node.exe" else "node"
+        path
+            .split(File.pathSeparator)
+            .asSequence()
+            .filter { it.isNotBlank() }
+            .map { File(it, nodeName) }
+            .firstOrNull { it.isFile }
+            ?.absolutePath
+            .orEmpty()
+    }
+
 val npmPackagedTest =
     tasks.register<Test>("npmPackagedTest") {
         description = "Runs MCP packaged tests against the current-OS jlink runtime."
         group = "verification"
         dependsOn(assembleNpm)
+        val npmOutputDir = layout.buildDirectory.dir("npm")
+        val cliJs = assembleNpm.flatMap { task -> task.outputDir.file("@safe-db/mcp/cli.js") }
         val bundledJava = assembleNpm.flatMap { task ->
             task.outputDir.file(
                 currentMcpNpmPlatform.map { platform ->
@@ -227,10 +246,19 @@ val npmPackagedTest =
         }
         inputs.file(bundledJava)
         inputs.file(bundledJar)
+        inputs.file(cliJs)
+        val resolvedNode = nodeExecutable.get()
+        inputs.property("nodeExecutable", resolvedNode)
+        outputs.upToDateWhen { false }
         testClassesDirs = integrationTest.output.classesDirs
         classpath = integrationTest.runtimeClasspath
         systemProperty("safedb.mcp.shadowJar", bundledJar.get().asFile.absolutePath)
         systemProperty("safedb.mcp.bundledJava", bundledJava.get().asFile.absolutePath)
+        if (resolvedNode.isNotEmpty()) {
+            systemProperty("safedb.mcp.cliJs", cliJs.get().asFile.absolutePath)
+            systemProperty("safedb.mcp.nodePath", npmOutputDir.get().asFile.absolutePath)
+            systemProperty("safedb.mcp.nodeExecutable", resolvedNode)
+        }
         useJUnitPlatform { includeTags("integration") }
         testLogging {
             events("failed", "skipped")
@@ -241,3 +269,22 @@ val npmPackagedTest =
         }
         shouldRunAfter(tasks.named("integrationTest"))
     }
+
+fun requireMcpDialectFromEnv(dialect: String): Provider<Boolean> =
+    providers
+        .environmentVariable("SAFEDB_TEST_REQUIRE_$dialect")
+        .map { it.equals("true", ignoreCase = true) }
+        .orElse(false)
+
+tasks.register<VerifyMcpNpmPackagedDiscovery>("verifyNpmPackagedTest") {
+    group = "verification"
+    description =
+        "Ensures required packaged MCP suites executed via npmPackagedTest instead of silently skipping."
+    dependsOn(npmPackagedTest)
+    resultsDirectory.set(layout.buildDirectory.dir("test-results/npmPackagedTest"))
+    requireMysql.set(requireMcpDialectFromEnv("MYSQL"))
+    requirePostgres.set(requireMcpDialectFromEnv("POSTGRES"))
+    requireMssql.set(requireMcpDialectFromEnv("MSSQL"))
+    requireOracle.set(requireMcpDialectFromEnv("ORACLE"))
+    requireDb2.set(requireMcpDialectFromEnv("DB2"))
+}

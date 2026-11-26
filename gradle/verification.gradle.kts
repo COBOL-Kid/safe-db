@@ -66,12 +66,23 @@ val testAgentGuiReset =
         onlyIf { System.getProperty("os.name").startsWith("Linux", ignoreCase = true) }
     }
 
+val testVerifyScript =
+    tasks.register<Exec>("testVerifyScript") {
+        group = "verification"
+        description =
+            "Tests unified verify.sh tier routing, flags, and fail-fast behavior without live containers."
+        workingDir = projectDir
+        commandLine("bash", "scripts/test_verify.sh")
+        onlyIf { !System.getProperty("os.name").startsWith("Windows", ignoreCase = true) }
+    }
+
 tasks.named("check") {
     dependsOn(
         "compileRenderKotlin",
         verifyUnitTestDiscovery,
         testDockerDatabaseHarness,
         testAssertConveyorSite,
+        testVerifyScript,
         testAgentGuiReset,
         "koverVerify",
     )
@@ -83,14 +94,24 @@ fun requireDialectFromEnv(dialect: String): Provider<Boolean> =
         .map { it.equals("true", ignoreCase = true) }
         .orElse(false)
 
+// Serialize live DB suites so they do not triple-hammer Docker containers (notably MSSQL/Oracle/Db2).
+tasks.named("desktopIntegrationTest") { mustRunAfter(":shared:integrationTest") }
+
+project(":mcp").tasks.matching { it.name == "integrationTest" }.configureEach {
+    mustRunAfter(":shared:integrationTest", ":desktopIntegrationTest")
+}
+
 val verifyIntegrationTestDiscovery =
     tasks.register<VerifyIntegrationTestDiscovery>("verifyIntegrationTestDiscovery") {
         group = "verification"
         description =
-            "Ensures required JDBC and MCP integration suites executed instead of silently skipping."
-        dependsOn(":shared:integrationTest", ":mcp:integrationTest")
+            "Ensures required JDBC, MCP, and desktop integration suites executed instead of silently skipping."
+        dependsOn(":shared:integrationTest", ":mcp:integrationTest", ":desktopIntegrationTest")
         sharedResultsDirectory.set(
             project(":shared").layout.buildDirectory.dir("test-results/integrationTest"),
+        )
+        desktopResultsDirectory.set(
+            layout.buildDirectory.dir("test-results/desktopIntegrationTest"),
         )
         mcpResultsDirectory.set(
             project(":mcp").layout.buildDirectory.dir("test-results/integrationTest"),
@@ -104,6 +125,6 @@ val verifyIntegrationTestDiscovery =
 
 tasks.register("integrationTest") {
     group = "verification"
-    description = "Runs :shared JDBC and :mcp integration tests."
+    description = "Runs :shared JDBC, :mcp, and desktop integration tests."
     dependsOn(verifyIntegrationTestDiscovery)
 }

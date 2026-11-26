@@ -61,22 +61,29 @@ object SecretsManager {
     fun initStore(
         envValue: String? = System.getenv(ENV_BACKEND),
         platform: DesktopPlatform? = null,
+        warn: Boolean = true,
     ) {
-        initStore(envValue) { platform ?: DesktopPlatform.current() }
+        initStore(envValue, warn) { platform ?: DesktopPlatform.current() }
     }
 
     internal fun initStoreForOsName(envValue: String?, osName: String) {
-        initStore(envValue) { DesktopPlatform.resolve(osName) }
+        initStore(envValue, warn = true) { DesktopPlatform.resolve(osName) }
     }
 
-    private fun initStore(envValue: String?, platformResolver: () -> DesktopPlatform) {
+    private fun initStore(
+        envValue: String?,
+        warn: Boolean,
+        platformResolver: () -> DesktopPlatform,
+    ) {
         storeReadCountForTest = 0
         activeStore =
             when (parseRequestedBackendFrom(envValue)) {
                 RequestedBackend.Disabled -> {
-                    println(
-                        "WARN: $ENV_BACKEND=disabled: credentials are held in process memory only",
-                    )
+                    if (warn) {
+                        println(
+                            "WARN: $ENV_BACKEND=disabled: credentials are held in process memory only",
+                        )
+                    }
                     DisabledMemoryStore()
                 }
                 RequestedBackend.Protected,

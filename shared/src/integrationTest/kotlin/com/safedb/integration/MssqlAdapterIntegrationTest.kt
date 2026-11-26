@@ -144,4 +144,61 @@ class MssqlAdapterIntegrationTest {
             adapter.close()
         }
     }
+
+    @Test
+    fun mssqlExplainsScanEventsAsElevatedLargeScan() = runBlocking {
+        IntegrationAssumptions.assumeMssqlAvailable()
+        val def = IntegrationAssumptions.mssqlConnectionDef()
+        val adapter = Adapter.connect(def, IntegrationAssumptions.mssqlPassword)
+        try {
+            val schema = Adapter.introspectWithTimeout(adapter)
+            AdapterIntegrationAssertions.assertScanEventsExplainedAsLargeScan(
+                adapter = adapter,
+                schema = schema,
+                dialect = def.dialect,
+                expectedSchema = "analytics",
+            )
+        } finally {
+            adapter.close()
+        }
+    }
+
+    @Test
+    fun mssqlDecodesWideRowsAndEventNotes() = runBlocking {
+        IntegrationAssumptions.assumeMssqlAvailable()
+        val def = IntegrationAssumptions.mssqlConnectionDef()
+        val adapter = Adapter.connect(def, IntegrationAssumptions.mssqlPassword)
+        try {
+            val schema = Adapter.introspectWithTimeout(adapter)
+            AdapterIntegrationAssertions.assertWideRowsAndEventNotesDecoded(
+                adapter = adapter,
+                schema = schema,
+                dialect = def.dialect,
+                expectedWideRowsSchema = "analytics",
+                expectedEventNotesSchema = "ops",
+                expectedSpecialNoteBody = "東京 ☕",
+            )
+        } finally {
+            adapter.close()
+        }
+    }
+
+    @Test
+    @Timeout(60)
+    fun mssqlTruncatesPayloadRowsAtOutputByteCap() = runBlocking {
+        IntegrationAssumptions.assumeMssqlAvailable()
+        val def = IntegrationAssumptions.mssqlConnectionDef()
+        val adapter = Adapter.connect(def, IntegrationAssumptions.mssqlPassword)
+        try {
+            val schema = Adapter.introspectWithTimeout(adapter)
+            AdapterIntegrationAssertions.assertPayloadRowsTruncatedAtOutputCap(
+                adapter = adapter,
+                schema = schema,
+                dialect = def.dialect,
+                expectedSchema = "analytics",
+            )
+        } finally {
+            adapter.close()
+        }
+    }
 }
