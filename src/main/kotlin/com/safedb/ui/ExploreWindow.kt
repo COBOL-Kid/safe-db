@@ -236,6 +236,7 @@ fun ExploreWindowContent(
                 ExploreMode.Worksheet ->
                     ExploreWorksheet(
                         sample = session.sample,
+                        tables = session.baseSpec.tables,
                         config = viewModel.worksheetConfig,
                         preview = viewModel.worksheetPreview,
                         onConfigChange = { next -> viewModel.updateWorksheet { next } },

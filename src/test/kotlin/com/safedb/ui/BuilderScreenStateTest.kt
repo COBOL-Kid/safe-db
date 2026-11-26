@@ -274,7 +274,7 @@ class BuilderScreenStateTest {
         assertEquals(BuilderFilterPanelMinHeight, builderFilterPanelMaxHeight(0.dp))
         assertEquals(64.dp, builderFilterPanelMinHeight(359.dp))
         assertEquals(BuilderFilterPanelMinHeight, builderFilterPanelMinHeight(360.dp))
-        assertEquals(220f, builderCanvasReservePx(hasFilters = true))
+        assertEquals(288f, builderCanvasReservePx(hasFilters = true))
         assertEquals(180f, builderCanvasReservePx(hasFilters = false))
     }
 

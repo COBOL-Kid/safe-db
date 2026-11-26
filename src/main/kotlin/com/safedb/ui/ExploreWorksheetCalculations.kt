@@ -40,6 +40,7 @@ import com.safedb.explore.worksheetFormulaValues
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
 import com.safedb.model.ResultColumn
+import com.safedb.model.TableRef
 import com.safedb.model.classifyColumn
 import com.safedb.model.isNumeric
 import com.safedb.model.isTemporal
@@ -56,6 +57,7 @@ internal fun WorksheetCalculationEditor(
     existing: WorksheetCalculation?,
     onSave: (WorksheetCalculation, WorksheetSort?) -> Unit,
     onCancel: () -> Unit,
+    tables: List<TableRef> = emptyList(),
 ) {
     var kind by remember { mutableStateOf(calculationKind(existing)) }
     var label by remember { mutableStateOf(existing?.label.orEmpty()) }
@@ -147,7 +149,7 @@ internal fun WorksheetCalculationEditor(
             emptyList<ResultColumn>() to emptyList()
         }
     val formulaTokens =
-        if (isFormulaKind) worksheetFormulaTokens(formulaColumns, priorFormulaCalcs)
+        if (isFormulaKind) worksheetFormulaTokens(formulaColumns, priorFormulaCalcs, tables)
         else emptyList()
     val formulaValidation =
         if (isFormulaKind && formula.isNotBlank()) {
@@ -157,6 +159,7 @@ internal fun WorksheetCalculationEditor(
                     sourceValue = { BigDecimal.ONE },
                     priorCalculations = priorFormulaCalcs,
                     calculationValue = { BigDecimal.ONE },
+                    tables = tables,
                 )
             evaluatePivotFormula(
                     formula,
@@ -255,7 +258,7 @@ internal fun WorksheetCalculationEditor(
                     "Value",
                     sourceOptions,
                     source,
-                    { if (it.isBlank()) "Rows" else displayColumnLabel(it) },
+                    { if (it.isBlank()) "Rows" else displayColumnLabel(it, tables) },
                 ) {
                     source = it
                 }
@@ -275,7 +278,7 @@ internal fun WorksheetCalculationEditor(
                     source,
                     { token ->
                         config.calculations.firstOrNull { it.id == token }?.label
-                            ?: displayColumnLabel(token)
+                            ?: displayColumnLabel(token, tables)
                     },
                 ) {
                     source = it
@@ -316,7 +319,7 @@ internal fun WorksheetCalculationEditor(
                 "Group level",
                 listOf("") + config.groups.map { it.column },
                 groupColumn,
-                { if (it.isBlank()) "All / grand total" else displayColumnLabel(it) },
+                { if (it.isBlank()) "All / grand total" else displayColumnLabel(it, tables) },
             ) {
                 groupColumn = it
             }

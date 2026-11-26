@@ -773,8 +773,6 @@ smoke_palette_navigate() {
   sleep 0.2
   cmd_key ctrl+k
   sleep 0.5
-  cmd_key Tab
-  sleep 0.2
   cmd_type "$query"
   sleep 0.3
   cmd_key Return

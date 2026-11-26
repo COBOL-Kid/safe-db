@@ -853,6 +853,43 @@ class ApplyWorksheetTest {
         val tokens = worksheetFormulaTokens(prefixedSample.columns, listOf(first))
         assertEquals(listOf("amount" to "amount", "c1" to "t0__amount"), tokens)
 
+        val sqlPrefixedSample =
+            QueryResult(
+                columns = listOf(ResultColumn("wide_rows__indexed_key", "int")),
+                rows = listOf(listOf(ResultCell.IntegerCell(7))),
+                rowCount = 1,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val sqlTables = listOf(com.safedb.model.TableRef("safedb_lab", "wide_rows", "wide_rows"))
+        assertEquals(
+            listOf("indexed_key" to "indexed_key"),
+            worksheetFormulaTokens(sqlPrefixedSample.columns, emptyList(), sqlTables),
+        )
+        val sqlPreview =
+            applyWorksheet(
+                sqlPrefixedSample,
+                WorksheetConfig(
+                    calculations =
+                        listOf(
+                            WorksheetCalculation.RowFormula(
+                                "s1",
+                                "Doubled",
+                                "[indexed_key] * 2",
+                            ),
+                            WorksheetCalculation.RowFormula(
+                                "s2",
+                                "Legacy",
+                                "[wide_rows__indexed_key] * 2",
+                            ),
+                        ),
+                ),
+                tables = sqlTables,
+            )
+        assertEquals(0, sqlPreview.calculationErrorCount)
+        assertEquals(14.0, (sqlPreview.rows.single().cells[1].value as ResultCell.FloatCell).value)
+        assertEquals(14.0, (sqlPreview.rows.single().cells[2].value as ResultCell.FloatCell).value)
+
         val values =
             worksheetFormulaValues(
                 sampleColumns = prefixedSample.columns,

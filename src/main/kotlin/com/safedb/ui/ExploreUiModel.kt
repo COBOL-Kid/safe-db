@@ -456,6 +456,10 @@ internal fun chartTypeTransitionMessage(
             previous.values.any { it.sourceColumn == nextX.column }
     ) {
         val otherRemoved = buildList {
+            if (previous.values.size > 1) {
+                val dropped = previous.values.size - 1
+                add(if (dropped == 1) "extra value" else "extra values")
+            }
             if (previous.series != null && next.series == null) add("series")
             if (previous.size != null && next.size == null) add("size")
         }
@@ -468,7 +472,13 @@ internal fun chartTypeTransitionMessage(
     }
     val removed = buildList {
         if (previous.x != null && next.x == null) add("X")
-        if (previous.values.isNotEmpty() && next.values.isEmpty()) add("values")
+        when {
+            previous.values.isNotEmpty() && next.values.isEmpty() -> add("values")
+            next.values.isNotEmpty() && next.values.size < previous.values.size -> {
+                val dropped = previous.values.size - next.values.size
+                add(if (dropped == 1) "extra value" else "extra values")
+            }
+        }
         if (previous.series != null && next.series == null) add("series")
         if (previous.size != null && next.size == null) add("size")
     }

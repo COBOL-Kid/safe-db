@@ -141,7 +141,7 @@ fun isQueryExecutionTimeout(error: Throwable): Boolean {
 fun formatQueryExecutionError(error: Throwable, timeoutMs: Int): String =
     if (isQueryExecutionTimeout(error)) {
         val seconds = maxOf(1, timeoutMs / 1000)
-        "Query timed out after ${seconds}s. Add filters, lower the row limit, or adjust Query timeout in Settings."
+        "Query timed out after ${seconds}s — add filters, lower the row limit, or adjust Query timeout in Settings."
     } else {
         error.message ?: error.toString()
     }

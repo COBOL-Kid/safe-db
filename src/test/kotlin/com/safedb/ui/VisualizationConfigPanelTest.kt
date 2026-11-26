@@ -314,6 +314,56 @@ class VisualizationConfigPanelTest {
             chartTypeTransitionMessage(countOnlyBar, countOnlyHistogram),
         )
 
+        val secondMeasure = VisualizationMeasure.countRows()
+        val twoMeasureBar = barWithoutSeries.copy(values = barWithoutSeries.values + secondMeasure)
+        assertEquals(
+            "Removed incompatible X, extra value assignments.",
+            chartTypeTransitionMessage(
+                twoMeasureBar,
+                twoMeasureBar.forChartType(ChartType.Kpi, fields),
+            ),
+        )
+        assertEquals(
+            "Moved amount to X for histogram; removed incompatible extra value assignment.",
+            chartTypeTransitionMessage(
+                twoMeasureBar,
+                twoMeasureBar.forChartType(ChartType.Histogram, fields),
+            ),
+        )
+        val threeMeasureNumericBar =
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("t0__amount", "amount"),
+                values =
+                    listOf(
+                        VisualizationMeasure(
+                            "sum_amount",
+                            MeasureFn.Sum,
+                            "t0__amount",
+                            "Sum amount",
+                        ),
+                        VisualizationMeasure(
+                            "avg_amount",
+                            MeasureFn.Avg,
+                            "t0__amount",
+                            "Avg amount",
+                        ),
+                        VisualizationMeasure(
+                            "min_amount",
+                            MeasureFn.Min,
+                            "t0__amount",
+                            "Min amount",
+                        ),
+                    ),
+            )
+        assertEquals(
+            "Removed incompatible extra values assignment.",
+            chartTypeTransitionMessage(
+                threeMeasureNumericBar,
+                threeMeasureNumericBar.forChartType(ChartType.Scatter, fields),
+            ),
+        )
+
         // Options summary adapts to active chart type.
         assertEquals(
             "value sort · Top 20",
@@ -900,7 +950,9 @@ class VisualizationConfigPanelTest {
                     listOf("sum_amount"),
                     viewModel.visualizationConfig.values.map { it.alias },
                 )
-                assertNotNull(scene.findContaining("Removed incompatible X assignment."))
+                assertNotNull(
+                    scene.findContaining("Removed incompatible X, extra value assignments."),
+                )
 
                 // Hiding and re-showing the Visualization sidebar preserves ViewModel switch memory
                 // and transition notice.
@@ -908,7 +960,9 @@ class VisualizationConfigPanelTest {
                 advance()
                 scene.click(scene.requireExact("Show Visualization sidebar").boundsInRoot.center)
                 advance()
-                assertNotNull(scene.findContaining("Removed incompatible X assignment."))
+                assertNotNull(
+                    scene.findContaining("Removed incompatible X, extra value assignments."),
+                )
 
                 scene.click(scene.requireExact("Bar").boundsInRoot.center)
                 advance()
@@ -921,7 +975,9 @@ class VisualizationConfigPanelTest {
                 // Re-stash on KPI, then replace visualization via applyRecipe on the same sample.
                 scene.click(scene.requireExact("KPI").boundsInRoot.center)
                 advance()
-                assertNotNull(scene.findContaining("Removed incompatible X assignment."))
+                assertNotNull(
+                    scene.findContaining("Removed incompatible X, extra value assignments."),
+                )
 
                 viewModel.applyRecipe(
                     ExploreRecipe(
@@ -939,7 +995,9 @@ class VisualizationConfigPanelTest {
                     ),
                 )
                 advance()
-                assertNull(scene.findContaining("Removed incompatible X assignment."))
+                assertNull(
+                    scene.findContaining("Removed incompatible X, extra value assignments."),
+                )
 
                 scene.click(scene.requireExact("Bar").boundsInRoot.center)
                 advance()

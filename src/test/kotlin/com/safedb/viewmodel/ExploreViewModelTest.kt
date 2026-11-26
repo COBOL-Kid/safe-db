@@ -518,7 +518,10 @@ class ExploreViewModelTest {
         viewModel.selectVisualizationChartType(ChartType.Kpi)
         assertNull(viewModel.visualizationConfig.x)
         assertEquals(listOf("sum_amount"), viewModel.visualizationConfig.values.map { it.alias })
-        assertEquals("Removed incompatible X assignment.", viewModel.visualizationTransitionNotice)
+        assertEquals(
+            "Removed incompatible X, extra value assignments.",
+            viewModel.visualizationTransitionNotice,
+        )
 
         val vizRecipe =
             ExploreRecipe(
@@ -562,7 +565,10 @@ class ExploreViewModelTest {
             )
         }
         viewModel.selectVisualizationChartType(ChartType.Kpi)
-        assertEquals("Removed incompatible X assignment.", viewModel.visualizationTransitionNotice)
+        assertEquals(
+            "Removed incompatible X, extra value assignments.",
+            viewModel.visualizationTransitionNotice,
+        )
 
         // Editing only numberFormat clears transitionNotice while preserving stashed X & values.
         viewModel.updateVisualization { current ->
@@ -580,7 +586,10 @@ class ExploreViewModelTest {
 
         // Applying a template clears transitionNotice and switch memory.
         viewModel.selectVisualizationChartType(ChartType.Kpi)
-        assertEquals("Removed incompatible X assignment.", viewModel.visualizationTransitionNotice)
+        assertEquals(
+            "Removed incompatible X, extra value assignments.",
+            viewModel.visualizationTransitionNotice,
+        )
         viewModel.applyVisualizationTemplate(
             VisualizationConfig(chartType = ChartType.Kpi, values = listOf(sumAmount)),
         )
@@ -598,7 +607,10 @@ class ExploreViewModelTest {
             )
         }
         viewModel.selectVisualizationChartType(ChartType.Kpi)
-        assertEquals("Removed incompatible X assignment.", viewModel.visualizationTransitionNotice)
+        assertEquals(
+            "Removed incompatible X, extra value assignments.",
+            viewModel.visualizationTransitionNotice,
+        )
         viewModel.resetVisualization()
         assertNull(viewModel.visualizationTransitionNotice)
         viewModel.selectVisualizationChartType(ChartType.Bar)

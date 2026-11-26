@@ -1,5 +1,6 @@
 package com.safedb.ui
 
+import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -44,6 +46,7 @@ import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -66,6 +69,7 @@ import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
@@ -87,6 +91,7 @@ import com.safedb.query.parseLimit
 import com.safedb.ui.components.BannerKind
 import com.safedb.ui.components.MessageBanner
 import com.safedb.ui.components.SecondaryButton
+import com.safedb.ui.components.shouldShowMenuScrollbar
 import com.safedb.ui.theme.ChipShape
 import com.safedb.ui.theme.DialogShape
 import com.safedb.ui.theme.SafeDbTheme
@@ -120,7 +125,7 @@ internal val BuilderToolbarConnectionMinWidth = 160.dp
 internal val BuilderQueryOptionsButtonReserve = 48.dp
 internal val BuilderFilterPanelMinHeight = 96.dp
 
-internal fun builderCanvasReservePx(hasFilters: Boolean): Float = if (hasFilters) 220f else 180f
+internal fun builderCanvasReservePx(hasFilters: Boolean): Float = if (hasFilters) 288f else 180f
 
 internal fun builderFilterPanelMinHeight(workspaceHeight: Dp): Dp =
     if (workspaceHeight < 360.dp) 64.dp else BuilderFilterPanelMinHeight
@@ -167,6 +172,11 @@ internal fun BuilderQueryChrome(
             if (queryViewModel.filterCount > 0) {
                 val filterPanelHeight = builderFilterPanelMaxHeight(workspaceHeight)
                 val minPanelHeight = builderFilterPanelMinHeight(workspaceHeight)
+                val filterScroll = rememberScrollState()
+                val density = LocalDensity.current
+                var filterViewportHeightPx by remember { mutableIntStateOf(0) }
+                val showFilterScrollbar =
+                    shouldShowMenuScrollbar(filterViewportHeightPx, filterScroll.maxValue)
                 Box(
                     modifier =
                         Modifier.fillMaxWidth()
@@ -183,8 +193,20 @@ internal fun BuilderQueryChrome(
                         group = queryViewModel.filters,
                         path = emptyList(),
                         depth = 0,
-                        modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                        modifier =
+                            Modifier.fillMaxWidth()
+                                .onSizeChanged { filterViewportHeightPx = it.height }
+                                .verticalScroll(filterScroll)
+                                .padding(end = if (showFilterScrollbar) 10.dp else 0.dp),
                     )
+                    if (showFilterScrollbar) {
+                        VerticalScrollbar(
+                            adapter = rememberScrollbarAdapter(filterScroll),
+                            modifier =
+                                Modifier.align(Alignment.CenterEnd)
+                                    .height(with(density) { filterViewportHeightPx.toDp() }),
+                        )
+                    }
                 }
             }
             Row(

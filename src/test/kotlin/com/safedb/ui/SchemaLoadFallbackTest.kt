@@ -26,6 +26,54 @@ class SchemaLoadFallbackTest {
     }
 
     @Test
+    fun `unselected connection prefers matching database over alphabetical first`() {
+        val mysqlOptions = listOf("safedb_lab", "safedb_test")
+        assertEquals(
+            SchemaFallback("safedb_test", warning = null),
+            resolveSchemaFallback(
+                loaded = true,
+                selectedSchema = null,
+                schemaOptions = mysqlOptions,
+                preferredSchemaWarning = null,
+                preferredDatabase = "safedb_test",
+            ),
+        )
+        assertEquals(
+            SchemaFallback("safedb_test", warning = null),
+            resolveSchemaFallback(
+                loaded = true,
+                selectedSchema = null,
+                schemaOptions = mysqlOptions,
+                preferredSchemaWarning = null,
+                preferredDatabase = " SAFEDB_TEST ",
+            ),
+        )
+        assertEquals(
+            SchemaFallback(
+                "safedb_test",
+                "Query schema \"reporting\" is unavailable. Showing \"safedb_test\" instead.",
+            ),
+            resolveSchemaFallback(
+                loaded = true,
+                selectedSchema = null,
+                schemaOptions = mysqlOptions,
+                preferredSchemaWarning = "Query schema \"reporting\" is unavailable.",
+                preferredDatabase = "safedb_test",
+            ),
+        )
+        assertEquals(
+            SchemaFallback("safedb_lab", warning = null),
+            resolveSchemaFallback(
+                loaded = true,
+                selectedSchema = null,
+                schemaOptions = mysqlOptions,
+                preferredSchemaWarning = null,
+                preferredDatabase = "missing_db",
+            ),
+        )
+    }
+
+    @Test
     fun `unselected connection falls back silently`() {
         val fallback =
             resolveSchemaFallback(

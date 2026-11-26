@@ -121,6 +121,7 @@ class ExplainUnavailableClassificationTest {
         val formatted = formatQueryExecutionError(mysqlTimeout, 1_000)
         assertTrue(formatted.contains("timed out after 1s"))
         assertTrue(formatted.contains("Settings"))
+        assertEquals(formatted, conciseErrorMessage(formatted))
 
         val nonTimeout = formatQueryExecutionError(IllegalStateException("syntax error"), 10_000)
         assertEquals("syntax error", nonTimeout)
