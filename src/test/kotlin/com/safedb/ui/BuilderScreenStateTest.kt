@@ -11,8 +11,10 @@ import com.safedb.canvas.ColumnJoinPort
 import com.safedb.canvas.JoinPortSide
 import com.safedb.canvas.JoinPortVisibility
 import com.safedb.canvas.RoutedJoinEdge
+import com.safedb.model.FilterLiteral
 import com.safedb.model.GroupSpec
 import com.safedb.model.JoinSpec
+import com.safedb.model.LiteralKind
 import com.safedb.model.QueryRiskGate
 import com.safedb.model.SortDirection
 import com.safedb.model.SortSpec
@@ -549,5 +551,46 @@ class BuilderScreenStateTest {
         assertNull(displayedPreliminaryAssessment(high, true, QueryRiskGate.Standard))
         assertEquals(high, displayedPreliminaryAssessment(high, false, QueryRiskGate.Standard))
         assertEquals(low, displayedPreliminaryAssessment(low, true, QueryRiskGate.Standard))
+    }
+
+    @Test
+    fun formatBuilderValidationErrorHidesEmptyFilterAliasLeak() {
+        val tables = listOf(com.safedb.model.TableRef("public", "scan_events", "t0"))
+        assertEquals(
+            "Enter filter value to run",
+            formatBuilderValidationError(
+                "'' is not a valid decimal for 't0.amount'",
+                tables,
+                incompleteFilters = true,
+            ),
+        )
+        assertEquals(
+            "'abc' is not a valid decimal for 'scan_events.amount'",
+            formatBuilderValidationError(
+                "'abc' is not a valid decimal for 't0.amount'",
+                tables,
+                incompleteFilters = false,
+            ),
+        )
+    }
+
+    @Test
+    fun applyInListInputSplitsCommasForNumericButPreservesForText() {
+        val numeric = listOf(FilterLiteral(LiteralKind.Decimal, ""))
+        val split = applyInListInput(numeric, 0, "0.01, 0.02, 0.03", splitOnComma = true)
+        assertEquals(listOf("0.01", "0.02", "0.03"), split.map { it.text })
+
+        val trailingComma = applyInListInput(numeric, 0, "0.01,", splitOnComma = true)
+        assertEquals(listOf("0.01", ""), trailingComma.map { it.text })
+
+        val bareComma = applyInListInput(numeric, 0, ",", splitOnComma = true)
+        assertEquals(listOf(""), bareComma.map { it.text })
+
+        val capped = applyInListInput(numeric, 0, "0.01,", splitOnComma = true, maxSize = 1)
+        assertEquals(listOf("0.01"), capped.map { it.text })
+
+        val text = listOf(FilterLiteral(LiteralKind.Text, ""))
+        val kept = applyInListInput(text, 0, "a, b", splitOnComma = false)
+        assertEquals(listOf("a, b"), kept.map { it.text })
     }
 }

@@ -491,6 +491,43 @@ class ConnectionFormStateTest {
         assertEquals("", state.password)
     }
 
+    @Test
+    fun portInputFiltersNonDigitsAndCapsLengthWithoutWipingExistingDigits() {
+        val state = ConnectionFormState()
+        state.handlePortInput("12ab34")
+        assertEquals(1234, state.port)
+
+        state.handlePortInput("5433 ")
+        assertEquals(5433, state.port)
+
+        state.handlePortInput("99999999999")
+        assertEquals(99999, state.port)
+
+        state.handlePortInput("-5")
+        assertEquals(5, state.port)
+    }
+
+    @Test
+    fun failedParseScrubsPasswordClearsOnEditAndRejectsDuplicateNames() {
+        val state = ConnectionFormState()
+        state.updateConnectionString("bogus://user:secret@host/db")
+        state.applyParsedInput()
+        assertTrue(!state.parseError.isNullOrBlank())
+        assertFalse(state.connectionString.contains("secret"))
+
+        state.selectDialect(Dialect.MySql)
+        assertNull(state.parseError)
+
+        state.updateName("Production Replica")
+        state.updateDatabase("app")
+        state.updateUsername("readonly")
+        val dupError = state.validateForm(existingConnections = listOf(sampleConnection()))
+        assertTrue(dupError!!.contains("already exists"))
+
+        val editSame = ConnectionFormState(sampleConnection())
+        assertNull(editSame.validateForm(existingConnections = listOf(sampleConnection())))
+    }
+
     private fun sampleConnection() =
         ConnectionDef(
             id = "c1",

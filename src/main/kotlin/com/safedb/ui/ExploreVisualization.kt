@@ -92,6 +92,7 @@ internal fun VisualizationConfigPanel(
     var optionsExpanded by remember { mutableStateOf(false) }
     var editingFilter by remember { mutableStateOf<PivotFilter?>(null) }
     var transitionNotice by remember { mutableStateOf<Pair<VisualizationConfig, String>?>(null) }
+    var switchMemory by remember { mutableStateOf(VisualizationChartSwitchMemory()) }
     LaunchedEffect(config) {
         if (transitionNotice?.first != config) {
             transitionNotice = null
@@ -128,6 +129,7 @@ internal fun VisualizationConfigPanel(
             templates = remember(sample, tables) { visualizationTemplates(sample, tables) },
             onApply = {
                 templatesOpen = false
+                switchMemory = VisualizationChartSwitchMemory()
                 onApplyTemplate(it)
             },
             onDismiss = { templatesOpen = false },
@@ -154,7 +156,10 @@ internal fun VisualizationConfigPanel(
                         Text("Templates")
                     }
                     TextButton(
-                        onClick = onReset,
+                        onClick = {
+                            switchMemory = VisualizationChartSwitchMemory()
+                            onReset()
+                        },
                         enabled = config.isConfigured(),
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                     ) {
@@ -184,7 +189,10 @@ internal fun VisualizationConfigPanel(
                     ConfigSection("Suggested for this sample") {
                         suggested.forEach { template ->
                             val ready = template.result as VisualizationTemplateBuildResult.Ready
-                            TemplateCard(template, false) { onApplyTemplate(ready.config) }
+                            TemplateCard(template, false) {
+                                switchMemory = VisualizationChartSwitchMemory()
+                                onApplyTemplate(ready.config)
+                            }
                         }
                     }
                 }
@@ -197,7 +205,14 @@ internal fun VisualizationConfigPanel(
                 ) {
                     ChartType.entries.forEach { type ->
                         SelectablePill(chartTypeLabel(type), config.chartType == type) {
-                            val next = config.forChartType(type, fields)
+                            val (next, nextMemory) =
+                                transitionVisualizationChartType(
+                                    config,
+                                    type,
+                                    fields,
+                                    switchMemory,
+                                )
+                            switchMemory = nextMemory
                             transitionNotice =
                                 chartTypeTransitionMessage(config, next)?.let { next to it }
                             onConfigChange(next)
@@ -220,7 +235,10 @@ internal fun VisualizationConfigPanel(
                             label = field.label,
                             supporting =
                                 fields.firstOrNull { it.column == field.column }?.supportingText(),
-                            onRemove = { onConfigChange(config.copy(x = null)) },
+                            onRemove = {
+                                switchMemory = switchMemory.copy(x = null)
+                                onConfigChange(config.copy(x = null))
+                            },
                         )
                     }
                     SearchableExploreFieldDropdown(
@@ -268,6 +286,7 @@ internal fun VisualizationConfigPanel(
                                 )
                             },
                             onRemove = {
+                                switchMemory = switchMemory.copy(values = emptyList())
                                 onConfigChange(
                                     config.copy(
                                         values = normalizeMeasureAxes(config.values - value),
@@ -288,6 +307,7 @@ internal fun VisualizationConfigPanel(
                         fields = fields,
                         countAllowed = config.chartType != ChartType.Scatter,
                         onSelect = { value ->
+                            switchMemory = switchMemory.copy(values = emptyList())
                             val values =
                                 if (config.chartType in setOf(ChartType.Scatter, ChartType.Kpi)) {
                                     listOf(value)
@@ -314,7 +334,10 @@ internal fun VisualizationConfigPanel(
                         VisualizationFieldChip(
                             field.label,
                             fields.firstOrNull { it.column == field.column }?.supportingText(),
-                            onRemove = { onConfigChange(config.copy(series = null)) },
+                            onRemove = {
+                                switchMemory = switchMemory.copy(series = null)
+                                onConfigChange(config.copy(series = null))
+                            },
                         )
                     }
                     SearchableExploreFieldDropdown(
@@ -343,7 +366,10 @@ internal fun VisualizationConfigPanel(
                         VisualizationFieldChip(
                             field.label,
                             fields.firstOrNull { it.column == field.column }?.supportingText(),
-                            onRemove = { onConfigChange(config.copy(size = null)) },
+                            onRemove = {
+                                switchMemory = switchMemory.copy(size = null)
+                                onConfigChange(config.copy(size = null))
+                            },
                         )
                     }
                     SearchableExploreFieldDropdown(

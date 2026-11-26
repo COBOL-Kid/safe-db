@@ -34,6 +34,8 @@ import com.safedb.explore.WorksheetWindowFn
 import com.safedb.explore.displayColumnLabel
 import com.safedb.explore.evaluatePivotFormula
 import com.safedb.explore.formatExploreNumber
+import com.safedb.explore.worksheetFormulaTokens
+import com.safedb.explore.worksheetFormulaValues
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
 import com.safedb.model.classifyColumn
@@ -128,15 +130,32 @@ internal fun WorksheetCalculationEditor(
         config.calculations.filter {
             it is WorksheetCalculation.Aggregate || it is WorksheetCalculation.GroupFormula
         }
+    val priorRowCalculations =
+        config.calculations.filterIsInstance<WorksheetCalculation.RowFormula>().filterNot {
+            it.id == id
+        }
+    val priorGroupCalculations = groupCalculations.filterNot { it.id == id }
     val formulaTokens =
         if (kind == CalculationKind.GroupFormula) {
-            groupCalculations.filterNot { it.id == id }.map { it.id to it.label }
+            worksheetFormulaTokens(emptyList(), priorGroupCalculations)
         } else {
-            sample.columns.map { it.name to displayColumnLabel(it.name) } +
-                config.calculations
-                    .filterIsInstance<WorksheetCalculation.RowFormula>()
-                    .filterNot { it.id == id }
-                    .map { it.id to it.label }
+            worksheetFormulaTokens(sample.columns, priorRowCalculations)
+        }
+    val formulaValidationMap =
+        if (kind == CalculationKind.GroupFormula) {
+            worksheetFormulaValues(
+                sampleColumns = emptyList(),
+                sourceValue = { null },
+                priorCalculations = priorGroupCalculations,
+                calculationValue = { BigDecimal.ONE },
+            )
+        } else {
+            worksheetFormulaValues(
+                sampleColumns = sample.columns,
+                sourceValue = { BigDecimal.ONE },
+                priorCalculations = priorRowCalculations,
+                calculationValue = { BigDecimal.ONE },
+            )
         }
     val formulaValidation =
         if (
@@ -147,7 +166,8 @@ internal fun WorksheetCalculationEditor(
         } else {
             evaluatePivotFormula(
                     formula,
-                    formulaTokens.associate { it.first to BigDecimal.ONE },
+                    formulaValidationMap,
+                    referenceLabel = "field",
                 )
                 .error
         }

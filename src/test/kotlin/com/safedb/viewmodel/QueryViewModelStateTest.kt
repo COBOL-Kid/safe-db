@@ -447,8 +447,10 @@ class QueryViewModelStateTest {
         viewModel.addTable(table("orders", "id"))
         viewModel.addTable(table("customers", "id"))
 
-        assertEquals(0f, viewModel.canvasTables[0].y)
-        assertEquals(30f, viewModel.canvasTables[1].y)
+        assertEquals(40f, viewModel.canvasTables[0].x)
+        assertEquals(24f, viewModel.canvasTables[0].y)
+        assertEquals(350f, viewModel.canvasTables[1].x)
+        assertEquals(24f, viewModel.canvasTables[1].y)
     }
 
     @Test
@@ -482,7 +484,7 @@ class QueryViewModelStateTest {
         viewModel.addTable(table("customers", "id"))
 
         assertEquals(40f, viewModel.canvasTables.single().x)
-        assertEquals(0f, viewModel.canvasTables.single().y)
+        assertEquals(24f, viewModel.canvasTables.single().y)
         assertEquals(1f, viewModel.canvasViewport.zoom)
         assertEquals(Offset.Zero, viewModel.canvasViewport.pan)
     }

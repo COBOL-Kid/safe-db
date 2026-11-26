@@ -96,6 +96,25 @@ class QueryViewModel(
         QueryRunController(service, scope, onRunFinished, onConnectionReachable)
     private var aliasCounter = 0
 
+    internal fun nextCanvasTablePosition(existing: List<CanvasTable>): Pair<Float, Float> {
+        val columns = 3
+        val xStart = 40f
+        val yStart = 24f
+        val xStep = 310f
+        val yStep = 260f
+        for (slot in 0..(existing.size + columns)) {
+            val col = slot % columns
+            val row = slot / columns
+            val x = xStart + col * xStep
+            val y = yStart + row * yStep
+            val occupied = existing.any {
+                kotlin.math.abs(it.x - x) < 40f && kotlin.math.abs(it.y - y) < 40f
+            }
+            if (!occupied) return x to y
+        }
+        return xStart to (yStart + existing.size * 30f)
+    }
+
     internal val canvasViewport = CanvasViewportState()
 
     val canvasTables: SnapshotStateList<CanvasTable> = mutableStateListOf()
@@ -234,10 +253,8 @@ class QueryViewModel(
     override fun addTable(tableInfo: TableInfo) {
         invalidateForEdit()
         val alias = "t${aliasCounter++}"
-        val offset = canvasTables.size * 30f
-        canvasTables.add(
-            CanvasTable(tableInfo = tableInfo, alias = alias, x = 40f + offset, y = offset),
-        )
+        val (x, y) = nextCanvasTablePosition(canvasTables)
+        canvasTables.add(CanvasTable(tableInfo = tableInfo, alias = alias, x = x, y = y))
     }
 
     override val tables: List<AliasRef>

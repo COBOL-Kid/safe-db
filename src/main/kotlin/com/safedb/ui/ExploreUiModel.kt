@@ -207,6 +207,107 @@ private fun valueFilterOpLabel(op: ValueFilterOp): String =
         ValueFilterOp.Bottom -> "Bottom"
     }
 
+internal data class VisualizationChartSwitchMemory(
+    val x: VisualizationField? = null,
+    val values: List<VisualizationMeasure> = emptyList(),
+    val series: VisualizationField? = null,
+    val size: VisualizationField? = null,
+)
+
+internal fun transitionVisualizationChartType(
+    current: VisualizationConfig,
+    target: ChartType,
+    fields: List<ExploreFieldOption>,
+    memory: VisualizationChartSwitchMemory,
+): Pair<VisualizationConfig, VisualizationChartSwitchMemory> {
+    val converted = current.forChartType(target, fields)
+    val nextMemory =
+        VisualizationChartSwitchMemory(
+            x = if (current.x != null && converted.x == null) current.x else memory.x,
+            values =
+                if (current.values.isNotEmpty() && converted.values.isEmpty()) {
+                    current.values
+                } else {
+                    memory.values
+                },
+            series =
+                if (current.series != null && converted.series == null) {
+                    current.series
+                } else {
+                    memory.series
+                },
+            size =
+                if (current.size != null && converted.size == null) current.size else memory.size,
+        )
+    fun fieldByColumn(column: String?): ExploreFieldOption? = fields.firstOrNull {
+        it.column == column
+    }
+    val restoredX =
+        converted.x
+            ?: nextMemory.x?.takeIf { field ->
+                val option = fieldByColumn(field.column) ?: return@takeIf false
+                when (target) {
+                    ChartType.Kpi -> false
+                    ChartType.Scatter,
+                    ChartType.Histogram -> option.category.isNumeric()
+                    ChartType.Auto,
+                    ChartType.Bar,
+                    ChartType.Line -> true
+                }
+            }
+    val restoredValues =
+        converted.values.ifEmpty {
+            if (target == ChartType.Histogram) {
+                emptyList()
+            } else {
+                val base =
+                    nextMemory.values.let { stashed ->
+                        if (target == ChartType.Scatter) {
+                            stashed
+                                .filter {
+                                    fieldByColumn(it.sourceColumn)?.category?.isNumeric() == true
+                                }
+                                .take(1)
+                        } else if (target == ChartType.Kpi) {
+                            stashed.take(1)
+                        } else {
+                            stashed
+                        }
+                    }
+                base
+            }
+        }
+    val restoredSeries =
+        converted.series
+            ?: nextMemory.series?.takeIf {
+                target in setOf(ChartType.Auto, ChartType.Bar, ChartType.Line, ChartType.Scatter) &&
+                    restoredValues.size <= 1
+            }
+    val restoredSize =
+        converted.size
+            ?: nextMemory.size?.takeIf { field ->
+                target == ChartType.Scatter &&
+                    fieldByColumn(field.column)?.category?.isNumeric() == true
+            }
+    val restored =
+        converted
+            .copy(
+                x = restoredX,
+                values = restoredValues,
+                series = restoredSeries,
+                size = restoredSize,
+            )
+            .forChartType(target, fields)
+    val finalMemory =
+        nextMemory.copy(
+            x = if (restored.x != null) null else nextMemory.x,
+            values = if (restored.values.isNotEmpty()) emptyList() else nextMemory.values,
+            series = if (restored.series != null) null else nextMemory.series,
+            size = if (restored.size != null) null else nextMemory.size,
+        )
+    return restored to finalMemory
+}
+
 internal fun VisualizationConfig.forChartType(
     type: ChartType,
     fields: List<ExploreFieldOption>,

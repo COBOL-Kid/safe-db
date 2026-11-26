@@ -112,8 +112,11 @@ internal fun BuilderScreen(
             queryViewModel.evaluatePreliminaryRisk(schema, settings, connection?.dialect)
         }
     val preliminaryEvaluation = (preliminaryRisk as? Outcome.Ok)?.value
-    val riskValidationError = (preliminaryRisk as? Outcome.Err)?.message
     val incompleteFilters = hasIncompleteFilterValues(queryViewModel.spec)
+    val riskValidationError =
+        (preliminaryRisk as? Outcome.Err)?.message?.let { raw ->
+            formatBuilderValidationError(raw, queryViewModel.spec.tables, incompleteFilters)
+        }
     val displayedPreliminary =
         displayedPreliminaryAssessment(
             preliminaryEvaluation?.staticAssessment,
@@ -483,8 +486,9 @@ internal fun BuilderScreen(
                         Modifier.fillMaxSize().background(SafeDbTheme.colors.workspaceCanvas),
                 ) {
                     val maxWorkspaceHeight = maxHeight.value.coerceAtLeast(ResultsPaneMinHeight)
+                    val canvasReserve = if (queryViewModel.filterCount > 0) 220f else 180f
                     val maxNormalHeight =
-                        maxWorkspaceHeight
+                        (maxWorkspaceHeight - canvasReserve)
                             .coerceAtMost(ResultsPaneMaxHeight)
                             .coerceAtLeast(ResultsPaneMinHeight)
                     val resultsPaneHeight =

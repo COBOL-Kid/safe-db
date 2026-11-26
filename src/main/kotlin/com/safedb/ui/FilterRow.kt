@@ -54,6 +54,32 @@ import com.safedb.ui.components.ScrollableMenuColumn
 import com.safedb.viewmodel.QueryViewModel
 import com.safedb.viewmodel.buildFilterValue
 
+internal fun applyInListInput(
+    literals: List<FilterLiteral>,
+    index: Int,
+    text: String,
+    splitOnComma: Boolean,
+    maxSize: Int = MAX_IN_LIST_SIZE,
+): List<FilterLiteral> {
+    val targetKind = literals.getOrNull(index)?.kind ?: LiteralKind.Text
+    if (!splitOnComma || ',' !in text) {
+        return literals.mapIndexed { i, lit -> if (i == index) lit.copy(text = text) else lit }
+    }
+    val trailingComma = text.trimEnd().endsWith(',')
+    val parts = text.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+    val replacement =
+        when {
+            parts.isEmpty() -> listOf(FilterLiteral(targetKind, ""))
+            trailingComma ->
+                parts.map { FilterLiteral(targetKind, it) } + FilterLiteral(targetKind, "")
+            else -> parts.map { FilterLiteral(targetKind, it) }
+        }
+    val combined = buildList {
+        literals.forEachIndexed { i, lit -> if (i == index) addAll(replacement) else add(lit) }
+    }
+    return combined.take(maxSize)
+}
+
 @Composable
 fun FilterRow(
     queryViewModel: QueryViewModel,
@@ -244,6 +270,17 @@ fun FilterRow(
                 }
                 ValueKind.List -> {
                     val listValue = filter.value as? FilterValue.ListValue
+                    var pendingListFocusIndex by remember(filter.id) { mutableStateOf<Int?>(null) }
+                    val listItemFocusRequester = remember(filter.id) { FocusRequester() }
+                    if (pendingListFocusIndex != null) {
+                        LaunchedEffect(pendingListFocusIndex, listValue?.literals?.size) {
+                            val target = pendingListFocusIndex
+                            if (target != null && target < (listValue?.literals?.size ?: 0)) {
+                                listItemFocusRequester.requestFocus()
+                            }
+                            pendingListFocusIndex = null
+                        }
+                    }
                     // Each input and its remove action form one FlowRow item, so wrapping never
                     // splits a value from the button that deletes it.
                     listValue?.literals?.forEachIndexed { index, literal ->
@@ -252,18 +289,33 @@ fun FilterRow(
                                 value = literal.text,
                                 onValueChange = { text ->
                                     val items =
-                                        listValue.literals.mapIndexed { i, lit ->
-                                            if (i == index) lit.copy(text = text) else lit
-                                        }
+                                        applyInListInput(
+                                            literals = listValue.literals,
+                                            index = index,
+                                            text = text,
+                                            splitOnComma = literal.kind != LiteralKind.Text,
+                                        )
+                                    if (
+                                        items.size > listValue.literals.size &&
+                                            text.trimEnd().endsWith(',')
+                                    ) {
+                                        pendingListFocusIndex =
+                                            (index + (items.size - listValue.literals.size))
+                                                .coerceAtMost(items.lastIndex)
+                                    }
                                     update(filter.copy(value = FilterValue.ListValue(items)))
                                 },
                                 modifier = Modifier.width(FILTER_LIST_VALUE_WIDTH_DP.dp),
-                                placeholder = "value",
+                                placeholder =
+                                    if (literal.kind != LiteralKind.Text) "value, …" else "value",
                                 contentDescription =
                                     "Filter value ${index + 1} for ${filter.column}",
                                 focusRequester =
-                                    if (shouldFocusValue && index == 0) valueFocusRequester
-                                    else null,
+                                    when {
+                                        pendingListFocusIndex == index -> listItemFocusRequester
+                                        shouldFocusValue && index == 0 -> valueFocusRequester
+                                        else -> null
+                                    },
                             )
                             if ((listValue.literals.size) > 1) {
                                 val removeDescription =

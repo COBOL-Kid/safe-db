@@ -56,12 +56,18 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -155,11 +161,13 @@ internal fun BuilderQueryChrome(
             }
             if (queryViewModel.filterCount > 0) {
                 val filterPanelHeight = builderFilterPanelMaxHeight(workspaceHeight)
+                val minPanelHeight =
+                    if (workspaceHeight < 360.dp) 64.dp else BuilderFilterPanelMinHeight
                 Box(
                     modifier =
                         Modifier.fillMaxWidth()
                             .requiredHeightIn(
-                                min = BuilderFilterPanelMinHeight,
+                                min = minOf(minPanelHeight, filterPanelHeight),
                                 max = filterPanelHeight,
                             )
                             .clipToBounds()
@@ -781,6 +789,14 @@ internal fun LimitValueField(
 ) {
     var draft by remember { mutableStateOf(limitFieldText(limit, uncapped)) }
     var focused by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+    val invalidDraft = focused && draft.isNotEmpty() && commitBuilderLimitDraft(draft) == null
+    val borderColor =
+        when {
+            invalidDraft -> MaterialTheme.colorScheme.error
+            focused -> SafeDbTheme.colors.actionPrimary
+            else -> MaterialTheme.colorScheme.outline
+        }
     val textStyle =
         MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurface)
     BasicTextField(
@@ -792,6 +808,18 @@ internal fun LimitValueField(
         modifier =
             Modifier.width(120.dp)
                 .height(30.dp)
+                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(2.dp))
+                .onPreviewKeyEvent { event ->
+                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    if (event.key != Key.Enter && event.key != Key.NumPadEnter) {
+                        return@onPreviewKeyEvent false
+                    }
+                    commitBuilderLimitDraft(draft)?.let { committed ->
+                        onCommit(committed)
+                        focusManager.clearFocus(force = true)
+                    }
+                    true
+                }
                 .onFocusChanged { state ->
                     if (!focused && state.isFocused) {
                         draft = limitFieldText(limit, uncapped)
@@ -801,7 +829,7 @@ internal fun LimitValueField(
                     }
                     focused = state.isFocused
                 }
-                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(2.dp))
+                .border(1.dp, borderColor, RoundedCornerShape(2.dp))
                 .padding(horizontal = 8.dp, vertical = 7.dp)
                 .semantics { contentDescription = "Row limit" },
     )

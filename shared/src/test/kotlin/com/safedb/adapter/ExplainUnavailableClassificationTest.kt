@@ -7,6 +7,7 @@ import java.sql.SQLException
 import java.sql.SQLTimeoutException
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class ExplainUnavailableClassificationTest {
     @Test
@@ -107,5 +108,21 @@ class ExplainUnavailableClassificationTest {
 
         assertEquals(PlanUnavailableReason.ExecutionFailure, unavailable.reasonCode)
         assertEquals("planner offline", unavailable.message)
+    }
+
+    @Test
+    fun executionTimeoutErrorsFormatFriendlySettingsGuidance() {
+        val mysqlTimeout =
+            SQLException(
+                "Query execution was interrupted, maximum statement execution time exceeded",
+                "HY000",
+                3024,
+            )
+        val formatted = formatQueryExecutionError(mysqlTimeout, 1_000)
+        assertTrue(formatted.contains("timed out after 1s"))
+        assertTrue(formatted.contains("Settings"))
+
+        val nonTimeout = formatQueryExecutionError(IllegalStateException("syntax error"), 10_000)
+        assertEquals("syntax error", nonTimeout)
     }
 }

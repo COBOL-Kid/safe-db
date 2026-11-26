@@ -49,6 +49,7 @@ fun parseConnectionString(input: String): ParsedConnection {
         matchesPrefix(raw, "^jdbc:mysql://") -> parseMysqlJdbc(raw)
         matchesPrefix(raw, "^mysql://") -> parseMysqlUri(raw)
         matchesPrefix(raw, "^jdbc:sqlserver://") -> parseSqlServerJdbc(raw)
+        matchesPrefix(raw, "^(?:sqlserver|mssql)://") -> parseSqlServerUri(raw)
         matchesPrefix(raw, "^jdbc:db2://") -> parseDb2Jdbc(raw)
         matchesPrefix(raw, "^jdbc:oracle:thin:") ||
             matchesPrefix(raw, "^@?tcps?:") ||
@@ -57,7 +58,7 @@ fun parseConnectionString(input: String): ParsedConnection {
         looksLikeSqlServerKeyValue(raw) -> parseSqlServerKeyValue(raw)
         else ->
             throw ConnectionStringParseError(
-                "This connection string format is not recognized. Try the guided setup instead.",
+                "This connection string format is not recognized. Enter connection details below, or paste a PostgreSQL, MySQL, SQL Server, Oracle, or Db2 URL.",
             )
     }
 }
@@ -158,6 +159,28 @@ private fun parseMysqlUri(raw: String): ParsedConnection {
 
 private fun parseMysqlJdbc(raw: String): ParsedConnection =
     parseMysqlUri(raw.replace(Regex("^jdbc:", RegexOption.IGNORE_CASE), ""))
+
+private fun parseSqlServerUri(raw: String): ParsedConnection {
+    val url = parseUrl(raw, "SQL Server")
+    val encrypt = lowercaseParam(url, "encrypt")
+    val trustServerCertificate =
+        lowercaseParam(url, "trustservercertificate")
+            ?: lowercaseParam(url, "trustServerCertificate")
+    val extracted =
+        extractDriverProperties(Dialect.Mssql, urlQueryPairs(url), SQL_SERVER_MANAGED_KEYS)
+    return baseResult(
+        dialect = Dialect.Mssql,
+        host = url.host,
+        port = parsePort(url, Dialect.Mssql),
+        database = pathnameDatabase(url.rawPath),
+        username = decodeComponent(url.rawUserInfo?.substringBefore(':')),
+        password = passwordFromUrl(raw, url),
+        transport = sqlServerTransport(encrypt, trustServerCertificate, url.host),
+        driverProperties = extracted.properties,
+        warnings = extracted.warnings,
+        sanitizedInput = sanitizeUrlPassword(url),
+    )
+}
 
 private fun parseSqlServerJdbc(raw: String): ParsedConnection {
     val rest = raw.replace(Regex("^jdbc:sqlserver://", RegexOption.IGNORE_CASE), "")
@@ -261,15 +284,19 @@ private fun parseDb2Jdbc(raw: String): ParsedConnection {
         }
     val sslConnection =
         pairs.firstOrNull { (name, _) -> name.equals("sslConnection", ignoreCase = true) }?.second
-    val extracted = extractDriverProperties(Dialect.Db2, pairs, setOf("sslconnection"))
+    val user = pairs.firstOrNull { (name, _) -> name.equals("user", ignoreCase = true) }?.second
+    val password =
+        pairs.firstOrNull { (name, _) -> name.equals("password", ignoreCase = true) }?.second
+    val extracted =
+        extractDriverProperties(Dialect.Db2, pairs, setOf("sslconnection", "user", "password"))
 
     return baseResult(
         dialect = Dialect.Db2,
         host = host,
         port = port,
         database = database,
-        username = null,
-        password = null,
+        username = user,
+        password = password,
         transport = db2Transport(sslConnection, host),
         driverProperties = extracted.properties,
         warnings = extracted.warnings,
@@ -356,7 +383,7 @@ private fun parseOracle(raw: String): ParsedConnection {
     rest = rest.removePrefix("@")
     if (matchesPrefix(rest, "^\\(description=")) {
         throw ConnectionStringParseError(
-            "Oracle TNS DESCRIPTION blocks are not supported. Use guided setup or paste an Easy Connect URL.",
+            "Oracle TNS DESCRIPTION blocks are not supported. Enter connection details below or paste an Easy Connect URL.",
         )
     }
 
@@ -726,6 +753,39 @@ private fun parseSqlServerHost(value: String): Pair<String, Int?> {
     val host = parts[0]
     val port = parts.getOrNull(1)?.toIntOrNull()
     return host to port
+}
+
+fun sanitizeBestEffortConnectionString(raw: String): String {
+    val trimmed = raw.trim()
+    if (trimmed.isEmpty()) return ""
+    var sanitized = trimmed
+    val schemeEnd = sanitized.indexOf("://")
+    if (schemeEnd >= 0) {
+        val authorityStart = schemeEnd + 3
+        val authorityEnd =
+            listOf('/', '?', '#')
+                .map { sanitized.indexOf(it, authorityStart) }
+                .filter { it >= 0 }
+                .minOrNull() ?: sanitized.length
+        val authority = sanitized.substring(authorityStart, authorityEnd)
+        val atIndex = authority.lastIndexOf('@')
+        if (atIndex >= 0) {
+            val auth = authority.substring(0, atIndex)
+            val colonIndex = auth.indexOf(':')
+            if (colonIndex >= 0) {
+                val user = auth.substring(0, colonIndex)
+                sanitized =
+                    sanitized.substring(0, authorityStart) +
+                        user +
+                        authority.substring(atIndex) +
+                        sanitized.substring(authorityEnd)
+            }
+        }
+    }
+    return sanitized.replace(
+        Regex("(?i)((?:^|[;&?])\\s*(?:password|pwd)\\s*=)[^;&]*"),
+        "$1",
+    )
 }
 
 private fun sanitizeUrlPassword(url: ParsedUrl): String {

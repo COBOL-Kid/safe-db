@@ -106,15 +106,43 @@ fun isTimeoutOrConnectionFailure(message: String): Boolean {
 internal fun isServerPlanTimeout(chain: List<Throwable>, texts: String): Boolean {
     if (
         chain.any { error ->
-            error is SQLException && (error.errorCode == 3024 || error.sqlState == "57014")
+            error is SQLException &&
+                (error.errorCode == 3024 ||
+                    error.sqlState == "57014" ||
+                    error.errorCode == 1013 ||
+                    error.errorCode == -952)
         }
     ) {
         return true
     }
     val lower = texts.lowercase()
     return "maximum statement execution time exceeded" in lower ||
-        "canceling statement due to statement timeout" in lower
+        "canceling statement due to statement timeout" in lower ||
+        "ora-01013" in lower
 }
+
+fun isQueryExecutionTimeout(error: Throwable): Boolean {
+    val chain = generateSequence(error) { it.cause }.toList()
+    if (
+        chain.any { cause ->
+            cause is QueryTimedOutException || cause is java.sql.SQLTimeoutException
+        }
+    ) {
+        return true
+    }
+    val texts = chain.mapNotNull { it.message }.joinToString("\n")
+    if (isServerPlanTimeout(chain, texts)) return true
+    val lower = texts.lowercase()
+    return "query timed out" in lower || "statement timeout" in lower
+}
+
+fun formatQueryExecutionError(error: Throwable, timeoutMs: Int): String =
+    if (isQueryExecutionTimeout(error)) {
+        val seconds = maxOf(1, timeoutMs / 1000)
+        "Query timed out after ${seconds}s. Add filters, lower the row limit, or adjust Query timeout in Settings."
+    } else {
+        error.message ?: error.toString()
+    }
 
 fun conciseErrorMessage(message: String, fallback: String = "Query failed"): String {
     val firstLine =

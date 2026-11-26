@@ -1,6 +1,7 @@
 package com.safedb.service
 
 import com.safedb.adapter.Adapter
+import com.safedb.adapter.formatQueryExecutionError
 import com.safedb.explore.ExploreRecipe
 import com.safedb.model.CompiledQuery
 import com.safedb.model.ConnectionDef
@@ -432,7 +433,7 @@ internal constructor(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                Outcome.err(error.message ?: error.toString())
+                Outcome.err(formatQueryExecutionError(error, timeoutMs))
             }
     }
 }

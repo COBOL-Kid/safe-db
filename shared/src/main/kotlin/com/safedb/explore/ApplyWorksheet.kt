@@ -2,9 +2,58 @@ package com.safedb.explore
 
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
+import com.safedb.model.ResultColumn
 import com.safedb.model.TableRef
 import java.math.BigDecimal
 import java.math.MathContext
+
+fun worksheetFormulaTokens(
+    sampleColumns: List<ResultColumn>,
+    priorCalculations: List<WorksheetCalculation>,
+): List<Pair<String, String>> {
+    val labelCounts = sampleColumns.groupingBy { displayColumnLabel(it.name) }.eachCount()
+    val columnTokens = sampleColumns.map { col ->
+        val display = displayColumnLabel(col.name)
+        val token = if (labelCounts[display] == 1) display else col.name
+        token to display
+    }
+    val calcLabelCounts = priorCalculations.groupingBy { it.label }.eachCount()
+    val calcTokens = priorCalculations.map { calc ->
+        val token =
+            if (calcLabelCounts[calc.label] == 1 && labelCounts[calc.label] == null) {
+                calc.label
+            } else {
+                calc.id
+            }
+        token to calc.label
+    }
+    return columnTokens + calcTokens
+}
+
+fun worksheetFormulaValues(
+    sampleColumns: List<ResultColumn>,
+    sourceValue: (String) -> BigDecimal?,
+    priorCalculations: List<WorksheetCalculation>,
+    calculationValue: (String) -> BigDecimal?,
+): Map<String, BigDecimal?> = buildMap {
+    val labelCounts = sampleColumns.groupingBy { displayColumnLabel(it.name) }.eachCount()
+    sampleColumns.forEach { col ->
+        val value = sourceValue(col.name)
+        put(col.name, value)
+        val display = displayColumnLabel(col.name)
+        if (labelCounts[display] == 1) {
+            put(display, value)
+        }
+    }
+    val calcLabelCounts = priorCalculations.groupingBy { it.label }.eachCount()
+    priorCalculations.forEach { calc ->
+        val value = calculationValue(calc.id)
+        put(calc.id, value)
+        if (calcLabelCounts[calc.label] == 1 && !containsKey(calc.label)) {
+            put(calc.label, value)
+        }
+    }
+}
 
 fun applyWorksheet(
     sample: QueryResult,
@@ -183,15 +232,17 @@ private class WorksheetEngine(
         }
 
     private fun applyRowFormulas(record: WorksheetRecord) {
+        val priorCalculations = mutableListOf<WorksheetCalculation>()
         config.calculations.filterIsInstance<WorksheetCalculation.RowFormula>().forEach {
             calculation ->
-            val values = buildMap {
-                sample.columns.forEach { column ->
-                    put(column.name, resultCellDecimal(record.source(column.name)))
-                }
-                record.calculations.forEach { (id, cell) -> put(id, resultCellDecimal(cell.value)) }
-            }
-            val result = evaluatePivotFormula(calculation.formula, values)
+            val values =
+                worksheetFormulaValues(
+                    sampleColumns = sample.columns,
+                    sourceValue = { resultCellDecimal(record.source(it)) },
+                    priorCalculations = priorCalculations,
+                    calculationValue = { resultCellDecimal(record.calculations[it]?.value) },
+                )
+            val result = evaluatePivotFormula(calculation.formula, values, referenceLabel = "field")
             record.calculations[calculation.id] =
                 if (result.error != null) {
                     errorCount++
@@ -199,6 +250,7 @@ private class WorksheetEngine(
                 } else {
                     WorksheetCell(result.value.toResultCell())
                 }
+            priorCalculations += calculation
         }
     }
 
@@ -337,9 +389,23 @@ private class WorksheetEngine(
                             calculation.groupColumn == entry.groupColumn ||
                             entry.kind == WorksheetRowKind.GrandTotal
                     ) {
+                        val priorGroupCalculations =
+                            config.calculations.filter { it.id in entry.calculations }
                         val values =
-                            entry.calculations.mapValues { resultCellDecimal(it.value.value) }
-                        val result = evaluatePivotFormula(calculation.formula, values)
+                            worksheetFormulaValues(
+                                sampleColumns = emptyList(),
+                                sourceValue = { null },
+                                priorCalculations = priorGroupCalculations,
+                                calculationValue = {
+                                    resultCellDecimal(entry.calculations[it]?.value)
+                                },
+                            )
+                        val result =
+                            evaluatePivotFormula(
+                                calculation.formula,
+                                values,
+                                referenceLabel = "field",
+                            )
                         entry.calculations[calculation.id] =
                             if (result.error != null) {
                                 errorCount++

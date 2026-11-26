@@ -662,9 +662,50 @@ class ParseConnectionStringTest {
                 parseConnectionString("//db.example.com:5432/app")
             }
         assertEquals(
-            "This connection string format is not recognized. Try the guided setup instead.",
+            "This connection string format is not recognized. Enter connection details below, or paste a PostgreSQL, MySQL, SQL Server, Oracle, or Db2 URL.",
             error.message,
         )
+    }
+
+    @Test
+    fun parsesSqlServerAndMssqlUriSchemesAndScrubsUnrecognizedPasswords() {
+        val parsed =
+            parseConnectionString("sqlserver://sa:secret@db.example.com:14333/app_db?encrypt=true")
+        assertEquals(Dialect.Mssql, parsed.dialect)
+        assertEquals("db.example.com", parsed.host)
+        assertEquals(14333, parsed.port)
+        assertEquals("app_db", parsed.database)
+        assertEquals("sa", parsed.username)
+        assertEquals("secret", parsed.password)
+        assertEquals(
+            "sqlserver://sa@db.example.com:14333/app_db?encrypt=true",
+            parsed.sanitizedInput,
+        )
+
+        val mssql = parseConnectionString("mssql://reader:pw@localhost/reports")
+        assertEquals(Dialect.Mssql, mssql.dialect)
+        assertEquals(1433, mssql.port)
+        assertEquals("reports", mssql.database)
+
+        assertEquals(
+            "custom://user@host:1234/db?password=&token=1",
+            sanitizeBestEffortConnectionString(
+                "custom://user:topsecret@host:1234/db?password=abc&token=1",
+            ),
+        )
+    }
+
+    @Test
+    fun db2JdbcImportsUserAndPasswordWithoutWarningAndSanitizesPassword() {
+        val parsed =
+            parseConnectionString(
+                "jdbc:db2://127.0.0.1:50000/SAFEDB:user=db2inst1;password=secret;",
+            )
+        assertEquals(Dialect.Db2, parsed.dialect)
+        assertEquals("db2inst1", parsed.username)
+        assertEquals("secret", parsed.password)
+        assertEquals(emptyList(), parsed.warnings)
+        assertEquals("jdbc:db2://127.0.0.1:50000/SAFEDB:user=db2inst1;", parsed.sanitizedInput)
     }
 
     @Test

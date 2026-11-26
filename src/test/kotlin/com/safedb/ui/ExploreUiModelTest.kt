@@ -368,6 +368,40 @@ class ExploreUiModelTest {
         )
     }
 
+    @Test
+    fun chartTypeSwitchRestoresDroppedXWhenReturningFromKpiToBar() {
+        val createdAt = buildField("created_at", "timestamp")
+        val amount = buildField("amount", "decimal")
+        val fields = listOf(createdAt, amount)
+        val initial =
+            VisualizationConfig(
+                chartType = ChartType.Line,
+                x = VisualizationField("created_at", "created_at"),
+                values =
+                    listOf(
+                        VisualizationMeasure(
+                            alias = "sum_amount",
+                            fn = MeasureFn.Sum,
+                            sourceColumn = "amount",
+                            label = "Sum amount",
+                        ),
+                    ),
+            )
+        val (kpi, mem1) =
+            transitionVisualizationChartType(
+                initial,
+                ChartType.Kpi,
+                fields,
+                VisualizationChartSwitchMemory(),
+            )
+        assertNull(kpi.x)
+        assertEquals("created_at", mem1.x?.column)
+
+        val (bar, mem2) = transitionVisualizationChartType(kpi, ChartType.Bar, fields, mem1)
+        assertEquals("created_at", bar.x?.column)
+        assertNull(mem2.x)
+    }
+
     private fun buildField(name: String, type: String): ExploreFieldOption =
         buildExploreFieldOptions(
                 QueryResult(

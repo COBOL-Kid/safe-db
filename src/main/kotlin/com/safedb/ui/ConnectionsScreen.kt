@@ -319,16 +319,18 @@ private fun ConnectionCard(
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        if (isSelected || isDefault) {
-                            Row(
-                                modifier = Modifier.padding(top = 4.dp),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            ) {
-                                if (isSelected) {
-                                    StatusChip("Selected", StatusChipKind.NEUTRAL)
-                                }
-                                if (isDefault) {
-                                    StatusChip("Default", StatusChipKind.INFO)
+                        Box(
+                            modifier = Modifier.padding(top = 4.dp).height(20.dp),
+                            contentAlignment = Alignment.CenterStart,
+                        ) {
+                            if (isSelected || isDefault) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    if (isSelected) {
+                                        StatusChip("Selected", StatusChipKind.NEUTRAL)
+                                    }
+                                    if (isDefault) {
+                                        StatusChip("Default", StatusChipKind.INFO)
+                                    }
                                 }
                             }
                         }

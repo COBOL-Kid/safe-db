@@ -57,8 +57,14 @@ internal fun VisualizationOptions(
         }
         if (xField?.category?.isNumeric() == true && effectiveType == ChartType.Histogram) {
             val current = config.x?.grouping as? PivotGrouping.NumberBin
+            val rawBinSize = current?.size.orEmpty()
+            val binSizeError =
+                rawBinSize.isNotBlank() &&
+                    rawBinSize.trim().toBigDecimalOrNull()?.let {
+                        it > java.math.BigDecimal.ZERO
+                    } != true
             OutlinedTextField(
-                value = current?.size.orEmpty(),
+                value = rawBinSize,
                 onValueChange = { value ->
                     val nextGrouping =
                         if (value.isBlank() && current?.start.isNullOrBlank()) {
@@ -69,6 +75,13 @@ internal fun VisualizationOptions(
                     onChange(config.copy(x = config.x?.copy(grouping = nextGrouping)))
                 },
                 label = { Text("Bin size (blank = automatic)") },
+                isError = binSizeError,
+                supportingText =
+                    if (binSizeError) {
+                        { Text("Enter a positive number") }
+                    } else {
+                        null
+                    },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )

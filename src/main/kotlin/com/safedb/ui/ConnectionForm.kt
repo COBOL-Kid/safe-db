@@ -44,6 +44,7 @@ import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -102,6 +103,7 @@ fun ConnectionForm(
     onConnectionChanged: (String) -> Unit = {},
 ) {
     val form = remember(existingConnection?.id) { ConnectionFormState(existingConnection) }
+    val connections by connectionsViewModel.connections.collectAsState()
     val scope = rememberCoroutineScope()
     val active = remember(form) { mutableStateOf(true) }
     DisposableEffect(active) { onDispose { active.value = false } }
@@ -133,7 +135,7 @@ fun ConnectionForm(
 
     fun handleSave() {
         form.resetResultState()
-        val validationError = form.validateForm()
+        val validationError = form.validateForm(existingConnections = connections)
         if (validationError != null) {
             form.formError = validationError
             return
@@ -278,10 +280,7 @@ private fun ConnectionStringInput(form: ConnectionFormState) {
         ) {
             OutlinedTextField(
                 value = form.connectionString,
-                onValueChange = {
-                    form.connectionString = it
-                    form.resetResultState()
-                },
+                onValueChange = form::updateConnectionString,
                 modifier = Modifier.weight(1f).height(CompactFieldHeight),
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodyMedium,

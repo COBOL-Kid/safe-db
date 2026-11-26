@@ -2,6 +2,7 @@ package com.safedb.ui
 
 import androidx.compose.runtime.Composable
 import com.safedb.model.QueryRiskGate
+import com.safedb.model.TableRef
 import com.safedb.query.QueryConfirmationReasonCode
 import com.safedb.query.QueryConfirmationRequirement
 import com.safedb.query.QueryPlanStatus
@@ -32,6 +33,24 @@ internal fun riskGateIndicatorText(gate: QueryRiskGate): String =
         else -> "Risk gate: ${gate.name} · blocks ${blockingBand(gate)?.label} and above"
     }
 
+internal fun formatBuilderValidationError(
+    rawError: String,
+    tables: List<TableRef>,
+    incompleteFilters: Boolean,
+): String {
+    if (incompleteFilters && rawError.startsWith("'' is not a valid ")) {
+        return "Enter filter value to run"
+    }
+    val nameCounts = tables.groupingBy { it.name }.eachCount()
+    var formatted = rawError
+    for (table in tables) {
+        if (nameCounts[table.name] == 1) {
+            formatted = formatted.replace("'${table.alias}.", "'${table.name}.")
+        }
+    }
+    return formatted
+}
+
 internal fun queryRiskIndicatorText(
     preliminary: QueryRiskAssessment?,
     evaluation: QueryRiskEvaluation?,
@@ -42,6 +61,7 @@ internal fun queryRiskIndicatorText(
 ): String {
     val runEnabledLabel = if (runAvailable) "Run enabled" else "Run unavailable"
     return when {
+        validationError == "Enter filter value to run" -> validationError
         validationError != null -> "Query validation: $validationError"
         running && gate == QueryRiskGate.Disabled -> "Running query · Run unavailable"
         running -> "Assessing query risk · Run unavailable"
