@@ -793,6 +793,60 @@ class ApplyWorksheetTest {
                 ),
             )
         assertTrue("Calculated columns contain a circular reference" in groupCycle.warnings)
+
+        val duplicateDisplaySample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__amount", "decimal"),
+                        ResultColumn("t1__amount", "decimal"),
+                    ),
+                rows = listOf(listOf(ResultCell.FloatCell(10.0), ResultCell.FloatCell(20.0))),
+                rowCount = 1,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val duplicateLabelRowCycle =
+            applyWorksheet(
+                duplicateDisplaySample,
+                WorksheetConfig(
+                    calculations =
+                        listOf(
+                            WorksheetCalculation.RowFormula("r1", "amount", "[Second] + 1"),
+                            WorksheetCalculation.RowFormula("r2", "Second", "[amount] + 1"),
+                        ),
+                ),
+            )
+        assertTrue(
+            "Calculated columns contain a circular reference" in duplicateLabelRowCycle.warnings,
+        )
+
+        val groupCycleMatchingRowId =
+            applyWorksheet(
+                sample(),
+                WorksheetConfig(
+                    groups = listOf(WorksheetGroup("g", "region")),
+                    calculations =
+                        listOf(
+                            WorksheetCalculation.RowFormula("r1", "Row One", "[amount] * 2"),
+                            WorksheetCalculation.GroupFormula(
+                                "g1",
+                                "r1",
+                                "[Beta] + 1",
+                                "region",
+                            ),
+                            WorksheetCalculation.GroupFormula(
+                                "g2",
+                                "Beta",
+                                "[r1] + 1",
+                                "region",
+                            ),
+                        ),
+                ),
+            )
+        assertTrue(
+            "Calculated columns contain a circular reference" in groupCycleMatchingRowId.warnings,
+        )
     }
 
     @Test

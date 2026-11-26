@@ -589,4 +589,120 @@ class VisualizationConfigPanelTest {
             scope.cancel()
         }
     }
+
+    @Test
+    fun chartSwitchMemoryClearsStaleValuesAndSeriesOnExplicitUiSelection() {
+        val sample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__category", "varchar"),
+                        ResultColumn("t0__region", "varchar"),
+                        ResultColumn("t0__amount", "decimal"),
+                        ResultColumn("t0__qty", "integer"),
+                    ),
+                rows =
+                    listOf(
+                        listOf(
+                            ResultCell.text("Services"),
+                            ResultCell.text("East"),
+                            ResultCell.float(100.0),
+                            ResultCell.integer(2),
+                        ),
+                    ),
+                rowCount = 1,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val fields = buildExploreFieldOptions(sample, emptyList())
+        val sumAmount =
+            VisualizationMeasure("sum_amount", MeasureFn.Sum, "t0__amount", "Sum amount")
+        val countRows = VisualizationMeasure.countRows("count_rows")
+        var config by
+            mutableStateOf(
+                VisualizationConfig(
+                    chartType = ChartType.Bar,
+                    x = VisualizationField("t0__category", "category"),
+                    values = listOf(sumAmount, countRows),
+                ),
+            )
+
+        withComposeScene(
+            width = 480,
+            height = 1200,
+            content = {
+                SafeDbTheme(isDark = false) {
+                    VisualizationConfigPanel(
+                        config = config,
+                        sample = sample,
+                        tables = emptyList(),
+                        fields = fields,
+                        memberOptionsFor = { emptyList() },
+                        onConfigChange = { config = it },
+                        onApplyTemplate = { config = it },
+                        onReset = {},
+                        onHide = {},
+                    )
+                }
+            },
+        ) { scene ->
+            var frameNanos = 0L
+            fun advance() {
+                repeat(4) {
+                    frameNanos += 100_000_000L
+                    scene.render(frameNanos)
+                }
+            }
+
+            // Bar([Sum amount, Count rows]) -> Scatter stashes both measures; selecting Series
+            // clears stashed values so returning to Bar keeps 1 measure and removing Series does
+            // not resurrect Count rows on Line.
+            scene.click(scene.requireExact("Scatter").boundsInRoot.center)
+            advance()
+            assertEquals(listOf("sum_amount"), config.values.map { it.alias })
+
+            scene.click(scene.requireContaining("Add series").boundsInRoot.center)
+            advance()
+            scene.click(scene.requireContaining("region").boundsInRoot.center)
+            advance()
+            assertEquals("t0__region", config.series?.column)
+
+            scene.click(scene.requireExact("Bar").boundsInRoot.center)
+            advance()
+            assertEquals(listOf("sum_amount"), config.values.map { it.alias })
+            assertEquals("t0__region", config.series?.column)
+
+            // Removing Series and switching to Line must not resurrect Count rows from memory.
+            scene.click(scene.requireExact("Remove region").boundsInRoot.center)
+            advance()
+            assertNull(config.series)
+            scene.click(scene.requireExact("Line").boundsInRoot.center)
+            advance()
+            assertEquals(listOf("sum_amount"), config.values.map { it.alias })
+
+            // Re-add Series, add a 2nd value (dropping Series), then round-trip through Histogram
+            // -> Bar to verify both measures stay and Series does not resurrect.
+            scene.click(scene.requireContaining("Add series").boundsInRoot.center)
+            advance()
+            scene.click(scene.requireContaining("region").boundsInRoot.center)
+            advance()
+            assertEquals("t0__region", config.series?.column)
+
+            scene.click(scene.requireContaining("Add value").boundsInRoot.center)
+            advance()
+            scene.click(scene.requireContaining("Count rows").boundsInRoot.center)
+            advance()
+            assertEquals(2, config.values.size)
+            assertNull(config.series)
+
+            scene.click(scene.requireExact("Histogram").boundsInRoot.center)
+            advance()
+            assertEquals(emptyList(), config.values)
+
+            scene.click(scene.requireExact("Bar").boundsInRoot.center)
+            advance()
+            assertEquals(2, config.values.size)
+            assertNull(config.series)
+        }
+    }
 }

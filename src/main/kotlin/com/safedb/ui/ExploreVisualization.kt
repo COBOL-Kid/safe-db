@@ -309,13 +309,17 @@ internal fun VisualizationConfigPanel(
                         fields = fields,
                         countAllowed = config.chartType != ChartType.Scatter,
                         onSelect = { value ->
-                            switchMemory = switchMemory.copy(values = emptyList())
                             val values =
                                 if (config.chartType in setOf(ChartType.Scatter, ChartType.Kpi)) {
                                     listOf(value)
                                 } else {
                                     config.values + value
                                 }
+                            switchMemory =
+                                switchMemory.copy(
+                                    values = emptyList(),
+                                    series = if (values.size > 1) null else switchMemory.series,
+                                )
                             onConfigChange(
                                 config.copy(
                                     values = values,
@@ -351,7 +355,7 @@ internal fun VisualizationConfigPanel(
                         },
                         incompatibleReason = { "Series fields must be categorical" },
                         onSelect = {
-                            switchMemory = switchMemory.copy(series = null)
+                            switchMemory = switchMemory.copy(series = null, values = emptyList())
                             onConfigChange(
                                 config.copy(
                                     series = VisualizationField(it.column, it.label),

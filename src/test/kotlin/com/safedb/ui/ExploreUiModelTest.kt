@@ -447,6 +447,175 @@ class ExploreUiModelTest {
         assertEquals(emptyList(), mem3.values)
     }
 
+    @Test
+    fun chartTypeSwitchPreservesMultiMeasuresAcrossHistogramNonFirstScatterAndSeriesGuard() {
+        val createdAt = buildField("created_at", "timestamp")
+        val region = buildField("region", "varchar")
+        val amount = buildField("amount", "decimal")
+        val qty = buildField("qty", "int")
+        val fields = listOf(createdAt, region, amount, qty)
+        val countRows = VisualizationMeasure.countRows("count_rows")
+        val sumAmount =
+            VisualizationMeasure(
+                alias = "sum_amount",
+                fn = MeasureFn.Sum,
+                sourceColumn = "amount",
+                label = "Sum amount",
+            )
+        val sumQty =
+            VisualizationMeasure(
+                alias = "sum_qty",
+                fn = MeasureFn.Sum,
+                sourceColumn = "qty",
+                label = "Sum qty",
+            )
+
+        // Bar([m1, m2]) -> KPI -> Histogram -> Bar keeps both measures instead of overwriting with
+        // [m1].
+        val multiBar =
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("created_at", "created_at"),
+                values = listOf(sumAmount, sumQty),
+            )
+        val (kpi1, kpiMem1) =
+            transitionVisualizationChartType(
+                multiBar,
+                ChartType.Kpi,
+                fields,
+                VisualizationChartSwitchMemory(),
+            )
+        val (histogram, histMem) =
+            transitionVisualizationChartType(kpi1, ChartType.Histogram, fields, kpiMem1)
+        assertEquals(emptyList(), histogram.values)
+        assertEquals(listOf("sum_amount", "sum_qty"), histMem.values.map { it.alias })
+        val (restoredFromHist, restoredHistMem) =
+            transitionVisualizationChartType(histogram, ChartType.Bar, fields, histMem)
+        assertEquals(listOf("sum_amount", "sum_qty"), restoredFromHist.values.map { it.alias })
+        assertEquals(emptyList(), restoredHistMem.values)
+
+        // Bar([Count rows, Sum amount]) -> Scatter -> Bar restores both even though Scatter kept
+        // the 2nd measure.
+        val countAndSumBar =
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("created_at", "created_at"),
+                values = listOf(countRows, sumAmount),
+            )
+        val (scatterDirect, scatterDirectMem) =
+            transitionVisualizationChartType(
+                countAndSumBar,
+                ChartType.Scatter,
+                fields,
+                VisualizationChartSwitchMemory(),
+            )
+        assertEquals(listOf("sum_amount"), scatterDirect.values.map { it.alias })
+        val (barFromScatterDirect, barFromScatterDirectMem) =
+            transitionVisualizationChartType(
+                scatterDirect,
+                ChartType.Bar,
+                fields,
+                scatterDirectMem,
+            )
+        assertEquals(
+            listOf("count_rows", "sum_amount"),
+            barFromScatterDirect.values.map { it.alias },
+        )
+        assertEquals(emptyList(), barFromScatterDirectMem.values)
+
+        // Bar([Count rows, Sum amount]) -> KPI -> Scatter -> Bar preserves both measures and
+        // recovers Scatter Y.
+        val (kpi2, kpiMem2) =
+            transitionVisualizationChartType(
+                countAndSumBar,
+                ChartType.Kpi,
+                fields,
+                VisualizationChartSwitchMemory(),
+            )
+        assertEquals(listOf("count_rows"), kpi2.values.map { it.alias })
+        val (scatterViaKpi, scatterViaKpiMem) =
+            transitionVisualizationChartType(kpi2, ChartType.Scatter, fields, kpiMem2)
+        assertEquals(listOf("sum_amount"), scatterViaKpi.values.map { it.alias })
+        val (barViaKpiScatter, barViaKpiScatterMem) =
+            transitionVisualizationChartType(
+                scatterViaKpi,
+                ChartType.Bar,
+                fields,
+                scatterViaKpiMem,
+            )
+        assertEquals(
+            listOf("count_rows", "sum_amount"),
+            barViaKpiScatter.values.map { it.alias },
+        )
+        assertEquals(emptyList(), barViaKpiScatterMem.values)
+
+        // Active Series on Scatter must not restore multiple measures alongside Series on Bar,
+        // and must clear stale multi-measure memory so removing Series later does not resurrect it.
+        val scatterWithSeries =
+            VisualizationConfig(
+                chartType = ChartType.Scatter,
+                x = VisualizationField("qty", "qty"),
+                values = listOf(sumAmount.copy(aggregate = false, label = "amount")),
+                series = VisualizationField("region", "region"),
+            )
+        val (barWithSeries, barWithSeriesMem) =
+            transitionVisualizationChartType(
+                scatterWithSeries,
+                ChartType.Bar,
+                fields,
+                VisualizationChartSwitchMemory(values = listOf(sumAmount, sumQty)),
+            )
+        assertEquals(listOf("sum_amount"), barWithSeries.values.map { it.alias })
+        assertEquals("region", barWithSeries.series?.column)
+        assertEquals(emptyList(), barWithSeriesMem.values)
+
+        // Empty-values Scatter with active Series caps restored values to 1, normalizes its axis
+        // to Primary, and clears stale multi-measure memory.
+        val (barEmptyWithSeries, barEmptyWithSeriesMem) =
+            transitionVisualizationChartType(
+                scatterWithSeries.copy(values = emptyList()),
+                ChartType.Bar,
+                fields,
+                VisualizationChartSwitchMemory(
+                    values = listOf(sumAmount.copy(axis = ValueAxis.Secondary), sumQty),
+                ),
+            )
+        assertEquals(listOf("sum_amount"), barEmptyWithSeries.values.map { it.alias })
+        assertEquals(ValueAxis.Primary, barEmptyWithSeries.values.single().axis)
+        assertEquals("region", barEmptyWithSeries.series?.column)
+        assertEquals(emptyList(), barEmptyWithSeriesMem.values)
+
+        // Bar([Count rows], series=region) -> Scatter -> Bar still remembers Count rows while
+        // Scatter temporarily has empty values alongside active Series.
+        val countWithSeriesBar =
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("created_at", "created_at"),
+                values = listOf(countRows),
+                series = VisualizationField("region", "region"),
+            )
+        val (scatterEmptyWithSeries, scatterEmptyWithSeriesMem) =
+            transitionVisualizationChartType(
+                countWithSeriesBar,
+                ChartType.Scatter,
+                fields,
+                VisualizationChartSwitchMemory(),
+            )
+        assertEquals(emptyList(), scatterEmptyWithSeries.values)
+        assertEquals("region", scatterEmptyWithSeries.series?.column)
+        assertEquals(listOf("count_rows"), scatterEmptyWithSeriesMem.values.map { it.alias })
+        val (restoredCountWithSeries, restoredCountWithSeriesMem) =
+            transitionVisualizationChartType(
+                scatterEmptyWithSeries,
+                ChartType.Bar,
+                fields,
+                scatterEmptyWithSeriesMem,
+            )
+        assertEquals(listOf("count_rows"), restoredCountWithSeries.values.map { it.alias })
+        assertEquals("region", restoredCountWithSeries.series?.column)
+        assertEquals(emptyList(), restoredCountWithSeriesMem.values)
+    }
+
     private fun buildField(name: String, type: String): ExploreFieldOption =
         buildExploreFieldOptions(
                 QueryResult(

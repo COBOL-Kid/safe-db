@@ -190,29 +190,35 @@ private class WorksheetEngine(
     }
 
     private fun validateCalculationDependencies() {
-        val calcById = config.calculations.associateBy { it.id }
-        val rowSampleNames =
-            sample.columns.flatMapTo(mutableSetOf()) {
-                listOf(it.name, displayColumnLabel(it.name))
+        val sampleLabelCounts =
+            sample.columns.groupingBy { displayColumnLabel(it.name) }.eachCount()
+        val rowSampleNames = buildSet {
+            sample.columns.forEach { column ->
+                add(column.name)
+                val display = displayColumnLabel(column.name)
+                if (sampleLabelCounts[display] == 1) add(display)
             }
+        }
         val rowCalcs = config.calculations.filterIsInstance<WorksheetCalculation.RowFormula>()
+        val rowCalcById = rowCalcs.associateBy { it.id }
         val rowLabelCounts = rowCalcs.groupingBy { it.label }.eachCount()
         val rowCalcByLabel =
             rowCalcs
                 .filter {
                     rowLabelCounts[it.label] == 1 &&
                         it.label !in rowSampleNames &&
-                        it.label !in calcById
+                        it.label !in rowCalcById
                 }
                 .associateBy { it.label }
         val groupCalcs =
             config.calculations.filter {
                 it is WorksheetCalculation.Aggregate || it is WorksheetCalculation.GroupFormula
             }
+        val groupCalcById = groupCalcs.associateBy { it.id }
         val groupLabelCounts = groupCalcs.groupingBy { it.label }.eachCount()
         val groupCalcByLabel =
             groupCalcs
-                .filter { groupLabelCounts[it.label] == 1 && it.label !in calcById }
+                .filter { groupLabelCounts[it.label] == 1 && it.label !in groupCalcById }
                 .associateBy { it.label }
         val dependencies =
             config.calculations.associate { calculation ->
@@ -221,12 +227,12 @@ private class WorksheetEngine(
                         is WorksheetCalculation.GroupFormula ->
                             formulaReferences(calculation.formula).mapNotNullTo(mutableSetOf()) {
                                 ref ->
-                                calcById[ref]?.id ?: groupCalcByLabel[ref]?.id
+                                groupCalcById[ref]?.id ?: groupCalcByLabel[ref]?.id
                             }
                         is WorksheetCalculation.RowFormula ->
                             formulaReferences(calculation.formula).mapNotNullTo(mutableSetOf()) {
                                 ref ->
-                                calcById[ref]?.id ?: rowCalcByLabel[ref]?.id
+                                rowCalcById[ref]?.id ?: rowCalcByLabel[ref]?.id
                             }
                         is WorksheetCalculation.Window ->
                             setOfNotNull((calculation.source as? WorksheetValueRef.Calculation)?.id)

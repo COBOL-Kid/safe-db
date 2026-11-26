@@ -225,7 +225,10 @@ internal fun transitionVisualizationChartType(
         VisualizationChartSwitchMemory(
             x = if (current.x != null && converted.x == null) current.x else memory.x,
             values =
-                if (current.values.size > converted.values.size) {
+                if (
+                    current.values.size > converted.values.size &&
+                        current.values.size >= memory.values.size
+                ) {
                     current.values
                 } else {
                     memory.values
@@ -259,10 +262,12 @@ internal fun transitionVisualizationChartType(
         if (target == ChartType.Histogram) {
             emptyList()
         } else if (converted.values.isNotEmpty()) {
+            val stashedAliases = nextMemory.values.mapTo(mutableSetOf()) { it.alias }
             if (
                 target !in setOf(ChartType.Kpi, ChartType.Scatter) &&
+                    converted.series == null &&
                     nextMemory.values.size > converted.values.size &&
-                    converted.values.firstOrNull()?.alias == nextMemory.values.firstOrNull()?.alias
+                    converted.values.all { it.alias in stashedAliases }
             ) {
                 nextMemory.values
             } else {
@@ -274,8 +279,8 @@ internal fun transitionVisualizationChartType(
                     stashed
                         .filter { fieldByColumn(it.sourceColumn)?.category?.isNumeric() == true }
                         .take(1)
-                } else if (target == ChartType.Kpi) {
-                    stashed.take(1)
+                } else if (target == ChartType.Kpi || converted.series != null) {
+                    normalizeMeasureAxes(stashed.take(1))
                 } else {
                     stashed
                 }
@@ -306,8 +311,14 @@ internal fun transitionVisualizationChartType(
         nextMemory.copy(
             x = if (restored.x != null) null else nextMemory.x,
             values =
-                if (restored.values.size >= nextMemory.values.size) emptyList()
-                else nextMemory.values,
+                if (
+                    restored.values.size >= nextMemory.values.size ||
+                        (restored.series != null && restored.values.isNotEmpty())
+                ) {
+                    emptyList()
+                } else {
+                    nextMemory.values
+                },
             series = if (restored.series != null) null else nextMemory.series,
             size = if (restored.size != null) null else nextMemory.size,
         )
