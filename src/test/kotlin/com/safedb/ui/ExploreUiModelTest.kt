@@ -450,37 +450,18 @@ class ExploreUiModelTest {
     }
 
     @Test
-    fun chartTypeSwitchPreservesMultiMeasuresAcrossHistogramNonFirstScatterAndSeriesGuard() {
-        val createdAt = buildField("created_at", "timestamp")
-        val region = buildField("region", "varchar")
-        val amount = buildField("amount", "decimal")
-        val qty = buildField("qty", "int")
-        val fields = listOf(createdAt, region, amount, qty)
-        val countRows = VisualizationMeasure.countRows("count_rows")
-        val sumAmount =
-            VisualizationMeasure(
-                alias = "sum_amount",
-                fn = MeasureFn.Sum,
-                sourceColumn = "amount",
-                label = "Sum amount",
-            )
-        val sumQty =
-            VisualizationMeasure(
-                alias = "sum_qty",
-                fn = MeasureFn.Sum,
-                sourceColumn = "qty",
-                label = "Sum qty",
-            )
-
-        // Bar([m1, m2]) -> KPI -> Histogram -> Bar keeps both measures instead of overwriting with
-        // [m1].
+    fun multiMeasuresSurviveKpiAndHistogramRoundTripToBar() {
+        val fields = chartSwitchFields()
+        val sumAmount = sumAmountMeasure()
+        val sumQty = sumQtyMeasure()
         val multiBar =
             VisualizationConfig(
                 chartType = ChartType.Bar,
                 x = VisualizationField("created_at", "created_at"),
                 values = listOf(sumAmount, sumQty),
             )
-        val (kpi1, kpiMem1) =
+
+        val (kpi, kpiMem) =
             transitionVisualizationChartType(
                 multiBar,
                 ChartType.Kpi,
@@ -488,22 +469,28 @@ class ExploreUiModelTest {
                 VisualizationChartSwitchMemory(),
             )
         val (histogram, histMem) =
-            transitionVisualizationChartType(kpi1, ChartType.Histogram, fields, kpiMem1)
+            transitionVisualizationChartType(kpi, ChartType.Histogram, fields, kpiMem)
         assertEquals(emptyList(), histogram.values)
         assertEquals(listOf("sum_amount", "sum_qty"), histMem.values.map { it.alias })
+
         val (restoredFromHist, restoredHistMem) =
             transitionVisualizationChartType(histogram, ChartType.Bar, fields, histMem)
         assertEquals(listOf("sum_amount", "sum_qty"), restoredFromHist.values.map { it.alias })
         assertEquals(emptyList(), restoredHistMem.values)
+    }
 
-        // Bar([Count rows, Sum amount]) -> Scatter -> Bar restores both even though Scatter kept
-        // the 2nd measure.
+    @Test
+    fun scatterDirectRoundTripRestoresNonFirstNumericMeasureAndCountRows() {
+        val fields = chartSwitchFields()
+        val countRows = VisualizationMeasure.countRows("count_rows")
+        val sumAmount = sumAmountMeasure()
         val countAndSumBar =
             VisualizationConfig(
                 chartType = ChartType.Bar,
                 x = VisualizationField("created_at", "created_at"),
                 values = listOf(countRows, sumAmount),
             )
+
         val (scatterDirect, scatterDirectMem) =
             transitionVisualizationChartType(
                 countAndSumBar,
@@ -512,6 +499,7 @@ class ExploreUiModelTest {
                 VisualizationChartSwitchMemory(),
             )
         assertEquals(listOf("sum_amount"), scatterDirect.values.map { it.alias })
+
         val (barFromScatterDirect, barFromScatterDirectMem) =
             transitionVisualizationChartType(
                 scatterDirect,
@@ -524,20 +512,33 @@ class ExploreUiModelTest {
             barFromScatterDirect.values.map { it.alias },
         )
         assertEquals(emptyList(), barFromScatterDirectMem.values)
+    }
 
-        // Bar([Count rows, Sum amount]) -> KPI -> Scatter -> Bar preserves both measures and
-        // recovers Scatter Y.
-        val (kpi2, kpiMem2) =
+    @Test
+    fun kpiThenScatterRoundTripRecoversScatterYAndRestoresAllBarMeasures() {
+        val fields = chartSwitchFields()
+        val countRows = VisualizationMeasure.countRows("count_rows")
+        val sumAmount = sumAmountMeasure()
+        val countAndSumBar =
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("created_at", "created_at"),
+                values = listOf(countRows, sumAmount),
+            )
+
+        val (kpi, kpiMem) =
             transitionVisualizationChartType(
                 countAndSumBar,
                 ChartType.Kpi,
                 fields,
                 VisualizationChartSwitchMemory(),
             )
-        assertEquals(listOf("count_rows"), kpi2.values.map { it.alias })
+        assertEquals(listOf("count_rows"), kpi.values.map { it.alias })
+
         val (scatterViaKpi, scatterViaKpiMem) =
-            transitionVisualizationChartType(kpi2, ChartType.Scatter, fields, kpiMem2)
+            transitionVisualizationChartType(kpi, ChartType.Scatter, fields, kpiMem)
         assertEquals(listOf("sum_amount"), scatterViaKpi.values.map { it.alias })
+
         val (barViaKpiScatter, barViaKpiScatterMem) =
             transitionVisualizationChartType(
                 scatterViaKpi,
@@ -550,9 +551,13 @@ class ExploreUiModelTest {
             barViaKpiScatter.values.map { it.alias },
         )
         assertEquals(emptyList(), barViaKpiScatterMem.values)
+    }
 
-        // Active Series on Scatter must not restore multiple measures alongside Series on Bar,
-        // and must clear stale multi-measure memory so removing Series later does not resurrect it.
+    @Test
+    fun activeSeriesPreventsMultiMeasureRestorationAndClearsStaleMemory() {
+        val fields = chartSwitchFields()
+        val sumAmount = sumAmountMeasure()
+        val sumQty = sumQtyMeasure()
         val scatterWithSeries =
             VisualizationConfig(
                 chartType = ChartType.Scatter,
@@ -560,6 +565,7 @@ class ExploreUiModelTest {
                 values = listOf(sumAmount.copy(aggregate = false, label = "amount")),
                 series = VisualizationField("region", "region"),
             )
+
         val (barWithSeries, barWithSeriesMem) =
             transitionVisualizationChartType(
                 scatterWithSeries,
@@ -570,12 +576,24 @@ class ExploreUiModelTest {
         assertEquals(listOf("sum_amount"), barWithSeries.values.map { it.alias })
         assertEquals("region", barWithSeries.series?.column)
         assertEquals(emptyList(), barWithSeriesMem.values)
+    }
 
-        // Empty-values Scatter with active Series caps restored values to 1, normalizes its axis
-        // to Primary, and clears stale multi-measure memory.
+    @Test
+    fun emptyValuesScatterWithSeriesCapsRestoredMeasureToPrimaryAndClearsStaleMemory() {
+        val fields = chartSwitchFields()
+        val sumAmount = sumAmountMeasure()
+        val sumQty = sumQtyMeasure()
+        val scatterWithSeries =
+            VisualizationConfig(
+                chartType = ChartType.Scatter,
+                x = VisualizationField("qty", "qty"),
+                values = emptyList(),
+                series = VisualizationField("region", "region"),
+            )
+
         val (barEmptyWithSeries, barEmptyWithSeriesMem) =
             transitionVisualizationChartType(
-                scatterWithSeries.copy(values = emptyList()),
+                scatterWithSeries,
                 ChartType.Bar,
                 fields,
                 VisualizationChartSwitchMemory(
@@ -586,9 +604,12 @@ class ExploreUiModelTest {
         assertEquals(ValueAxis.Primary, barEmptyWithSeries.values.single().axis)
         assertEquals("region", barEmptyWithSeries.series?.column)
         assertEquals(emptyList(), barEmptyWithSeriesMem.values)
+    }
 
-        // Bar([Count rows], series=region) -> Scatter -> Bar still remembers Count rows while
-        // Scatter temporarily has empty values alongside active Series.
+    @Test
+    fun singleCountMeasureWithSeriesSurvivesScatterEmptyValuesRoundTrip() {
+        val fields = chartSwitchFields()
+        val countRows = VisualizationMeasure.countRows("count_rows")
         val countWithSeriesBar =
             VisualizationConfig(
                 chartType = ChartType.Bar,
@@ -596,6 +617,7 @@ class ExploreUiModelTest {
                 values = listOf(countRows),
                 series = VisualizationField("region", "region"),
             )
+
         val (scatterEmptyWithSeries, scatterEmptyWithSeriesMem) =
             transitionVisualizationChartType(
                 countWithSeriesBar,
@@ -606,6 +628,7 @@ class ExploreUiModelTest {
         assertEquals(emptyList(), scatterEmptyWithSeries.values)
         assertEquals("region", scatterEmptyWithSeries.series?.column)
         assertEquals(listOf("count_rows"), scatterEmptyWithSeriesMem.values.map { it.alias })
+
         val (restoredCountWithSeries, restoredCountWithSeriesMem) =
             transitionVisualizationChartType(
                 scatterEmptyWithSeries,
@@ -616,9 +639,17 @@ class ExploreUiModelTest {
         assertEquals(listOf("count_rows"), restoredCountWithSeries.values.map { it.alias })
         assertEquals("region", restoredCountWithSeries.series?.column)
         assertEquals(emptyList(), restoredCountWithSeriesMem.values)
+    }
 
-        // Editing numberFormat on KPI preserves the format edit when returning directly or via
-        // Histogram to a multi-measure Bar chart.
+    @Test
+    fun numberFormatEditOnKpiSurvivesDirectAndHistogramRoundTripsToBar() {
+        val fields = chartSwitchFields()
+        val multiBar =
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("created_at", "created_at"),
+                values = listOf(sumAmountMeasure(), sumQtyMeasure()),
+            )
         val currencyFormat = PivotNumberFormat(kind = NumberFormatKind.Currency, decimals = 2)
         val (kpiBeforeEdit, kpiBeforeEditMem) =
             transitionVisualizationChartType(
@@ -631,6 +662,7 @@ class ExploreUiModelTest {
             kpiBeforeEdit.copy(
                 values = kpiBeforeEdit.values.map { it.copy(numberFormat = currencyFormat) },
             )
+
         val (barDirectAfterFormatEdit, barDirectAfterFormatEditMem) =
             transitionVisualizationChartType(
                 kpiEditedFormat,
@@ -666,6 +698,150 @@ class ExploreUiModelTest {
         assertEquals(currencyFormat, barViaHistAfterFormatEdit.values.first().numberFormat)
         assertEquals(emptyList(), barViaHistAfterFormatEditMem.values)
     }
+
+    @Test
+    fun visualizationXCompatibleExcludesBinaryJsonAndFollowsNumericChartTypes() {
+        val numeric = buildField("amount", "decimal")
+        val text = buildField("region", "varchar")
+        val temporal = buildField("created_at", "timestamp")
+        val binary = buildField("payload", "bytea")
+        val json = buildField("meta", "jsonb")
+
+        listOf(ChartType.Auto, ChartType.Bar, ChartType.Line).forEach { type ->
+            assertTrue(visualizationXCompatible(type, numeric))
+            assertTrue(visualizationXCompatible(type, text))
+            assertTrue(visualizationXCompatible(type, temporal))
+            assertFalse(visualizationXCompatible(type, binary))
+            assertFalse(visualizationXCompatible(type, json))
+        }
+        listOf(ChartType.Scatter, ChartType.Histogram).forEach { type ->
+            assertTrue(visualizationXCompatible(type, numeric))
+            assertFalse(visualizationXCompatible(type, text))
+            assertFalse(visualizationXCompatible(type, temporal))
+            assertFalse(visualizationXCompatible(type, binary))
+            assertFalse(visualizationXCompatible(type, json))
+        }
+        listOf(numeric, text, temporal, binary, json).forEach { field ->
+            assertFalse(visualizationXCompatible(ChartType.Kpi, field))
+        }
+
+        val (restoredFromBinaryMemory, remainingMemory) =
+            transitionVisualizationChartType(
+                VisualizationConfig(chartType = ChartType.Kpi),
+                ChartType.Bar,
+                listOf(binary, json),
+                VisualizationChartSwitchMemory(x = VisualizationField("payload", "payload")),
+            )
+        assertNull(restoredFromBinaryMemory.x)
+        assertEquals("payload", remainingMemory.x?.column)
+    }
+
+    @Test
+    fun reconcileSwitchMemoryOnEditClearsOnlyImpactedSlotsAndPreservesNumberFormatEdits() {
+        val sumAmount = sumAmountMeasure()
+        val sumQty = sumQtyMeasure()
+        val fullMemory =
+            VisualizationChartSwitchMemory(
+                x = VisualizationField("created_at", "created_at"),
+                values = listOf(sumAmount, sumQty),
+                series = VisualizationField("region", "region"),
+                size = VisualizationField("qty", "qty"),
+            )
+        val base =
+            VisualizationConfig(
+                chartType = ChartType.Kpi,
+                values = listOf(sumAmount),
+            )
+
+        // Title or non-slot edit preserves everything.
+        assertEquals(
+            fullMemory,
+            reconcileSwitchMemoryOnEdit(base, base.copy(title = "Revenue"), fullMemory),
+        )
+
+        // numberFormat-only edit preserves stashed values.
+        val formatted =
+            base.copy(
+                values =
+                    listOf(
+                        sumAmount.copy(
+                            numberFormat = PivotNumberFormat(kind = NumberFormatKind.Currency),
+                        ),
+                    ),
+            )
+        assertEquals(fullMemory, reconcileSwitchMemoryOnEdit(base, formatted, fullMemory))
+
+        // Structural value edit (axis, fn, add/remove) clears values.
+        val structural = base.copy(values = listOf(sumAmount.copy(fn = MeasureFn.Avg)))
+        assertEquals(emptyList(), reconcileSwitchMemoryOnEdit(base, structural, fullMemory).values)
+
+        // Adding a second value clears both values and series memory.
+        val twoValues = base.copy(values = listOf(sumAmount, sumQty))
+        val afterTwoValues = reconcileSwitchMemoryOnEdit(base, twoValues, fullMemory)
+        assertEquals(emptyList(), afterTwoValues.values)
+        assertNull(afterTwoValues.series)
+
+        // Selecting a non-null series clears series and values; removing series clears only series.
+        val withSeries = base.copy(series = VisualizationField("region", "region"))
+        val afterAddSeries = reconcileSwitchMemoryOnEdit(base, withSeries, fullMemory)
+        assertNull(afterAddSeries.series)
+        assertEquals(emptyList(), afterAddSeries.values)
+        val afterRemoveSeries = reconcileSwitchMemoryOnEdit(withSeries, base, fullMemory)
+        assertNull(afterRemoveSeries.series)
+        assertEquals(fullMemory.values, afterRemoveSeries.values)
+
+        // X and size edits clear their respective slots.
+        assertNull(
+            reconcileSwitchMemoryOnEdit(
+                    base,
+                    base.copy(x = VisualizationField("created_at", "created_at")),
+                    fullMemory,
+                )
+                .x,
+        )
+        assertNull(
+            reconcileSwitchMemoryOnEdit(
+                    base,
+                    base.copy(size = VisualizationField("qty", "qty")),
+                    fullMemory,
+                )
+                .size,
+        )
+    }
+
+    @Test
+    fun validPositiveBinSizeTrimsPositiveDecimalsAndRejectsInvalidInputs() {
+        assertEquals("10", validPositiveBinSize("10"))
+        assertEquals("250", validPositiveBinSize("  250  "))
+        assertEquals("0.5", validPositiveBinSize("0.5"))
+        listOf(null, "", "   ", "0", "0.0", "-10", "abc").forEach { raw ->
+            assertNull(validPositiveBinSize(raw))
+        }
+    }
+
+    private fun chartSwitchFields(): List<ExploreFieldOption> =
+        listOf(
+            buildField("created_at", "timestamp"),
+            buildField("region", "varchar"),
+            buildField("amount", "decimal"),
+            buildField("qty", "int"),
+        )
+
+    private fun sumAmountMeasure(): VisualizationMeasure =
+        VisualizationMeasure(
+            alias = "sum_amount",
+            fn = MeasureFn.Sum,
+            sourceColumn = "amount",
+            label = "Sum amount",
+        )
+
+    private fun sumQtyMeasure(): VisualizationMeasure =
+        VisualizationMeasure(
+            alias = "sum_qty",
+            fn = MeasureFn.Sum,
+            sourceColumn = "qty",
+            label = "Sum qty",
+        )
 
     private fun buildField(name: String, type: String): ExploreFieldOption =
         buildExploreFieldOptions(

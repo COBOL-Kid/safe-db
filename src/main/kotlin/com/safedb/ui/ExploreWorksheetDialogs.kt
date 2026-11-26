@@ -205,8 +205,7 @@ internal fun WorksheetGroupDialog(
                     )
                 },
                 enabled =
-                    grouping !is PivotGrouping.NumberBin ||
-                        binSize.toBigDecimalOrNull()?.signum() == 1,
+                    grouping !is PivotGrouping.NumberBin || validPositiveBinSize(binSize) != null,
             ) {
                 Text("Apply")
             }

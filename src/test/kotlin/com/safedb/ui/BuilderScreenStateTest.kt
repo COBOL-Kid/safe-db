@@ -19,6 +19,7 @@ import com.safedb.model.QueryRiskGate
 import com.safedb.model.SortDirection
 import com.safedb.model.SortSpec
 import com.safedb.model.TableInfo
+import com.safedb.model.TableRef
 import com.safedb.query.QueryConfirmationCondition
 import com.safedb.query.QueryConfirmationReasonCode
 import com.safedb.query.QueryConfirmationRequirement
@@ -271,6 +272,10 @@ class BuilderScreenStateTest {
         assertEquals(192.dp, builderFilterPanelMaxHeight(400.dp))
         assertEquals(BuilderFilterPanelMinHeight, builderFilterPanelMaxHeight(200.dp))
         assertEquals(BuilderFilterPanelMinHeight, builderFilterPanelMaxHeight(0.dp))
+        assertEquals(64.dp, builderFilterPanelMinHeight(359.dp))
+        assertEquals(BuilderFilterPanelMinHeight, builderFilterPanelMinHeight(360.dp))
+        assertEquals(220f, builderCanvasReservePx(hasFilters = true))
+        assertEquals(180f, builderCanvasReservePx(hasFilters = false))
     }
 
     @Test
@@ -402,7 +407,17 @@ class BuilderScreenStateTest {
                 null,
                 false,
                 QueryRiskGate.Standard,
-                "Choose at least one table",
+                BuilderValidationNotice("Choose at least one table"),
+            ),
+        )
+        assertEquals(
+            "Enter filter value to run",
+            queryRiskIndicatorText(
+                null,
+                null,
+                false,
+                QueryRiskGate.Standard,
+                BuilderValidationNotice("Enter filter value to run", includePrefix = false),
             ),
         )
     }
@@ -554,10 +569,10 @@ class BuilderScreenStateTest {
     }
 
     @Test
-    fun formatBuilderValidationErrorHidesEmptyFilterAliasLeak() {
-        val tables = listOf(com.safedb.model.TableRef("public", "scan_events", "t0"))
+    fun formatBuilderValidationErrorHidesEmptyFilterAliasLeakAndRewritesAliasesSafely() {
+        val tables = listOf(TableRef("public", "scan_events", "t0"))
         assertEquals(
-            "Enter filter value to run",
+            BuilderValidationNotice("Enter filter value to run", includePrefix = false),
             formatBuilderValidationError(
                 "'' is not a valid decimal for 't0.amount'",
                 tables,
@@ -565,10 +580,35 @@ class BuilderScreenStateTest {
             ),
         )
         assertEquals(
-            "'abc' is not a valid decimal for 'scan_events.amount'",
+            BuilderValidationNotice("'abc' is not a valid decimal for 'scan_events.amount'"),
             formatBuilderValidationError(
                 "'abc' is not a valid decimal for 't0.amount'",
                 tables,
+                incompleteFilters = false,
+            ),
+        )
+
+        // Single-pass rewrite avoids cascading t0 -> t1 -> orders and handles '$' in table names.
+        val collidingTables =
+            listOf(
+                TableRef("public", "t1", "t0"),
+                TableRef("public", "orders", "t1"),
+            )
+        assertEquals(
+            BuilderValidationNotice("'abc' is not a valid decimal for 't1.amount'"),
+            formatBuilderValidationError(
+                "'abc' is not a valid decimal for 't0.amount'",
+                collidingTables,
+                incompleteFilters = false,
+            ),
+        )
+
+        val dollarTables = listOf(TableRef("public", "price\$usd", "t0"))
+        assertEquals(
+            BuilderValidationNotice("'abc' is not a valid decimal for 'price\$usd.amount'"),
+            formatBuilderValidationError(
+                "'abc' is not a valid decimal for 't0.amount'",
+                dollarTables,
                 incompleteFilters = false,
             ),
         )

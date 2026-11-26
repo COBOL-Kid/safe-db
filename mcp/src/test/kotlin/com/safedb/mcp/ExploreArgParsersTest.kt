@@ -129,6 +129,21 @@ class ExploreArgParsersTest {
                 .single()
 
         assertEquals(PivotGrouping.NumberBin(size = "25", start = "0"), dimension.grouping)
+
+        val trimmed =
+            assertIs<Arg.Ok<List<PivotDimension>>>(
+                    parseDimensions(
+                        objects(
+                            """{"column":"amount","grouping":{"bin_size":" 25 ","bin_start":" 0 "}}""",
+                        ),
+                        columns,
+                        "row_dimensions",
+                    ),
+                )
+                .value
+                .single()
+
+        assertEquals(PivotGrouping.NumberBin(size = "25", start = "0"), trimmed.grouping)
     }
 
     @Test
@@ -861,17 +876,22 @@ class ExploreArgParsersTest {
                 err.message(),
             )
         }
-        val badBinStart =
-            assertIs<Arg.Err>(
-                parseDimensions(
-                    objects(
-                        """{"column":"amount","grouping":{"bin_size":"10","bin_start":"abc"}}""",
+        for (badStart in listOf("abc", "   ")) {
+            val badBinStart =
+                assertIs<Arg.Err>(
+                    parseDimensions(
+                        objects(
+                            """{"column":"amount","grouping":{"bin_size":"10","bin_start":"$badStart"}}""",
+                        ),
+                        columns,
+                        "row_dimensions",
                     ),
-                    columns,
-                    "row_dimensions",
-                ),
+                )
+            assertEquals(
+                "row_dimensions[0].grouping.bin_start must be a number",
+                badBinStart.message(),
             )
-        assertEquals("row_dimensions[0].grouping.bin_start must be a number", badBinStart.message())
+        }
 
         val formulaOnly =
             assertIs<Arg.Ok<List<PivotMeasure>>>(
@@ -883,152 +903,51 @@ class ExploreArgParsersTest {
         assertEquals(MeasureFn.Sum, formulaOnly.value.single().fn)
         assertEquals("[s] / [c]", formulaOnly.value.single().formula)
 
-        // Pivot filter strictness
-        assertEquals(
-            "filters[0].included_keys is required",
-            assertIs<Arg.Err>(
-                    parsePivotFilters(objects("""{"column":"region","op":"members"}"""), columns),
-                )
-                .message(),
-        )
-        assertEquals(
-            "filters[0].included_keys must not be empty",
-            assertIs<Arg.Err>(
-                    parsePivotFilters(
-                        objects("""{"column":"region","op":"members","included_keys":[]}"""),
-                        columns,
-                    ),
-                )
-                .message(),
-        )
-        assertEquals(
-            "filters[0].value is required",
-            assertIs<Arg.Err>(
-                    parsePivotFilters(objects("""{"column":"region","op":"equals"}"""), columns),
-                )
-                .message(),
-        )
-        for (badCount in listOf(0, -1)) {
+        val pivotFilterErrors =
+            listOf(
+                """{"column":"region","op":"members"}""" to "filters[0].included_keys is required",
+                """{"column":"region","op":"members","included_keys":[]}""" to
+                    "filters[0].included_keys must not be empty",
+                """{"column":"region","op":"equals"}""" to "filters[0].value is required",
+                """{"column":"region","op":"top","measure_alias":"m1","count":0}""" to
+                    "filters[0].count must be 1 or more",
+                """{"column":"region","op":"top","measure_alias":"m1","count":-1}""" to
+                    "filters[0].count must be 1 or more",
+                """{"column":"region","op":"top","measure_alias":"m1","value":"1"}""" to
+                    "unknown field 'filters[0].value'",
+                """{"column":"amount","op":"gt","measure_alias":"m1","value":"1","count":5}""" to
+                    "unknown field 'filters[0].count'",
+                """{"column":"amount","op":"between","measure_alias":"m1","value":"1"}""" to
+                    "filters[0].second_value is required",
+            )
+        for ((filterJson, expectedMessage) in pivotFilterErrors) {
             assertEquals(
-                "filters[0].count must be 1 or more",
-                assertIs<Arg.Err>(
-                        parsePivotFilters(
-                            objects(
-                                """{"column":"region","op":"top","measure_alias":"m1","count":$badCount}""",
-                            ),
-                            columns,
-                        ),
-                    )
-                    .message(),
+                expectedMessage,
+                assertIs<Arg.Err>(parsePivotFilters(objects(filterJson), columns)).message(),
             )
         }
-        assertEquals(
-            "unknown field 'filters[0].value'",
-            assertIs<Arg.Err>(
-                    parsePivotFilters(
-                        objects(
-                            """{"column":"region","op":"top","measure_alias":"m1","value":"1"}""",
-                        ),
-                        columns,
-                    ),
-                )
-                .message(),
-        )
-        assertEquals(
-            "unknown field 'filters[0].count'",
-            assertIs<Arg.Err>(
-                    parsePivotFilters(
-                        objects(
-                            """{"column":"amount","op":"gt","measure_alias":"m1","value":"1","count":5}""",
-                        ),
-                        columns,
-                    ),
-                )
-                .message(),
-        )
-        assertEquals(
-            "filters[0].second_value is required",
-            assertIs<Arg.Err>(
-                    parsePivotFilters(
-                        objects(
-                            """{"column":"amount","op":"between","measure_alias":"m1","value":"1"}""",
-                        ),
-                        columns,
-                    ),
-                )
-                .message(),
-        )
 
-        // Worksheet filter strictness
-        assertEquals(
-            "unknown field 'filters[0].value'",
-            assertIs<Arg.Err>(
-                    parseWorksheetFilters(
-                        objects("""{"column":"region","op":"members","value":"east"}"""),
-                        columns,
-                    ),
-                )
-                .message(),
-        )
-        assertEquals(
-            "filters[0].included_keys is required",
-            assertIs<Arg.Err>(
-                    parseWorksheetFilters(
-                        objects("""{"column":"region","op":"members"}"""),
-                        columns,
-                    ),
-                )
-                .message(),
-        )
-        assertEquals(
-            "filters[0].included_keys must not be empty",
-            assertIs<Arg.Err>(
-                    parseWorksheetFilters(
-                        objects("""{"column":"region","op":"members","included_keys":[]}"""),
-                        columns,
-                    ),
-                )
-                .message(),
-        )
-        assertEquals(
-            "filters[0].second_value is required",
-            assertIs<Arg.Err>(
-                    parseWorksheetFilters(
-                        objects("""{"column":"amount","op":"between","value":"5"}"""),
-                        columns,
-                    ),
-                )
-                .message(),
-        )
-        assertEquals(
-            "unknown field 'filters[0].value'",
-            assertIs<Arg.Err>(
-                    parseWorksheetFilters(
-                        objects("""{"column":"amount","op":"is_null","value":"5"}"""),
-                        columns,
-                    ),
-                )
-                .message(),
-        )
-        assertEquals(
-            "unknown field 'filters[0].second_value'",
-            assertIs<Arg.Err>(
-                    parseWorksheetFilters(
-                        objects(
-                            """{"column":"region","op":"eq","value":"east","second_value":"west"}""",
-                        ),
-                        columns,
-                    ),
-                )
-                .message(),
-        )
-        assertEquals(
-            "filters[0].value is required",
-            assertIs<Arg.Err>(
-                    parseWorksheetFilters(objects("""{"column":"region","op":"eq"}"""), columns),
-                )
-                .message(),
-        )
+        val worksheetFilterErrors =
+            listOf(
+                """{"column":"region","op":"members","value":"east"}""" to
+                    "unknown field 'filters[0].value'",
+                """{"column":"region","op":"members"}""" to "filters[0].included_keys is required",
+                """{"column":"region","op":"members","included_keys":[]}""" to
+                    "filters[0].included_keys must not be empty",
+                """{"column":"amount","op":"between","value":"5"}""" to
+                    "filters[0].second_value is required",
+                """{"column":"amount","op":"is_null","value":"5"}""" to
+                    "unknown field 'filters[0].value'",
+                """{"column":"region","op":"eq","value":"east","second_value":"west"}""" to
+                    "unknown field 'filters[0].second_value'",
+                """{"column":"region","op":"eq"}""" to "filters[0].value is required",
+            )
+        for ((filterJson, expectedMessage) in worksheetFilterErrors) {
+            assertEquals(
+                expectedMessage,
+                assertIs<Arg.Err>(parseWorksheetFilters(objects(filterJson), columns)).message(),
+            )
+        }
     }
 }
 

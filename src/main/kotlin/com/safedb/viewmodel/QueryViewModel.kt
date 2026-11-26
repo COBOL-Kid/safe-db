@@ -96,25 +96,6 @@ class QueryViewModel(
         QueryRunController(service, scope, onRunFinished, onConnectionReachable)
     private var aliasCounter = 0
 
-    internal fun nextCanvasTablePosition(existing: List<CanvasTable>): Pair<Float, Float> {
-        val columns = 3
-        val xStart = 40f
-        val yStart = 24f
-        val xStep = 310f
-        val yStep = 260f
-        for (slot in 0..(existing.size + columns)) {
-            val col = slot % columns
-            val row = slot / columns
-            val x = xStart + col * xStep
-            val y = yStart + row * yStep
-            val occupied = existing.any {
-                kotlin.math.abs(it.x - x) < 40f && kotlin.math.abs(it.y - y) < 40f
-            }
-            if (!occupied) return x to y
-        }
-        return xStart to (yStart + existing.size * 30f)
-    }
-
     internal val canvasViewport = CanvasViewportState()
 
     val canvasTables: SnapshotStateList<CanvasTable> = mutableStateListOf()
@@ -741,3 +722,22 @@ private fun <T> List<T>.moveItem(fromIndex: Int, toIndex: Int): List<T> {
 }
 
 private fun newNodeId(): String = java.util.UUID.randomUUID().toString()
+
+internal fun nextCanvasTablePosition(existing: List<CanvasTable>): Pair<Float, Float> {
+    val columns = 3
+    val xStart = 40f
+    val yStart = 24f
+    val xStep = CANVAS_CARD_WIDTH + 62f
+    val yStep = CANVAS_CARD_HEIGHT + 36f
+    return generateSequence(0) { it + 1 }
+        .firstNotNullOf { slot ->
+            val col = slot % columns
+            val row = slot / columns
+            val x = xStart + col * xStep
+            val y = yStart + row * yStep
+            val occupied = existing.any {
+                kotlin.math.abs(it.x - x) < 40f && kotlin.math.abs(it.y - y) < 40f
+            }
+            if (occupied) null else x to y
+        }
+}

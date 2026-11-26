@@ -169,7 +169,7 @@ internal fun SqlScreen(
                     evaluation = finalRiskEvaluation,
                     running = sqlViewModel.running,
                     gate = settings.queryRiskGate,
-                    validationError = riskValidationError,
+                    validationNotice = riskValidationError?.let(::BuilderValidationNotice),
                     runAvailable = canRun,
                 )
             } else {

@@ -120,6 +120,11 @@ internal val BuilderToolbarConnectionMinWidth = 160.dp
 internal val BuilderQueryOptionsButtonReserve = 48.dp
 internal val BuilderFilterPanelMinHeight = 96.dp
 
+internal fun builderCanvasReservePx(hasFilters: Boolean): Float = if (hasFilters) 220f else 180f
+
+internal fun builderFilterPanelMinHeight(workspaceHeight: Dp): Dp =
+    if (workspaceHeight < 360.dp) 64.dp else BuilderFilterPanelMinHeight
+
 internal fun builderFilterPanelMaxHeight(workspaceHeight: Dp): Dp {
     val budget =
         (workspaceHeight - BuilderQueryOptionsButtonReserve - CANVAS_MIN_VISIBLE_CONTENT_PX.dp)
@@ -161,13 +166,12 @@ internal fun BuilderQueryChrome(
             }
             if (queryViewModel.filterCount > 0) {
                 val filterPanelHeight = builderFilterPanelMaxHeight(workspaceHeight)
-                val minPanelHeight =
-                    if (workspaceHeight < 360.dp) 64.dp else BuilderFilterPanelMinHeight
+                val minPanelHeight = builderFilterPanelMinHeight(workspaceHeight)
                 Box(
                     modifier =
                         Modifier.fillMaxWidth()
                             .requiredHeightIn(
-                                min = minOf(minPanelHeight, filterPanelHeight),
+                                min = minPanelHeight,
                                 max = filterPanelHeight,
                             )
                             .clipToBounds()

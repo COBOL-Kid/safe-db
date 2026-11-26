@@ -454,6 +454,25 @@ class QueryViewModelStateTest {
     }
 
     @Test
+    fun nextCanvasTablePositionWrapsGridRowsAndSkipsOccupiedSlots() {
+        val sample = table("orders", "id")
+        val rowZero =
+            listOf(
+                CanvasTable(sample, "t0", 40f, 24f),
+                CanvasTable(sample, "t1", 350f, 24f),
+                CanvasTable(sample, "t2", 660f, 24f),
+            )
+        assertEquals(40f to 284f, nextCanvasTablePosition(rowZero))
+
+        // Near-collision within 40px still treats slot 0 as occupied; freeing slot 0 reuses it.
+        val nearSlotZero = listOf(CanvasTable(sample, "t0", 70f, 50f))
+        assertEquals(350f to 24f, nextCanvasTablePosition(nearSlotZero))
+
+        val movedFar = listOf(CanvasTable(sample, "t0", 500f, 500f))
+        assertEquals(40f to 24f, nextCanvasTablePosition(movedFar))
+    }
+
+    @Test
     fun clearingTheDraftAlsoResetsItsSessionViewport() {
         val viewModel = QueryViewModel(NoOpService(), TestScope(dispatcher))
         viewModel.addTable(table("orders", "id"))

@@ -58,11 +58,7 @@ internal fun VisualizationOptions(
         if (xField?.category?.isNumeric() == true && effectiveType == ChartType.Histogram) {
             val current = config.x?.grouping as? PivotGrouping.NumberBin
             val rawBinSize = current?.size.orEmpty()
-            val binSizeError =
-                rawBinSize.isNotBlank() &&
-                    rawBinSize.trim().toBigDecimalOrNull()?.let {
-                        it > java.math.BigDecimal.ZERO
-                    } != true
+            val binSizeError = rawBinSize.isNotBlank() && validPositiveBinSize(rawBinSize) == null
             OutlinedTextField(
                 value = rawBinSize,
                 onValueChange = { value ->

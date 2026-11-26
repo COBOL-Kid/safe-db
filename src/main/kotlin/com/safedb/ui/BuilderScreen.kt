@@ -486,7 +486,7 @@ internal fun BuilderScreen(
                         Modifier.fillMaxSize().background(SafeDbTheme.colors.workspaceCanvas),
                 ) {
                     val maxWorkspaceHeight = maxHeight.value.coerceAtLeast(ResultsPaneMinHeight)
-                    val canvasReserve = if (queryViewModel.filterCount > 0) 220f else 180f
+                    val canvasReserve = builderCanvasReservePx(queryViewModel.filterCount > 0)
                     val maxNormalHeight =
                         (maxWorkspaceHeight - canvasReserve)
                             .coerceAtMost(ResultsPaneMaxHeight)

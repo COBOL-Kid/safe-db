@@ -135,7 +135,8 @@ private fun parseGrouping(element: JsonElement?, parentPath: String): Arg<PivotG
             if (size.isNullOrBlank()) {
                 return invalidArgument("grouping objects require bin_size")
             }
-            val parsedSize = size.trim().toBigDecimalOrNull()
+            val trimmedSize = size.trim()
+            val parsedSize = trimmedSize.toBigDecimalOrNull()
             if (parsedSize == null || parsedSize <= BigDecimal.ZERO) {
                 return invalidArgument("$path.bin_size must be a positive number")
             }
@@ -143,10 +144,11 @@ private fun parseGrouping(element: JsonElement?, parentPath: String): Arg<PivotG
                 element.optionalStringField("bin_start", path).getOrElse {
                     return Arg.Err(it)
                 }
-            if (start != null && start.trim().toBigDecimalOrNull() == null) {
+            val trimmedStart = start?.trim()
+            if (trimmedStart != null && trimmedStart.toBigDecimalOrNull() == null) {
                 return invalidArgument("$path.bin_start must be a number")
             }
-            Arg.Ok(PivotGrouping.NumberBin(size = size, start = start))
+            Arg.Ok(PivotGrouping.NumberBin(size = trimmedSize, start = trimmedStart))
         }
         else -> invalidArgument("grouping must be a string or object")
     }
@@ -323,94 +325,71 @@ private fun parsePivotValueFilter(
     label: String,
     op: ValueFilterOp,
 ): Arg<PivotFilter.Value> {
-    when (op) {
-        ValueFilterOp.Top,
-        ValueFilterOp.Bottom ->
-            requireKnownKeys(obj, path, "column", "op", "measure_alias", "count").getOrElse {
-                return Arg.Err(it)
-            }
-        ValueFilterOp.Between ->
-            requireKnownKeys(obj, path, "column", "op", "measure_alias", "value", "second_value")
-                .getOrElse {
-                    return Arg.Err(it)
-                }
-        ValueFilterOp.GreaterThan,
-        ValueFilterOp.GreaterThanOrEqual,
-        ValueFilterOp.LessThan,
-        ValueFilterOp.LessThanOrEqual ->
-            requireKnownKeys(obj, path, "column", "op", "measure_alias", "value").getOrElse {
-                return Arg.Err(it)
-            }
+    val allowedKeys =
+        when (op) {
+            ValueFilterOp.Top,
+            ValueFilterOp.Bottom -> arrayOf("column", "op", "measure_alias", "count")
+            ValueFilterOp.Between ->
+                arrayOf("column", "op", "measure_alias", "value", "second_value")
+            ValueFilterOp.GreaterThan,
+            ValueFilterOp.GreaterThanOrEqual,
+            ValueFilterOp.LessThan,
+            ValueFilterOp.LessThanOrEqual -> arrayOf("column", "op", "measure_alias", "value")
+        }
+    requireKnownKeys(obj, path, *allowedKeys).getOrElse {
+        return Arg.Err(it)
     }
     val measureAlias =
         obj.requireNonBlankString("measure_alias", path).getOrElse {
             return Arg.Err(it)
         }
-    return when (op) {
-        ValueFilterOp.Top,
-        ValueFilterOp.Bottom -> {
-            val count =
-                obj.optionalIntField("count", path).getOrElse {
-                    return Arg.Err(it)
+    val (value, secondValue, count) =
+        when (op) {
+            ValueFilterOp.Top,
+            ValueFilterOp.Bottom -> {
+                val parsedCount =
+                    obj.optionalIntField("count", path).getOrElse {
+                        return Arg.Err(it)
+                    }
+                if (parsedCount != null && parsedCount <= 0) {
+                    return invalidArgument("$path.count must be 1 or more")
                 }
-            if (count != null && count <= 0) {
-                return invalidArgument("$path.count must be 1 or more")
+                Triple("", null, parsedCount ?: 10)
             }
-            Arg.Ok(
-                PivotFilter.Value(
-                    id = id,
-                    column = column,
-                    label = label,
-                    measureAlias = measureAlias,
-                    op = op,
-                    value = "",
-                    secondValue = null,
-                    count = count ?: 10,
-                ),
-            )
+            ValueFilterOp.Between -> {
+                val lower =
+                    obj.requirePresentStringField("value", path).getOrElse {
+                        return Arg.Err(it)
+                    }
+                val upper =
+                    obj.requirePresentStringField("second_value", path).getOrElse {
+                        return Arg.Err(it)
+                    }
+                Triple(lower, upper, 10)
+            }
+            ValueFilterOp.GreaterThan,
+            ValueFilterOp.GreaterThanOrEqual,
+            ValueFilterOp.LessThan,
+            ValueFilterOp.LessThanOrEqual -> {
+                val threshold =
+                    obj.requirePresentStringField("value", path).getOrElse {
+                        return Arg.Err(it)
+                    }
+                Triple(threshold, null, 10)
+            }
         }
-        ValueFilterOp.Between -> {
-            val value =
-                obj.requirePresentStringField("value", path).getOrElse {
-                    return Arg.Err(it)
-                }
-            val secondValue =
-                obj.requirePresentStringField("second_value", path).getOrElse {
-                    return Arg.Err(it)
-                }
-            Arg.Ok(
-                PivotFilter.Value(
-                    id = id,
-                    column = column,
-                    label = label,
-                    measureAlias = measureAlias,
-                    op = op,
-                    value = value,
-                    secondValue = secondValue,
-                ),
-            )
-        }
-        ValueFilterOp.GreaterThan,
-        ValueFilterOp.GreaterThanOrEqual,
-        ValueFilterOp.LessThan,
-        ValueFilterOp.LessThanOrEqual -> {
-            val value =
-                obj.requirePresentStringField("value", path).getOrElse {
-                    return Arg.Err(it)
-                }
-            Arg.Ok(
-                PivotFilter.Value(
-                    id = id,
-                    column = column,
-                    label = label,
-                    measureAlias = measureAlias,
-                    op = op,
-                    value = value,
-                    secondValue = null,
-                ),
-            )
-        }
-    }
+    return Arg.Ok(
+        PivotFilter.Value(
+            id = id,
+            column = column,
+            label = label,
+            measureAlias = measureAlias,
+            op = op,
+            value = value,
+            secondValue = secondValue,
+            count = count,
+        ),
+    )
 }
 
 private fun parseLabelFilterOp(value: String): LabelFilterOp? =

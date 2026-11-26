@@ -8,9 +8,11 @@ import com.safedb.explore.ExploreSort
 import com.safedb.explore.ExploreSortTarget
 import com.safedb.explore.ExploreWorkspaceState
 import com.safedb.explore.MeasureFn
+import com.safedb.explore.NumberFormatKind
 import com.safedb.explore.PivotDimension
 import com.safedb.explore.PivotFilter
 import com.safedb.explore.PivotMeasure
+import com.safedb.explore.PivotNumberFormat
 import com.safedb.explore.PivotShowAs
 import com.safedb.explore.RecipeField
 import com.safedb.explore.ShowAsMode
@@ -501,7 +503,23 @@ class ExploreViewModelTest {
         viewModel.clearAppliedRecipe()
         assertEquals(null, viewModel.appliedRecipeId)
 
-        assertEquals(0, viewModel.visualizationConfigReplacementRevision)
+        // Stash Bar X and second measure in switch memory via KPI transition, then verify
+        // replacing visualization via applyRecipe clears both switch memory and transition notice.
+        val countRows = VisualizationMeasure.countRows("count_rows")
+        val sumAmount =
+            VisualizationMeasure("sum_amount", MeasureFn.Sum, "t0__amount", "Sum amount")
+        viewModel.updateVisualization {
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("t0__status", "Status"),
+                values = listOf(sumAmount, countRows),
+            )
+        }
+        viewModel.selectVisualizationChartType(ChartType.Kpi)
+        assertNull(viewModel.visualizationConfig.x)
+        assertEquals(listOf("sum_amount"), viewModel.visualizationConfig.values.map { it.alias })
+        assertEquals("Removed incompatible X assignment.", viewModel.visualizationTransitionNotice)
+
         val vizRecipe =
             ExploreRecipe(
                 id = "r_viz",
@@ -511,17 +529,81 @@ class ExploreViewModelTest {
                 defaultMode = ExploreMode.Visualization,
                 visualization =
                     VisualizationConfig(
-                        chartType = ChartType.Bar,
-                        x = VisualizationField("t0__status", "Status"),
-                        values = listOf(VisualizationMeasure.countRows()),
+                        chartType = ChartType.Kpi,
+                        values = listOf(sumAmount),
+                        title = "Recipe KPI",
                     ),
                 requiredFields = listOf(RecipeField("t0__status", "status", "varchar", "orders")),
             )
         viewModel.requestRecipe(vizRecipe)
-        assertEquals(1, viewModel.visualizationConfigReplacementRevision)
+        assertNull(viewModel.visualizationTransitionNotice)
 
-        viewModel.updateVisualization { it.copy(title = "Updated title") }
-        assertEquals(1, viewModel.visualizationConfigReplacementRevision)
+        // Switching back to Bar after recipe replacement must not resurrect old stashed X/values.
+        viewModel.selectVisualizationChartType(ChartType.Bar)
+        assertNull(viewModel.visualizationConfig.x)
+        assertEquals(listOf("sum_amount"), viewModel.visualizationConfig.values.map { it.alias })
+    }
+
+    @Test
+    fun visualizationChartSwitchPreservesFormatEditsAndClearsNoticeAndMemoryOnResetOrTemplate() {
+        val viewModel =
+            ExploreViewModel(createExploreSession(connection(), sampleSpec(), sampleResult()))
+        val sumAmount =
+            VisualizationMeasure("sum_amount", MeasureFn.Sum, "t0__amount", "Sum amount")
+        val countRows = VisualizationMeasure.countRows("count_rows")
+        val currency = PivotNumberFormat(kind = NumberFormatKind.Currency, decimals = 2)
+
+        viewModel.selectMode(ExploreMode.Visualization)
+        viewModel.updateVisualization {
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("t0__status", "Status"),
+                values = listOf(sumAmount, countRows),
+            )
+        }
+        viewModel.selectVisualizationChartType(ChartType.Kpi)
+        assertEquals("Removed incompatible X assignment.", viewModel.visualizationTransitionNotice)
+
+        // Editing only numberFormat clears transitionNotice while preserving stashed X & values.
+        viewModel.updateVisualization { current ->
+            current.copy(values = current.values.map { it.copy(numberFormat = currency) })
+        }
+        assertNull(viewModel.visualizationTransitionNotice)
+
+        viewModel.selectVisualizationChartType(ChartType.Bar)
+        assertEquals("t0__status", viewModel.visualizationConfig.x?.column)
+        assertEquals(
+            listOf("sum_amount", "count_rows"),
+            viewModel.visualizationConfig.values.map { it.alias },
+        )
+        assertEquals(currency, viewModel.visualizationConfig.values.first().numberFormat)
+
+        // Applying a template clears transitionNotice and switch memory.
+        viewModel.selectVisualizationChartType(ChartType.Kpi)
+        assertEquals("Removed incompatible X assignment.", viewModel.visualizationTransitionNotice)
+        viewModel.applyVisualizationTemplate(
+            VisualizationConfig(chartType = ChartType.Kpi, values = listOf(sumAmount)),
+        )
+        assertNull(viewModel.visualizationTransitionNotice)
+        viewModel.selectVisualizationChartType(ChartType.Bar)
+        assertNull(viewModel.visualizationConfig.x)
+        assertEquals(listOf("sum_amount"), viewModel.visualizationConfig.values.map { it.alias })
+
+        // Resetting visualization clears transitionNotice and switch memory.
+        viewModel.updateVisualization {
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("t0__status", "Status"),
+                values = listOf(sumAmount, countRows),
+            )
+        }
+        viewModel.selectVisualizationChartType(ChartType.Kpi)
+        assertEquals("Removed incompatible X assignment.", viewModel.visualizationTransitionNotice)
+        viewModel.resetVisualization()
+        assertNull(viewModel.visualizationTransitionNotice)
+        viewModel.selectVisualizationChartType(ChartType.Bar)
+        assertNull(viewModel.visualizationConfig.x)
+        assertTrue(viewModel.visualizationConfig.values.isEmpty())
     }
 
     @Test

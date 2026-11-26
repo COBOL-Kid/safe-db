@@ -459,13 +459,13 @@ cmd_focus() {
 }
 
 cmd_resize() {
-  require_display
   local width="${1:?resize requires WIDTH}" height="${2:?resize requires HEIGHT}"
   local pattern="${3:-Safe-DB}"
-  if [[ ! "$width" =~ ^[0-9]+$ || ! "$height" =~ ^[0-9]+$ || "$width" -lt 1 || "$height" -lt 1 ]]; then
+  if [[ ! "$width" =~ ^[1-9][0-9]*$ || ! "$height" =~ ^[1-9][0-9]*$ ]]; then
     echo "resize WIDTH and HEIGHT must be positive integers." >&2
     exit 2
   fi
+  require_display
   local wid
   wid="$(pick_window_match "$pattern" --onlyvisible)"
   if [[ -z "$wid" ]]; then

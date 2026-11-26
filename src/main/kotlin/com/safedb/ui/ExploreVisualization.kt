@@ -34,7 +34,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -87,22 +86,12 @@ internal fun VisualizationConfigPanel(
     onHide: () -> Unit,
     modifier: Modifier = Modifier,
     resolvedChartType: ChartType? = null,
-    configReplacementRevision: Int = 0,
+    transitionMessage: String? = null,
+    onChartTypeChange: (ChartType) -> Unit = { onConfigChange(config.forChartType(it, fields)) },
 ) {
     var templatesOpen by remember { mutableStateOf(false) }
     var optionsExpanded by remember { mutableStateOf(false) }
     var editingFilter by remember { mutableStateOf<PivotFilter?>(null) }
-    var transitionNotice by remember { mutableStateOf<Pair<VisualizationConfig, String>?>(null) }
-    var switchMemory by
-        remember(sample, configReplacementRevision) {
-            mutableStateOf(VisualizationChartSwitchMemory())
-        }
-    LaunchedEffect(config) {
-        if (transitionNotice?.first != config) {
-            transitionNotice = null
-        }
-    }
-    val transitionMessage = transitionNotice?.takeIf { it.first == config }?.second
     val effectiveType =
         if (config.chartType == ChartType.Auto) resolvedChartType else config.chartType
     val dualAxisEligible = config.supportsSecondaryAxis(effectiveType)
@@ -133,7 +122,6 @@ internal fun VisualizationConfigPanel(
             templates = remember(sample, tables) { visualizationTemplates(sample, tables) },
             onApply = {
                 templatesOpen = false
-                switchMemory = VisualizationChartSwitchMemory()
                 onApplyTemplate(it)
             },
             onDismiss = { templatesOpen = false },
@@ -160,10 +148,7 @@ internal fun VisualizationConfigPanel(
                         Text("Templates")
                     }
                     TextButton(
-                        onClick = {
-                            switchMemory = VisualizationChartSwitchMemory()
-                            onReset()
-                        },
+                        onClick = onReset,
                         enabled = config.isConfigured(),
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                     ) {
@@ -193,10 +178,7 @@ internal fun VisualizationConfigPanel(
                     ConfigSection("Suggested for this sample") {
                         suggested.forEach { template ->
                             val ready = template.result as VisualizationTemplateBuildResult.Ready
-                            TemplateCard(template, false) {
-                                switchMemory = VisualizationChartSwitchMemory()
-                                onApplyTemplate(ready.config)
-                            }
+                            TemplateCard(template, false) { onApplyTemplate(ready.config) }
                         }
                     }
                 }
@@ -209,17 +191,7 @@ internal fun VisualizationConfigPanel(
                 ) {
                     ChartType.entries.forEach { type ->
                         SelectablePill(chartTypeLabel(type), config.chartType == type) {
-                            val (next, nextMemory) =
-                                transitionVisualizationChartType(
-                                    config,
-                                    type,
-                                    fields,
-                                    switchMemory,
-                                )
-                            switchMemory = nextMemory
-                            transitionNotice =
-                                chartTypeTransitionMessage(config, next)?.let { next to it }
-                            onConfigChange(next)
+                            onChartTypeChange(type)
                         }
                     }
                 }
@@ -239,21 +211,17 @@ internal fun VisualizationConfigPanel(
                             label = field.label,
                             supporting =
                                 fields.firstOrNull { it.column == field.column }?.supportingText(),
-                            onRemove = {
-                                switchMemory = switchMemory.copy(x = null)
-                                onConfigChange(config.copy(x = null))
-                            },
+                            onRemove = { onConfigChange(config.copy(x = null)) },
                         )
                     }
                     SearchableExploreFieldDropdown(
                         label = if (config.x == null) "Add X field" else "Replace X field",
                         fields = fields,
-                        compatible = { field -> xCompatible(config.chartType, field) },
+                        compatible = { field -> visualizationXCompatible(config.chartType, field) },
                         incompatibleReason = {
                             "Not compatible with ${chartTypeLabel(config.chartType).lowercase()}"
                         },
                         onSelect = { field ->
-                            switchMemory = switchMemory.copy(x = null)
                             val grouping =
                                 if (field.category.isTemporal()) {
                                     PivotGrouping.Date(DateGroupUnit.Month)
@@ -281,7 +249,6 @@ internal fun VisualizationConfigPanel(
                             canAssignSecondary = primaryCount > 1,
                             horizontalBars = horizontalBars,
                             onChange = { updated ->
-                                switchMemory = switchMemory.copy(values = emptyList())
                                 onConfigChange(
                                     config.copy(
                                         values =
@@ -292,7 +259,6 @@ internal fun VisualizationConfigPanel(
                                 )
                             },
                             onRemove = {
-                                switchMemory = switchMemory.copy(values = emptyList())
                                 onConfigChange(
                                     config.copy(
                                         values = normalizeMeasureAxes(config.values - value),
@@ -319,11 +285,6 @@ internal fun VisualizationConfigPanel(
                                 } else {
                                     config.values + value
                                 }
-                            switchMemory =
-                                switchMemory.copy(
-                                    values = emptyList(),
-                                    series = if (values.size > 1) null else switchMemory.series,
-                                )
                             onConfigChange(
                                 config.copy(
                                     values = values,
@@ -344,10 +305,7 @@ internal fun VisualizationConfigPanel(
                         VisualizationFieldChip(
                             field.label,
                             fields.firstOrNull { it.column == field.column }?.supportingText(),
-                            onRemove = {
-                                switchMemory = switchMemory.copy(series = null)
-                                onConfigChange(config.copy(series = null))
-                            },
+                            onRemove = { onConfigChange(config.copy(series = null)) },
                         )
                     }
                     SearchableExploreFieldDropdown(
@@ -359,7 +317,6 @@ internal fun VisualizationConfigPanel(
                         },
                         incompatibleReason = { "Series fields must be categorical" },
                         onSelect = {
-                            switchMemory = switchMemory.copy(series = null, values = emptyList())
                             onConfigChange(
                                 config.copy(
                                     series = VisualizationField(it.column, it.label),
@@ -377,10 +334,7 @@ internal fun VisualizationConfigPanel(
                         VisualizationFieldChip(
                             field.label,
                             fields.firstOrNull { it.column == field.column }?.supportingText(),
-                            onRemove = {
-                                switchMemory = switchMemory.copy(size = null)
-                                onConfigChange(config.copy(size = null))
-                            },
+                            onRemove = { onConfigChange(config.copy(size = null)) },
                         )
                     }
                     SearchableExploreFieldDropdown(
@@ -389,7 +343,6 @@ internal fun VisualizationConfigPanel(
                         compatible = { it.category.isNumeric() },
                         incompatibleReason = { "Size needs a numeric field" },
                         onSelect = {
-                            switchMemory = switchMemory.copy(size = null)
                             onConfigChange(
                                 config.copy(size = VisualizationField(it.column, it.label)),
                             )
@@ -753,14 +706,6 @@ private fun ConfigSection(title: String, content: @Composable () -> Unit) {
         content()
     }
 }
-
-private fun xCompatible(type: ChartType, field: ExploreFieldOption): Boolean =
-    when (type) {
-        ChartType.Scatter,
-        ChartType.Histogram -> field.category.isNumeric()
-        ChartType.Kpi -> false
-        else -> field.category !in setOf(ColumnCategory.Binary, ColumnCategory.Json)
-    }
 
 private fun asPivotMeasure(value: VisualizationMeasure) =
     PivotMeasure(

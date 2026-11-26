@@ -104,6 +104,8 @@ fun isTimeoutOrConnectionFailure(message: String): Boolean {
 }
 
 internal fun isServerPlanTimeout(chain: List<Throwable>, texts: String): Boolean {
+    // 3024 = MySQL MAX_EXECUTION_TIME, 57014 = PostgreSQL query_canceled,
+    // 1013 + 72000 = Oracle ORA-01013 (SQLSTATE guards MSSQL/MySQL 1013 collisions), -952 = Db2.
     if (
         chain.any { error ->
             error is SQLException &&

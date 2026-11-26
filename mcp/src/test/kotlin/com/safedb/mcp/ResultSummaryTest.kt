@@ -236,8 +236,9 @@ class ResultSummaryTest {
                         listOf(ResultCell.integer(42L)),
                         listOf(ResultCell.float(Double.POSITIVE_INFINITY)),
                         listOf(ResultCell.float(Double.NEGATIVE_INFINITY)),
+                        listOf(ResultCell.integer(7L)),
                     ),
-                rowCount = 3,
+                rowCount = 4,
                 truncated = false,
                 warnings = emptyList(),
             )

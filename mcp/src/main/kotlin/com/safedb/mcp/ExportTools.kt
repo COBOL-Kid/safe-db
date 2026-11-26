@@ -110,8 +110,6 @@ private fun resolveExportFilename(resultId: String, filename: String?): Arg<Stri
     if (filename == null) return Arg.Ok("$resultId.csv")
     if (
         !SAFE_EXPORT_FILENAME.matches(filename) ||
-            filename == "." ||
-            filename == ".." ||
             filename.startsWith(".") ||
             filename.endsWith(".")
     ) {

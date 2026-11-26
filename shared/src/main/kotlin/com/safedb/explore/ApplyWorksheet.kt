@@ -15,32 +15,48 @@ fun precedingWorksheetCalculations(
     return if (editingIndex >= 0) calculations.take(editingIndex) else calculations
 }
 
+private fun uniqueSampleDisplayLabels(sampleColumns: List<ResultColumn>): Map<String, String> {
+    val displays = sampleColumns.map { it.name to displayColumnLabel(it.name) }
+    val labelCounts = displays.groupingBy { it.second }.eachCount()
+    return buildMap {
+        displays.forEach { (rawName, display) ->
+            if (labelCounts[display] == 1) {
+                put(rawName, display)
+            }
+        }
+    }
+}
+
+private fun uniqueCalculationLabels(
+    calculations: List<WorksheetCalculation>,
+    reservedNames: Set<String>,
+): Map<String, String> {
+    val labelCounts = calculations.groupingBy { it.label }.eachCount()
+    val ids = calculations.mapTo(mutableSetOf()) { it.id }
+    return buildMap {
+        calculations.forEach { calc ->
+            if (
+                labelCounts[calc.label] == 1 && calc.label !in reservedNames && calc.label !in ids
+            ) {
+                put(calc.id, calc.label)
+            }
+        }
+    }
+}
+
 fun worksheetFormulaTokens(
     sampleColumns: List<ResultColumn>,
     priorCalculations: List<WorksheetCalculation>,
 ): List<Pair<String, String>> {
-    val labelCounts = sampleColumns.groupingBy { displayColumnLabel(it.name) }.eachCount()
+    val uniqueSampleLabels = uniqueSampleDisplayLabels(sampleColumns)
     val columnTokens = sampleColumns.map { col ->
-        val display = displayColumnLabel(col.name)
-        val token = if (labelCounts[display] == 1) display else col.name
-        token to display
+        val uniqueDisplay = uniqueSampleLabels[col.name]
+        (uniqueDisplay ?: col.name) to (uniqueDisplay ?: displayColumnLabel(col.name))
     }
-    val reservedNames =
-        sampleColumns.mapTo(mutableSetOf()) { it.name } +
-            labelCounts.filterValues { it == 1 }.keys +
-            priorCalculations.map { it.id }
-    val calcLabelCounts = priorCalculations.groupingBy { it.label }.eachCount()
+    val reservedNames = sampleColumns.mapTo(mutableSetOf()) { it.name } + uniqueSampleLabels.values
+    val uniqueCalcLabels = uniqueCalculationLabels(priorCalculations, reservedNames)
     val calcTokens = priorCalculations.map { calc ->
-        val token =
-            if (
-                calcLabelCounts[calc.label] == 1 &&
-                    (calc.label !in reservedNames || calc.label == calc.id)
-            ) {
-                calc.label
-            } else {
-                calc.id
-            }
-        token to calc.label
+        (uniqueCalcLabels[calc.id] ?: calc.id) to calc.label
     }
     return columnTokens + calcTokens
 }
@@ -51,21 +67,22 @@ fun worksheetFormulaValues(
     priorCalculations: List<WorksheetCalculation>,
     calculationValue: (String) -> BigDecimal?,
 ): Map<String, BigDecimal?> = buildMap {
-    val labelCounts = sampleColumns.groupingBy { displayColumnLabel(it.name) }.eachCount()
-    sampleColumns.forEach { col ->
-        val value = sourceValue(col.name)
-        put(col.name, value)
-        val display = displayColumnLabel(col.name)
-        if (labelCounts[display] == 1) {
-            put(display, value)
+    val uniqueSampleLabels = uniqueSampleDisplayLabels(sampleColumns)
+    sampleColumns.forEach { col -> put(col.name, sourceValue(col.name)) }
+    uniqueSampleLabels.forEach { (rawName, display) ->
+        if (display !in this) {
+            put(display, this[rawName])
         }
     }
-    val calcLabelCounts = priorCalculations.groupingBy { it.label }.eachCount()
+    val reservedNames = sampleColumns.mapTo(mutableSetOf()) { it.name } + uniqueSampleLabels.values
+    val uniqueCalcLabels = uniqueCalculationLabels(priorCalculations, reservedNames)
     val resolvedValues = priorCalculations.associate { it.id to calculationValue(it.id) }
     priorCalculations.forEach { calc -> put(calc.id, resolvedValues[calc.id]) }
     priorCalculations.forEach { calc ->
-        if (calcLabelCounts[calc.label] == 1 && !containsKey(calc.label)) {
-            put(calc.label, resolvedValues[calc.id])
+        uniqueCalcLabels[calc.id]?.let { label ->
+            if (label !in this) {
+                put(label, resolvedValues[calc.id])
+            }
         }
     }
 }
@@ -82,6 +99,11 @@ private class WorksheetEngine(
     private val tables: List<TableRef>,
 ) {
     private val sampleIndex = SampleIndex(sample)
+    private val rowFormulas =
+        config.calculations.filterIsInstance<WorksheetCalculation.RowFormula>()
+    private val uniqueSampleLabels = uniqueSampleDisplayLabels(sample.columns)
+    private val reservedRowSampleNames =
+        sample.columns.mapTo(mutableSetOf()) { it.name } + uniqueSampleLabels.values
     private val warnings = linkedSetOf<String>()
     private var errorCount = 0
 
@@ -91,7 +113,9 @@ private class WorksheetEngine(
             sample.rows
                 .mapIndexed { index, row -> WorksheetRecord(index, row) }
                 .filter(::passesFilters)
-        records.forEach(::applyRowFormulas)
+        if (rowFormulas.isNotEmpty()) {
+            records.forEach(::applyRowFormulas)
+        }
         records = records.sortedWith(recordComparator())
 
         val entries = mutableListOf<MutableWorksheetEntry>()
@@ -190,36 +214,21 @@ private class WorksheetEngine(
     }
 
     private fun validateCalculationDependencies() {
-        val sampleLabelCounts =
-            sample.columns.groupingBy { displayColumnLabel(it.name) }.eachCount()
-        val rowSampleNames = buildSet {
-            sample.columns.forEach { column ->
-                add(column.name)
-                val display = displayColumnLabel(column.name)
-                if (sampleLabelCounts[display] == 1) add(display)
+        val rowCalcById = rowFormulas.associateBy { it.id }
+        val rowCalcIdByLabel =
+            uniqueCalculationLabels(rowFormulas, reservedRowSampleNames).entries.associate {
+                (id, label) ->
+                label to id
             }
-        }
-        val rowCalcs = config.calculations.filterIsInstance<WorksheetCalculation.RowFormula>()
-        val rowCalcById = rowCalcs.associateBy { it.id }
-        val rowLabelCounts = rowCalcs.groupingBy { it.label }.eachCount()
-        val rowCalcByLabel =
-            rowCalcs
-                .filter {
-                    rowLabelCounts[it.label] == 1 &&
-                        it.label !in rowSampleNames &&
-                        it.label !in rowCalcById
-                }
-                .associateBy { it.label }
         val groupCalcs =
             config.calculations.filter {
                 it is WorksheetCalculation.Aggregate || it is WorksheetCalculation.GroupFormula
             }
         val groupCalcById = groupCalcs.associateBy { it.id }
-        val groupLabelCounts = groupCalcs.groupingBy { it.label }.eachCount()
-        val groupCalcByLabel =
-            groupCalcs
-                .filter { groupLabelCounts[it.label] == 1 && it.label !in groupCalcById }
-                .associateBy { it.label }
+        val groupCalcIdByLabel =
+            uniqueCalculationLabels(groupCalcs, emptySet()).entries.associate { (id, label) ->
+                label to id
+            }
         val dependencies =
             config.calculations.associate { calculation ->
                 val ids =
@@ -227,12 +236,12 @@ private class WorksheetEngine(
                         is WorksheetCalculation.GroupFormula ->
                             formulaReferences(calculation.formula).mapNotNullTo(mutableSetOf()) {
                                 ref ->
-                                groupCalcById[ref]?.id ?: groupCalcByLabel[ref]?.id
+                                groupCalcById[ref]?.id ?: groupCalcIdByLabel[ref]
                             }
                         is WorksheetCalculation.RowFormula ->
                             formulaReferences(calculation.formula).mapNotNullTo(mutableSetOf()) {
                                 ref ->
-                                rowCalcById[ref]?.id ?: rowCalcByLabel[ref]?.id
+                                rowCalcById[ref]?.id ?: rowCalcIdByLabel[ref]
                             }
                         is WorksheetCalculation.Window ->
                             setOfNotNull((calculation.source as? WorksheetValueRef.Calculation)?.id)
@@ -281,25 +290,42 @@ private class WorksheetEngine(
         }
 
     private fun applyRowFormulas(record: WorksheetRecord) {
+        val baseValues = buildMap {
+            sample.columns.forEach { col ->
+                put(col.name, resultCellDecimal(record.source(col.name)))
+            }
+            uniqueSampleLabels.forEach { (rawName, display) ->
+                if (display !in this) {
+                    put(display, this[rawName])
+                }
+            }
+        }
         val priorCalculations = mutableListOf<WorksheetCalculation>()
-        config.calculations.filterIsInstance<WorksheetCalculation.RowFormula>().forEach {
-            calculation ->
+        val priorValues = linkedMapOf<String, BigDecimal?>()
+        rowFormulas.forEach { calculation ->
             val values =
-                worksheetFormulaValues(
-                    sampleColumns = sample.columns,
-                    sourceValue = { resultCellDecimal(record.source(it)) },
-                    priorCalculations = priorCalculations,
-                    calculationValue = { resultCellDecimal(record.calculations[it]?.value) },
-                )
+                if (priorCalculations.isEmpty()) {
+                    baseValues
+                } else {
+                    val uniqueCalcLabels =
+                        uniqueCalculationLabels(priorCalculations, reservedRowSampleNames)
+                    buildMap(baseValues.size + priorCalculations.size * 2) {
+                        putAll(baseValues)
+                        putAll(priorValues)
+                        uniqueCalcLabels.forEach { (id, label) -> put(label, priorValues[id]) }
+                    }
+                }
             val result = evaluatePivotFormula(calculation.formula, values, referenceLabel = "field")
-            record.calculations[calculation.id] =
+            val cell =
                 if (result.error != null) {
                     errorCount++
                     WorksheetCell(error = result.error)
                 } else {
                     WorksheetCell(result.value.toResultCell())
                 }
+            record.calculations[calculation.id] = cell
             priorCalculations += calculation
+            priorValues[calculation.id] = resultCellDecimal(cell.value)
         }
     }
 
@@ -420,6 +446,7 @@ private class WorksheetEngine(
             .also { entry -> entry.calculations.putAll(record.calculations) }
 
     private fun applyGroupCalculations(entry: MutableWorksheetEntry) {
+        val priorGroupCalculations = mutableListOf<WorksheetCalculation>()
         config.calculations.forEach { calculation ->
             when (calculation) {
                 is WorksheetCalculation.Aggregate -> {
@@ -430,6 +457,7 @@ private class WorksheetEngine(
                     ) {
                         entry.calculations[calculation.id] =
                             WorksheetCell(aggregate(entry.records, calculation))
+                        priorGroupCalculations += calculation
                     }
                 }
                 is WorksheetCalculation.GroupFormula -> {
@@ -438,8 +466,6 @@ private class WorksheetEngine(
                             calculation.groupColumn == entry.groupColumn ||
                             entry.kind == WorksheetRowKind.GrandTotal
                     ) {
-                        val priorGroupCalculations =
-                            config.calculations.filter { it.id in entry.calculations }
                         val values =
                             worksheetFormulaValues(
                                 sampleColumns = emptyList(),
@@ -462,6 +488,7 @@ private class WorksheetEngine(
                             } else {
                                 WorksheetCell(result.value.toResultCell())
                             }
+                        priorGroupCalculations += calculation
                     }
                 }
                 else -> Unit

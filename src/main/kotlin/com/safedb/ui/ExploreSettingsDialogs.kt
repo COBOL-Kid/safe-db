@@ -74,9 +74,7 @@ internal fun DimensionSettingsDialog(
         }
     val numeric = field?.category in setOf(ColumnCategory.Integer, ColumnCategory.Decimal)
     val temporal = field?.category in setOf(ColumnCategory.Date, ColumnCategory.DateTime)
-    val validBin =
-        grouping !is PivotGrouping.NumberBin ||
-            binSize.toBigDecimalOrNull()?.let { it > BigDecimal.ZERO } == true
+    val validBin = grouping !is PivotGrouping.NumberBin || validPositiveBinSize(binSize) != null
 
     AlertDialog(
         onDismissRequest = onDismiss,

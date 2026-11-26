@@ -351,6 +351,20 @@ internal fun exploreSampleService(): RecordingSafeDbService {
     return service
 }
 
+internal suspend fun storeExploreResult(client: Client): String {
+    val receipt =
+        client
+            .callTool(
+                "run_query",
+                mapOf(
+                    "connection_id" to "c1",
+                    "sql" to "SELECT id, email FROM public.customers",
+                ),
+            )
+            .json()
+    return receipt.getValue("result_id").jsonPrimitive.content
+}
+
 internal fun sampleMcpSchema(): Schema =
     Schema(
         tables =

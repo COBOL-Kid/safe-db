@@ -340,7 +340,16 @@ internal constructor(
 
     private fun persistConnection(def: ConnectionDef, password: String?) {
         def.validate().getOrThrow()
-        val previous = configStore.get(def.id)
+        val existing = configStore.list()
+        val previous = existing.firstOrNull { it.id == def.id }
+        val normalizedName = def.name.trim()
+        if (
+            existing.any {
+                it.id != def.id && it.name.trim().equals(normalizedName, ignoreCase = true)
+            }
+        ) {
+            throw IllegalArgumentException("A connection named '$normalizedName' already exists")
+        }
         if (
             previous != null &&
                 previous.credentialFingerprint() != def.credentialFingerprint() &&

@@ -119,18 +119,15 @@ private fun columnMinMax(
 }
 
 private fun compareNumeric(left: ResultCell, right: ResultCell): Int =
-    when (left) {
-        is ResultCell.IntegerCell if right is ResultCell.IntegerCell ->
+    when {
+        left is ResultCell.IntegerCell && right is ResultCell.IntegerCell ->
             left.value.compareTo(right.value)
-        is ResultCell.FloatCell if right is ResultCell.FloatCell ->
+        left is ResultCell.FloatCell && right is ResultCell.FloatCell ->
             left.value.compareTo(right.value)
-        is ResultCell.FloatCell if left.value.isInfinite() -> if (left.value > 0.0) 1 else -1
-        else ->
-            when {
-                right is ResultCell.FloatCell && right.value.isInfinite() ->
-                    if (right.value > 0.0) -1 else 1
-                else -> numericDecimal(left).compareTo(numericDecimal(right))
-            }
+        left is ResultCell.FloatCell && left.value.isInfinite() -> if (left.value > 0.0) 1 else -1
+        right is ResultCell.FloatCell && right.value.isInfinite() ->
+            if (right.value > 0.0) -1 else 1
+        else -> numericDecimal(left).compareTo(numericDecimal(right))
     }
 
 private fun numericDecimal(cell: ResultCell): BigDecimal =

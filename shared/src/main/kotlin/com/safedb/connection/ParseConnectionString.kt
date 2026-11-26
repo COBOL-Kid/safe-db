@@ -165,21 +165,20 @@ private fun parseSqlServerUri(raw: String): ParsedConnection {
     val encrypt = lowercaseParam(url, "encrypt")
     val trustServerCertificate = lowercaseParam(url, "trustservercertificate")
     val pathDatabase = pathnameDatabase(url.rawPath)
-    val queryDatabase = firstNonBlankParamValue(url, "database")
-    val queryDatabaseName = firstNonBlankParamValue(url, "databaseName")
-    val (database, consumedDatabaseKey) =
+    val databaseValues = paramValues(url, "database").filter(String::isNotBlank)
+    val databaseNameValues = paramValues(url, "databaseName").filter(String::isNotBlank)
+    val (database, consumedDatabaseKey, hasDuplicateDatabase) =
         when {
-            pathDatabase.isNotBlank() -> pathDatabase to null
-            queryDatabase != null -> queryDatabase to "database"
-            queryDatabaseName != null -> queryDatabaseName to "databasename"
-            else -> "" to null
+            pathDatabase.isNotBlank() -> Triple(pathDatabase, null, false)
+            databaseValues.isNotEmpty() ->
+                Triple(databaseValues.first(), "database", databaseValues.size > 1)
+            databaseNameValues.isNotEmpty() ->
+                Triple(databaseNameValues.first(), "databasename", databaseNameValues.size > 1)
+            else -> Triple("", null, false)
         }
     val consumedKeys = setOfNotNull("encrypt", "trustservercertificate", consumedDatabaseKey)
     val databaseWarnings =
-        if (
-            consumedDatabaseKey != null &&
-                paramValues(url, consumedDatabaseKey).count { it.isNotBlank() } > 1
-        ) {
+        if (hasDuplicateDatabase && consumedDatabaseKey != null) {
             listOf(
                 "Driver parameter '$consumedDatabaseKey' appeared more than once; the first value was imported.",
             )
@@ -442,7 +441,7 @@ private fun parseOracle(raw: String): ParsedConnection {
     )
 }
 
-private data class ParsedUrl(
+internal data class ParsedUrl(
     val scheme: String,
     val host: String,
     val port: Int,
@@ -532,9 +531,6 @@ private fun lowercaseParam(url: ParsedUrl, key: String): String? = paramValue(ur
 
 private fun paramValue(url: ParsedUrl, key: String): String? = paramValues(url, key).firstOrNull()
 
-private fun firstNonBlankParamValue(url: ParsedUrl, key: String): String? =
-    paramValues(url, key).firstOrNull { it.isNotBlank() }
-
 private fun paramValues(url: ParsedUrl, key: String): List<String> {
     val query = url.rawQuery ?: return emptyList()
     return query.split('&').mapNotNull { part ->
@@ -549,7 +545,7 @@ private fun paramValues(url: ParsedUrl, key: String): List<String> {
     }
 }
 
-private fun urlQueryPairs(url: ParsedUrl): List<Pair<String, String>> =
+internal fun urlQueryPairs(url: ParsedUrl): List<Pair<String, String>> =
     url.rawQuery.orEmpty().split('&').filter(String::isNotEmpty).map { part ->
         val eqIndex = part.indexOf('=')
         if (eqIndex < 0) {
@@ -616,7 +612,7 @@ private fun looksLikeSqlServerKeyValue(raw: String): Boolean =
         )
         .containsMatchIn(raw)
 
-private fun splitSemicolonRecords(raw: String): List<String> {
+internal fun splitSemicolonRecords(raw: String): List<String> {
     val records = mutableListOf<String>()
     var current = StringBuilder()
     var quote: Char? = null
@@ -776,179 +772,40 @@ private fun parseSqlServerHost(value: String): Pair<String, Int?> {
     return host to port
 }
 
-private val BEST_EFFORT_KV_PASSWORD_REGEX =
-    Regex(
-        """(?i)((?:^|[;:])\s*(?:password|pwd)\s*=)(?:[ \t]*\{(?:[^}]|}})*}?[^;]*|[ \t]*"(?:[^"]|"")*"?[^;]*|[ \t]*'(?:[^']|'')*'?[^;]*|[^;]*)""",
-    )
+private val AUTHORITY_END_CHARS = charArrayOf('/', '?', '#')
 
-private val BEST_EFFORT_URI_QUERY_PASSWORD_REGEX =
-    Regex(
-        """(?i)([?&]\s*(?:password|pwd)\s*=)(?:[ \t]*\{(?:[^}]|}})*}?[^&#]*|[ \t]*"(?:[^"]|"")*"?[^&#]*|[ \t]*'(?:[^']|'')*'?[^&#]*|[^&#]*)""",
-    )
-
-private val ORACLE_CONNECT_MARKER_REGEX = Regex("@(?://|tcps?:|\\()", RegexOption.IGNORE_CASE)
-
-private fun scrubBestEffortOracleAuth(raw: String): String {
-    val prefix = Regex("^jdbc:oracle:thin:", RegexOption.IGNORE_CASE).find(raw)?.value.orEmpty()
-    val rest = raw.substring(prefix.length)
-    if (rest.startsWith("@")) return raw
-    val atIndex = findBestEffortOracleAuthSeparator(rest, hasOraclePrefix = prefix.isNotEmpty())
-    if (atIndex <= 0) return raw
-    val auth = rest.substring(0, atIndex)
-    if (prefix.isEmpty() && auth.any { it == ';' || it == '=' || it.isWhitespace() }) return raw
-    val slashIndex = auth.indexOf('/')
-    if (slashIndex < 0) return raw
-    return prefix + auth.substring(0, slashIndex) + rest.substring(atIndex)
-}
-
-private fun findBestEffortOracleAuthSeparator(rest: String, hasOraclePrefix: Boolean): Int {
-    if (hasOraclePrefix) {
-        ORACLE_CONNECT_MARKER_REGEX.findAll(rest).lastOrNull()?.let {
-            return it.range.first
-        }
-    }
-    val queryStart = Regex("[?#]").find(rest)?.range?.first ?: rest.length
-    val schemeStart = rest.indexOf("://")
-    if (schemeStart in 0 until queryStart && '@' !in rest.substring(0, schemeStart)) {
-        return -1
-    }
-    val authLimit = if (schemeStart in 0 until queryStart) schemeStart else queryStart
-    val beforeQueryAt = rest.substring(0, authLimit).lastIndexOf('@')
-    if (beforeQueryAt > 0 || !hasOraclePrefix) return beforeQueryAt
-    val firstAt = rest.indexOf('@')
-    if (firstAt <= 0) return -1
-    val trailingQuery =
-        Regex("[?#]").find(rest, startIndex = firstAt + 1)?.range?.first ?: rest.length
-    return rest.substring(0, trailingQuery).lastIndexOf('@')
-}
-
-fun sanitizeBestEffortConnectionString(raw: String): String {
-    val trimmed = raw.trim()
-    if (trimmed.isEmpty()) return ""
-    var sanitized = scrubBestEffortOracleAuth(trimmed)
-    val schemeEnd = sanitized.indexOf("://")
-    if (schemeEnd >= 0 && !sanitized.startsWith("jdbc:sqlserver://", ignoreCase = true)) {
-        val authorityStart = schemeEnd + 3
-        val authorityEnd =
-            listOf('/', '?', '#')
-                .map { sanitized.indexOf(it, authorityStart) }
-                .filter { it >= 0 }
-                .minOrNull() ?: sanitized.length
-        val authority = sanitized.substring(authorityStart, authorityEnd)
-        val atIndex = authority.lastIndexOf('@')
-        if (atIndex >= 0) {
-            val auth = authority.substring(0, atIndex)
-            val colonIndex = auth.indexOf(':')
-            if (colonIndex >= 0) {
-                val user = auth.substring(0, colonIndex)
-                sanitized =
-                    sanitized.substring(0, authorityStart) +
-                        user +
-                        authority.substring(atIndex) +
-                        sanitized.substring(authorityEnd)
-            }
-        }
-    }
-    return sanitized
-        .replace(BEST_EFFORT_KV_PASSWORD_REGEX, "$1")
-        .replace(BEST_EFFORT_URI_QUERY_PASSWORD_REGEX, "$1")
-}
-
-private fun sanitizeUrlPassword(url: ParsedUrl): String {
-    val user = url.rawUserInfo?.substringBefore(':')
-    val authorityPrefix = user?.let { "${encodeComponent(decodeComponent(it))}@" }.orEmpty()
-    val portPart = if (url.port != -1) ":${url.port}" else ""
-    val safeQuery =
-        urlQueryPairs(url)
-            .filterNot { (name, _) -> isSensitiveDriverPropertyName(name) }
-            .joinToString("&") { (name, value) ->
-                "${encodeComponent(name)}=${encodeComponent(value)}"
-            }
-    val queryPart = safeQuery.takeIf(String::isNotEmpty)?.let { "?$it" }.orEmpty()
-    val refPart = url.rawFragment?.let { "#$it" }.orEmpty()
-    return "${url.scheme}://$authorityPrefix${url.host}$portPart${url.rawPath}$queryPart$refPart"
-}
-
-private fun passwordFromUrl(raw: String, url: ParsedUrl): String? {
+// Returns the `:password` span inside a URL's authority (`scheme://user:password@host`), or null
+// when no userinfo password delimiter precedes `@`.
+internal fun findUrlAuthorityAuth(raw: String): IntRange? {
     val schemeEnd = raw.indexOf("://")
     if (schemeEnd < 0) return null
     val authorityStart = schemeEnd + 3
-    val authorityEndCandidates =
-        listOf('/', '?', '#').map { char -> raw.indexOf(char, authorityStart) }.filter { it >= 0 }
-    val authorityEnd = authorityEndCandidates.minOrNull() ?: raw.length
+    val authorityEnd =
+        raw.indexOfAny(AUTHORITY_END_CHARS, authorityStart).let { if (it < 0) raw.length else it }
     val authority = raw.substring(authorityStart, authorityEnd)
     // Use the final @ because an unescaped password may contain @.
     val atIndex = authority.lastIndexOf('@')
     if (atIndex < 0) return null
-    val auth = authority.substring(0, atIndex)
-    if (!auth.contains(':')) return null
+    val colonIndex = authority.substring(0, atIndex).indexOf(':')
+    if (colonIndex < 0) return null
+    return (authorityStart + colonIndex) until (authorityStart + atIndex)
+}
+
+private fun passwordFromUrl(raw: String, url: ParsedUrl): String? {
+    if (findUrlAuthorityAuth(raw) == null) return null
     val password = url.rawUserInfo?.substringAfter(':').orEmpty()
     return decodeComponent(password)
-}
-
-private fun sanitizeSqlServerKeyValue(raw: String): String =
-    splitSemicolonRecords(raw).joinToString(";") { record ->
-        val eqIndex = record.indexOf('=')
-        if (eqIndex < 0) return@joinToString record
-        val key = record.substring(0, eqIndex).trim()
-        if (isSensitiveDriverPropertyName(key)) {
-            "$key="
-        } else {
-            record
-        }
-    }
-
-private fun sanitizeOracleInput(raw: String): String {
-    val prefixMatch = Regex("^jdbc:oracle:thin:", RegexOption.IGNORE_CASE).find(raw)
-    val prefix = prefixMatch?.value.orEmpty()
-    val rest = raw.substring(prefix.length)
-    if (rest.startsWith("@")) return sanitizeSensitiveQueryProperties(raw)
-
-    val atIndex = findOracleAuthSeparator(rest)
-    if (atIndex < 0) return sanitizeSensitiveQueryProperties(raw)
-
-    val auth = rest.substring(0, atIndex)
-    val slashIndex = auth.indexOf('/')
-    if (slashIndex < 0) return sanitizeSensitiveQueryProperties(raw)
-
-    return sanitizeSensitiveQueryProperties(prefix + rest.substring(atIndex))
-}
-
-private fun sanitizeSensitiveQueryProperties(raw: String): String {
-    val queryStart = raw.indexOf('?')
-    if (queryStart < 0) return raw
-    val fragmentStart = raw.indexOf('#', queryStart)
-    val queryEnd = if (fragmentStart < 0) raw.length else fragmentStart
-    val safeQuery =
-        raw.substring(queryStart + 1, queryEnd)
-            .split('&')
-            .filter(String::isNotEmpty)
-            .filterNot { part ->
-                val name = decodeComponent(part.substringBefore('='))
-                isSensitiveDriverPropertyName(name)
-            }
-            .joinToString("&")
-    val fragment = if (fragmentStart < 0) "" else raw.substring(fragmentStart)
-    return raw.substring(0, queryStart) +
-        safeQuery.takeIf(String::isNotEmpty)?.let { "?$it" }.orEmpty() +
-        fragment
-}
-
-private fun findOracleAuthSeparator(rest: String): Int {
-    val queryStart = Regex("[?#]").find(rest)?.range?.first ?: -1
-    val authAndConnect = if (queryStart < 0) rest else rest.substring(0, queryStart)
-    return authAndConnect.lastIndexOf('@')
 }
 
 private fun stripBrackets(host: String): String =
     if (host.startsWith('[') && host.endsWith(']')) host.substring(1, host.length - 1) else host
 
-private fun decodeComponent(value: String?): String {
+internal fun decodeComponent(value: String?): String {
     if (value.isNullOrEmpty()) return value.orEmpty()
     return URLDecoder.decode(value, StandardCharsets.UTF_8)
 }
 
-private fun encodeComponent(value: String): String =
+internal fun encodeComponent(value: String): String =
     URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20")
 
 private fun encodeSqlServerPropertyValue(value: String): String = "{${value.replace("}", "}}")}}"

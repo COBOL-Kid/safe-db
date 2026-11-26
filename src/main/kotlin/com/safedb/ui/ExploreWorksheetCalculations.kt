@@ -39,6 +39,7 @@ import com.safedb.explore.worksheetFormulaTokens
 import com.safedb.explore.worksheetFormulaValues
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
+import com.safedb.model.ResultColumn
 import com.safedb.model.classifyColumn
 import com.safedb.model.isNumeric
 import com.safedb.model.isTemporal
@@ -127,47 +128,44 @@ internal fun WorksheetCalculationEditor(
         groupColumn = reconciledSelection.groupColumn
         grain = reconciledSelection.grain
     }
-    val precedingCalculations = precedingWorksheetCalculations(config.calculations, existing?.id)
-    val priorRowCalculations =
-        precedingCalculations.filterIsInstance<WorksheetCalculation.RowFormula>()
-    val priorGroupCalculations = precedingCalculations.filter {
-        it is WorksheetCalculation.Aggregate || it is WorksheetCalculation.GroupFormula
-    }
+    val isFormulaKind = kind == CalculationKind.RowFormula || kind == CalculationKind.GroupFormula
+    val (formulaColumns, priorFormulaCalcs) =
+        if (isFormulaKind) {
+            val precedingCalculations =
+                precedingWorksheetCalculations(config.calculations, existing?.id)
+            if (kind == CalculationKind.GroupFormula) {
+                emptyList<ResultColumn>() to
+                    precedingCalculations.filter {
+                        it is WorksheetCalculation.Aggregate ||
+                            it is WorksheetCalculation.GroupFormula
+                    }
+            } else {
+                sample.columns to
+                    precedingCalculations.filterIsInstance<WorksheetCalculation.RowFormula>()
+            }
+        } else {
+            emptyList<ResultColumn>() to emptyList()
+        }
     val formulaTokens =
-        if (kind == CalculationKind.GroupFormula) {
-            worksheetFormulaTokens(emptyList(), priorGroupCalculations)
-        } else {
-            worksheetFormulaTokens(sample.columns, priorRowCalculations)
-        }
-    val formulaValidationMap =
-        if (kind == CalculationKind.GroupFormula) {
-            worksheetFormulaValues(
-                sampleColumns = emptyList(),
-                sourceValue = { null },
-                priorCalculations = priorGroupCalculations,
-                calculationValue = { BigDecimal.ONE },
-            )
-        } else {
-            worksheetFormulaValues(
-                sampleColumns = sample.columns,
-                sourceValue = { BigDecimal.ONE },
-                priorCalculations = priorRowCalculations,
-                calculationValue = { BigDecimal.ONE },
-            )
-        }
+        if (isFormulaKind) worksheetFormulaTokens(formulaColumns, priorFormulaCalcs)
+        else emptyList()
     val formulaValidation =
-        if (
-            formula.isBlank() ||
-                kind !in setOf(CalculationKind.RowFormula, CalculationKind.GroupFormula)
-        ) {
-            null
-        } else {
+        if (isFormulaKind && formula.isNotBlank()) {
+            val formulaValidationMap =
+                worksheetFormulaValues(
+                    sampleColumns = formulaColumns,
+                    sourceValue = { BigDecimal.ONE },
+                    priorCalculations = priorFormulaCalcs,
+                    calculationValue = { BigDecimal.ONE },
+                )
             evaluatePivotFormula(
                     formula,
                     formulaValidationMap,
                     referenceLabel = "field",
                 )
                 .error
+        } else {
+            null
         }
     val orderedWindow =
         windowFn in

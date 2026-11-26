@@ -107,7 +107,6 @@ class ConnectionFormState(val original: ConnectionDef? = null) {
     }
 
     fun applyParsedInput() {
-        parseError = null
         parseWarnings = emptyList()
         resetResultState()
         try {
@@ -264,6 +263,9 @@ class ConnectionFormState(val original: ConnectionDef? = null) {
         resetResultState()
     }
 
+    private fun resolvedName(): String =
+        name.trim().ifEmpty { "${dialect.displayName()} ${host.trim()}:$port" }
+
     fun buildDef(): ConnectionDef {
         val preserveLoadedTransport = original != null && !transportSettingsChanged
         val persistedWallet =
@@ -278,7 +280,7 @@ class ConnectionFormState(val original: ConnectionDef? = null) {
             }
         return ConnectionDef(
             id = connectionId,
-            name = name.trim().ifEmpty { "${dialect.displayName()} ${host.trim()}:$port" },
+            name = resolvedName(),
             dialect = dialect,
             host = host.trim(),
             port = port,
@@ -312,7 +314,7 @@ class ConnectionFormState(val original: ConnectionDef? = null) {
         if (database.trim().isEmpty()) return "Database is required"
         if (username.trim().isEmpty()) return "Username is required"
         if (port !in 1..65535) return "Port must be between 1 and 65535"
-        val resolvedName = name.trim().ifEmpty { "${dialect.displayName()} ${host.trim()}:$port" }
+        val resolvedName = resolvedName()
         if (
             existingConnections.any {
                 it.id != connectionId && it.name.trim().equals(resolvedName, ignoreCase = true)

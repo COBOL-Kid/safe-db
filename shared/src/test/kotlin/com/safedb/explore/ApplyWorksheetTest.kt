@@ -794,21 +794,9 @@ class ApplyWorksheetTest {
             )
         assertTrue("Calculated columns contain a circular reference" in groupCycle.warnings)
 
-        val duplicateDisplaySample =
-            QueryResult(
-                columns =
-                    listOf(
-                        ResultColumn("t0__amount", "decimal"),
-                        ResultColumn("t1__amount", "decimal"),
-                    ),
-                rows = listOf(listOf(ResultCell.FloatCell(10.0), ResultCell.FloatCell(20.0))),
-                rowCount = 1,
-                truncated = false,
-                warnings = emptyList(),
-            )
         val duplicateLabelRowCycle =
             applyWorksheet(
-                duplicateDisplaySample,
+                duplicateDisplaySample(),
                 WorksheetConfig(
                     calculations =
                         listOf(
@@ -880,18 +868,6 @@ class ApplyWorksheetTest {
         assertEquals(listOf(first), precedingWorksheetCalculations(calcs, "c2"))
         assertEquals(calcs, precedingWorksheetCalculations(calcs, null))
 
-        val duplicateDisplaySample =
-            QueryResult(
-                columns =
-                    listOf(
-                        ResultColumn("t0__amount", "decimal"),
-                        ResultColumn("t1__amount", "decimal"),
-                    ),
-                rows = listOf(listOf(ResultCell.FloatCell(10.0), ResultCell.FloatCell(20.0))),
-                rowCount = 1,
-                truncated = false,
-                warnings = emptyList(),
-            )
         val calcNamedAmount = WorksheetCalculation.RowFormula("r1", "amount", "[t0__amount] * 2")
         assertEquals(
             listOf(
@@ -899,9 +875,86 @@ class ApplyWorksheetTest {
                 "t1__amount" to "amount",
                 "amount" to "amount",
             ),
-            worksheetFormulaTokens(duplicateDisplaySample.columns, listOf(calcNamedAmount)),
+            worksheetFormulaTokens(duplicateDisplaySample().columns, listOf(calcNamedAmount)),
         )
     }
+
+    @Test
+    fun chainedMultiRowFormulasResolveCollidingLabelsIdsAndIncrementalDuplicates() {
+        val multiRowSample =
+            duplicateDisplaySample()
+                .copy(
+                    rows =
+                        listOf(
+                            listOf(ResultCell.FloatCell(10.0), ResultCell.FloatCell(20.0)),
+                            listOf(ResultCell.FloatCell(5.0), ResultCell.FloatCell(15.0)),
+                        ),
+                    rowCount = 2,
+                )
+        val preview =
+            applyWorksheet(
+                multiRowSample,
+                WorksheetConfig(
+                    calculations =
+                        listOf(
+                            WorksheetCalculation.RowFormula(
+                                "r1",
+                                "amount",
+                                "[t0__amount] + [t1__amount]",
+                            ),
+                            WorksheetCalculation.RowFormula("r2", "t0__amount", "[amount] * 2"),
+                            WorksheetCalculation.RowFormula(
+                                "r3",
+                                "Combined",
+                                "[r2] + [t0__amount]",
+                            ),
+                            WorksheetCalculation.RowFormula("r4", "Combined", "[Combined] + 1"),
+                            WorksheetCalculation.RowFormula("r5", "AfterDup", "[Combined] + 1"),
+                            WorksheetCalculation.RowFormula("r6", "AfterDupById", "[r3] + [r4]"),
+                        ),
+                ),
+            )
+
+        assertEquals(emptyList(), preview.warnings)
+        assertEquals(2, preview.calculationErrorCount)
+        assertEquals(
+            listOf(30.0, 20.0),
+            preview.rows.map { (it.cells[2].value as ResultCell.FloatCell).value },
+        )
+        assertEquals(
+            listOf(60.0, 40.0),
+            preview.rows.map { (it.cells[3].value as ResultCell.FloatCell).value },
+        )
+        assertEquals(
+            listOf(70.0, 45.0),
+            preview.rows.map { (it.cells[4].value as ResultCell.FloatCell).value },
+        )
+        assertEquals(
+            listOf(71.0, 46.0),
+            preview.rows.map { (it.cells[5].value as ResultCell.FloatCell).value },
+        )
+        assertEquals(
+            listOf("Unknown field 'Combined'", "Unknown field 'Combined'"),
+            preview.rows.map { it.cells[6].error },
+        )
+        assertEquals(
+            listOf(141.0, 91.0),
+            preview.rows.map { (it.cells[7].value as ResultCell.FloatCell).value },
+        )
+    }
+
+    private fun duplicateDisplaySample(): QueryResult =
+        QueryResult(
+            columns =
+                listOf(
+                    ResultColumn("t0__amount", "decimal"),
+                    ResultColumn("t1__amount", "decimal"),
+                ),
+            rows = listOf(listOf(ResultCell.FloatCell(10.0), ResultCell.FloatCell(20.0))),
+            rowCount = 1,
+            truncated = false,
+            warnings = emptyList(),
+        )
 
     private fun WorksheetPreview.detailValues(column: String): List<String> {
         val index = columns.indexOfFirst { it.sourceColumn == column }

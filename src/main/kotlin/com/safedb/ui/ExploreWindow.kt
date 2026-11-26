@@ -280,8 +280,8 @@ fun ExploreWindowContent(
                                     fields = fields,
                                     memberOptionsFor = viewModel::memberOptions,
                                     resolvedChartType = viewModel.visualizationPreview.chartType,
-                                    configReplacementRevision =
-                                        viewModel.visualizationConfigReplacementRevision,
+                                    transitionMessage = viewModel.visualizationTransitionNotice,
+                                    onChartTypeChange = viewModel::selectVisualizationChartType,
                                     onConfigChange = { next ->
                                         viewModel.updateVisualization { next }
                                     },

@@ -10,6 +10,7 @@ import com.safedb.explore.PivotDimension
 import com.safedb.explore.PivotFilter
 import com.safedb.explore.PivotGrouping
 import com.safedb.explore.PivotMeasure
+import com.safedb.explore.PivotNumberFormat
 import com.safedb.explore.SortDir
 import com.safedb.explore.ValueAxis
 import com.safedb.explore.ValueFilterOp
@@ -214,6 +215,38 @@ internal data class VisualizationChartSwitchMemory(
     val size: VisualizationField? = null,
 )
 
+internal fun visualizationXCompatible(type: ChartType, field: ExploreFieldOption): Boolean =
+    when (type) {
+        ChartType.Kpi -> false
+        ChartType.Scatter,
+        ChartType.Histogram -> field.category.isNumeric()
+        ChartType.Auto,
+        ChartType.Bar,
+        ChartType.Line -> field.category !in setOf(ColumnCategory.Binary, ColumnCategory.Json)
+    }
+
+internal fun reconcileSwitchMemoryOnEdit(
+    previous: VisualizationConfig,
+    next: VisualizationConfig,
+    memory: VisualizationChartSwitchMemory,
+): VisualizationChartSwitchMemory {
+    val structuralValuesChanged =
+        previous.values.map { it.copy(numberFormat = PivotNumberFormat()) } !=
+            next.values.map { it.copy(numberFormat = PivotNumberFormat()) }
+    val seriesChanged = next.series != previous.series
+    return memory.copy(
+        x = if (next.x != previous.x) null else memory.x,
+        values =
+            if (structuralValuesChanged || (seriesChanged && next.series != null)) {
+                emptyList()
+            } else {
+                memory.values
+            },
+        series = if (seriesChanged || next.values.size > 1) null else memory.series,
+        size = if (next.size != previous.size) null else memory.size,
+    )
+}
+
 internal fun transitionVisualizationChartType(
     current: VisualizationConfig,
     target: ChartType,
@@ -221,6 +254,16 @@ internal fun transitionVisualizationChartType(
     memory: VisualizationChartSwitchMemory,
 ): Pair<VisualizationConfig, VisualizationChartSwitchMemory> {
     val converted = current.forChartType(target, fields)
+    val nextMemory = stashDroppedSlots(current, converted, memory)
+    val restored = restoreCompatibleSlots(converted, target, fields, nextMemory)
+    return restored to pruneConsumedSwitchMemory(restored, nextMemory)
+}
+
+private fun stashDroppedSlots(
+    current: VisualizationConfig,
+    converted: VisualizationConfig,
+    memory: VisualizationChartSwitchMemory,
+): VisualizationChartSwitchMemory {
     val currentByAlias = current.values.associateBy { it.alias }
     val syncedMemoryValues =
         memory.values.map { stashed ->
@@ -228,60 +271,60 @@ internal fun transitionVisualizationChartType(
                 stashed.copy(numberFormat = active.numberFormat)
             } ?: stashed
         }
-    val nextMemory =
-        VisualizationChartSwitchMemory(
-            x = if (current.x != null && converted.x == null) current.x else memory.x,
-            values =
-                if (
-                    current.values.size > converted.values.size &&
-                        current.values.size >= syncedMemoryValues.size
-                ) {
-                    current.values
-                } else {
-                    syncedMemoryValues
-                },
-            series =
-                if (current.series != null && converted.series == null) {
-                    current.series
-                } else {
-                    memory.series
-                },
-            size =
-                if (current.size != null && converted.size == null) current.size else memory.size,
-        )
+    return VisualizationChartSwitchMemory(
+        x = if (current.x != null && converted.x == null) current.x else memory.x,
+        values =
+            if (
+                current.values.size > converted.values.size &&
+                    current.values.size >= syncedMemoryValues.size
+            ) {
+                current.values
+            } else {
+                syncedMemoryValues
+            },
+        series =
+            if (current.series != null && converted.series == null) {
+                current.series
+            } else {
+                memory.series
+            },
+        size = if (current.size != null && converted.size == null) current.size else memory.size,
+    )
+}
+
+private fun restoreCompatibleSlots(
+    converted: VisualizationConfig,
+    target: ChartType,
+    fields: List<ExploreFieldOption>,
+    memory: VisualizationChartSwitchMemory,
+): VisualizationConfig {
     fun fieldByColumn(column: String?): ExploreFieldOption? = fields.firstOrNull {
         it.column == column
     }
     val restoredX =
         converted.x
-            ?: nextMemory.x?.takeIf { field ->
-                val option = fieldByColumn(field.column) ?: return@takeIf false
-                when (target) {
-                    ChartType.Kpi -> false
-                    ChartType.Scatter,
-                    ChartType.Histogram -> option.category.isNumeric()
-                    ChartType.Auto,
-                    ChartType.Bar,
-                    ChartType.Line -> true
-                }
+            ?: memory.x?.takeIf { field ->
+                fieldByColumn(field.column)?.let { option ->
+                    visualizationXCompatible(target, option)
+                } == true
             }
     val restoredValues =
         if (target == ChartType.Histogram) {
             emptyList()
         } else if (converted.values.isNotEmpty()) {
-            val stashedAliases = nextMemory.values.mapTo(mutableSetOf()) { it.alias }
+            val stashedAliases = memory.values.mapTo(mutableSetOf()) { it.alias }
             if (
                 target !in setOf(ChartType.Kpi, ChartType.Scatter) &&
                     converted.series == null &&
-                    nextMemory.values.size > converted.values.size &&
+                    memory.values.size > converted.values.size &&
                     converted.values.all { it.alias in stashedAliases }
             ) {
-                nextMemory.values
+                memory.values
             } else {
                 converted.values
             }
         } else {
-            nextMemory.values.let { stashed ->
+            memory.values.let { stashed ->
                 if (target == ChartType.Scatter) {
                     stashed
                         .filter { fieldByColumn(it.sourceColumn)?.category?.isNumeric() == true }
@@ -295,42 +338,44 @@ internal fun transitionVisualizationChartType(
         }
     val restoredSeries =
         converted.series
-            ?: nextMemory.series?.takeIf {
+            ?: memory.series?.takeIf {
                 target in setOf(ChartType.Auto, ChartType.Bar, ChartType.Line, ChartType.Scatter) &&
                     restoredValues.size <= 1
             }
     val restoredSize =
         converted.size
-            ?: nextMemory.size?.takeIf { field ->
+            ?: memory.size?.takeIf { field ->
                 target == ChartType.Scatter &&
                     fieldByColumn(field.column)?.category?.isNumeric() == true
             }
-    val restored =
-        converted
-            .copy(
-                x = restoredX,
-                values = restoredValues,
-                series = restoredSeries,
-                size = restoredSize,
-            )
-            .forChartType(target, fields)
-    val finalMemory =
-        nextMemory.copy(
-            x = if (restored.x != null) null else nextMemory.x,
-            values =
-                if (
-                    restored.values.size >= nextMemory.values.size ||
-                        (restored.series != null && restored.values.isNotEmpty())
-                ) {
-                    emptyList()
-                } else {
-                    nextMemory.values
-                },
-            series = if (restored.series != null) null else nextMemory.series,
-            size = if (restored.size != null) null else nextMemory.size,
+    return converted
+        .copy(
+            x = restoredX,
+            values = restoredValues,
+            series = restoredSeries,
+            size = restoredSize,
         )
-    return restored to finalMemory
+        .forChartType(target, fields)
 }
+
+private fun pruneConsumedSwitchMemory(
+    restored: VisualizationConfig,
+    memory: VisualizationChartSwitchMemory,
+): VisualizationChartSwitchMemory =
+    memory.copy(
+        x = if (restored.x != null) null else memory.x,
+        values =
+            if (
+                restored.values.size >= memory.values.size ||
+                    (restored.series != null && restored.values.isNotEmpty())
+            ) {
+                emptyList()
+            } else {
+                memory.values
+            },
+        series = if (restored.series != null) null else memory.series,
+        size = if (restored.size != null) null else memory.size,
+    )
 
 internal fun VisualizationConfig.forChartType(
     type: ChartType,
@@ -434,6 +479,11 @@ internal fun chartTypeTransitionMessage(
         }
 }
 
+internal fun validPositiveBinSize(raw: String?): String? =
+    raw?.trim()?.takeIf { trimmed ->
+        trimmed.toBigDecimalOrNull()?.let { it > BigDecimal.ZERO } == true
+    }
+
 internal fun visualizationOptionsSummary(
     config: VisualizationConfig,
     effectiveType: ChartType?,
@@ -443,9 +493,7 @@ internal fun visualizationOptionsSummary(
         ChartType.Line -> "${config.sort.target.name.lowercase()} sort"
         ChartType.Histogram -> {
             val binSize =
-                (config.x?.grouping as? PivotGrouping.NumberBin)?.size?.trim()?.takeIf { raw ->
-                    raw.toBigDecimalOrNull()?.let { it > BigDecimal.ZERO } == true
-                }
+                validPositiveBinSize((config.x?.grouping as? PivotGrouping.NumberBin)?.size)
             if (binSize != null) "Bin size $binSize" else "Auto bins"
         }
         ChartType.Scatter,

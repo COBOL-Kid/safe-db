@@ -326,9 +326,11 @@ data class PivotHeaderCell(
     val isTotal: Boolean,
 )
 
+private val GENERATED_ALIAS_PREFIX_REGEX = Regex("^t\\d+__(.+)$")
+
 // Without table context only the builder's generated t<n> aliases are safe to strip; a SQL query's
 // aliases are arbitrary, so those columns need the alias list to be labeled correctly.
-fun displayColumnLabel(raw: String): String = raw.replace(Regex("^t\\d+__(.+)$"), "$1")
+fun displayColumnLabel(raw: String): String = raw.replace(GENERATED_ALIAS_PREFIX_REGEX, "$1")
 
 // Longest alias whose `alias__` prefixes the result name; longest wins when one alias prefixes
 // another, and columns may themselves contain underscores.
