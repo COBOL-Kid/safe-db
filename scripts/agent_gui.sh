@@ -662,12 +662,13 @@ resolve_repo_mcp_cli() {
 }
 
 run_repo_mcp_cli() {
-  local mode target node_path
+  local resolved mode="" target="" node_path=""
+  resolved="$(resolve_repo_mcp_cli)" || return $?
   {
-    IFS= read -r mode
-    IFS= read -r target
-    IFS= read -r node_path
-  } < <(resolve_repo_mcp_cli)
+    IFS= read -r mode || true
+    IFS= read -r target || true
+    IFS= read -r node_path || true
+  } <<<"$resolved"
   case "$mode" in
     node)
       NODE_PATH="$node_path" node "$target" "$@"
@@ -812,7 +813,7 @@ cmd_smoke() {
   local mysql_host="${SAFEDB_TEST_MYSQL_HOST:-127.0.0.1}"
   local mysql_port="${SAFEDB_TEST_MYSQL_PORT:-3306}"
   local mysql_user="${SAFEDB_TEST_MYSQL_USER:-safedb}"
-  local mysql_password="${SAFEDB_TEST_MYSQL_PASSWORD:-safedb}"
+  local mysql_password="${SAFEDB_TEST_MYSQL_PASSWORD-safedb}"
   local mysql_db="${SAFEDB_TEST_MYSQL_DATABASE:-safedb_test}"
   local seeded=false
 

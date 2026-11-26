@@ -669,6 +669,24 @@ EOF
   jar_call="$(<"$call_log")"
   assert_contains "$jar_call" "java|-jar $fake_repo/mcp/build/libs/safe-db-mcp-1.0.0-all.jar connections list" "shadowJar fallback"
   assert_not_contains "$jar_call" "mcp-1.0.0.jar" "skip non-fat jar"
+
+  local fail_err_file="$TEST_ROOT/mcp-cli-fail.err"
+  local fail_status=0
+  set +e
+  (
+    resolve_repo_mcp_cli() {
+      echo "simulated failure" >&2
+      return 1
+    }
+    run_repo_mcp_cli connections list
+  ) >/dev/null 2>"$fail_err_file"
+  fail_status=$?
+  set -e
+  [[ "$fail_status" -ne 0 ]] || fail "expected run_repo_mcp_cli to propagate resolve_repo_mcp_cli failure"
+  local fail_err
+  fail_err="$(<"$fail_err_file")"
+  assert_contains "$fail_err" "simulated failure" "resolve_repo_mcp_cli failure stderr"
+  assert_not_contains "$fail_err" "Unsupported MCP CLI launch mode" "misleading launch mode error"
 }
 
 test_smoke_require_db_and_cleanup() {
@@ -694,6 +712,43 @@ test_smoke_require_db_and_cleanup() {
   local leftovers
   leftovers="$(find "$smoke_tmp" -maxdepth 1 -name 'safedb-agent-gui-smoke.*')"
   [[ -z "$leftovers" ]] || fail "expected smoke temp dir to be cleaned up, found: $leftovers"
+
+  # Explicitly empty SAFEDB_TEST_MYSQL_PASSWORD="" must stay empty (not fall back to "safedb").
+  local captured_pw="$TEST_ROOT/smoke-empty-pw.captured"
+  local empty_pw_status=0
+  rm -f -- "$captured_pw"
+  set +e
+  (
+    TMPDIR="$smoke_tmp"
+    check_prereqs() { :; }
+    is_tcp_reachable() { return 0; }
+    run_repo_mcp_cli() {
+      local pw_file=""
+      while (($# > 0)); do
+        if [[ "$1" == "--password-file" ]]; then
+          pw_file="${2:-}"
+          break
+        fi
+        shift
+      done
+      [[ -n "$pw_file" && -f "$pw_file" ]] || return 1
+      cp -- "$pw_file" "$captured_pw"
+      return 1
+    }
+    SAFEDB_TEST_MYSQL_HOST="127.0.0.1"
+    SAFEDB_TEST_MYSQL_PORT="3306"
+    SAFEDB_TEST_MYSQL_PASSWORD=""
+    cmd_smoke --require-db
+  ) >/dev/null 2>&1
+  empty_pw_status=$?
+  set -e
+  [[ "$empty_pw_status" -ne 0 ]] || fail "expected mocked setup failure in empty-password smoke test"
+  [[ -f "$captured_pw" ]] || fail "expected smoke test to capture password file"
+  local captured_bytes
+  captured_bytes="$(wc -c <"$captured_pw")"
+  [[ "$captured_bytes" -eq 0 ]] || fail "expected empty password file (0 bytes), got $captured_bytes bytes: $(<"$captured_pw")"
+  leftovers="$(find "$smoke_tmp" -maxdepth 1 -name 'safedb-agent-gui-smoke.*')"
+  [[ -z "$leftovers" ]] || fail "expected smoke temp dir to be cleaned up after empty-pw test, found: $leftovers"
 }
 
 test_smoke_screenshot_validation() {
