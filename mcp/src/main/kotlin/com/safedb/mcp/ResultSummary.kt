@@ -1,10 +1,10 @@
 package com.safedb.mcp
 
+import com.safedb.explore.ResultNumber
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
 import com.safedb.model.classifyColumn
 import com.safedb.model.isNumeric
-import java.math.BigDecimal
 import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -82,33 +82,18 @@ private fun columnMinMax(
     val allNumeric = cells.all { it is ResultCell.IntegerCell || it is ResultCell.FloatCell }
     val allText = cells.all { it is ResultCell.TextCell }
     val allBool = cells.all { it is ResultCell.BoolCell }
+    val numericText = allText && classifyColumn(dataType).isNumeric()
     return when {
-        allNumeric -> {
-            val usable = cells.filter { cell ->
-                when (cell) {
-                    is ResultCell.FloatCell -> !cell.value.isNaN()
-                    is ResultCell.IntegerCell -> true
-                    else -> false
-                }
+        allNumeric || numericText -> {
+            val usable = cells.mapNotNull { cell ->
+                ResultNumber.fromCell(cell, numericText)?.let { it to cell }
             }
-            if (usable.isEmpty()) return null to null
-            flattenCell(usable.minWith(::compareNumeric)) to
-                flattenCell(usable.maxWith(::compareNumeric))
+            usable.minByOrNull { it.first }?.second?.let(::flattenCell) to
+                usable.maxByOrNull { it.first }?.second?.let(::flattenCell)
         }
         allText -> {
             val texts = cells.filterIsInstance<ResultCell.TextCell>()
-            if (classifyColumn(dataType).isNumeric()) {
-                // Unparseable values are skipped like float NaN rather than ordered as strings.
-                val numeric = texts.mapNotNull { cell ->
-                    cell.value.text.trim().toBigDecimalOrNull()?.let { it to cell }
-                }
-                if (numeric.isEmpty()) return null to null
-                flattenCell(numeric.minBy { it.first }.second) to
-                    flattenCell(numeric.maxBy { it.first }.second)
-            } else {
-                flattenCell(texts.minBy { it.value.text }) to
-                    flattenCell(texts.maxBy { it.value.text })
-            }
+            flattenCell(texts.minBy { it.value.text }) to flattenCell(texts.maxBy { it.value.text })
         }
         allBool -> {
             val flags = cells.filterIsInstance<ResultCell.BoolCell>()
@@ -117,22 +102,3 @@ private fun columnMinMax(
         else -> null to null
     }
 }
-
-private fun compareNumeric(left: ResultCell, right: ResultCell): Int =
-    when {
-        left is ResultCell.IntegerCell && right is ResultCell.IntegerCell ->
-            left.value.compareTo(right.value)
-        left is ResultCell.FloatCell && right is ResultCell.FloatCell ->
-            left.value.compareTo(right.value)
-        left is ResultCell.FloatCell && left.value.isInfinite() -> if (left.value > 0.0) 1 else -1
-        right is ResultCell.FloatCell && right.value.isInfinite() ->
-            if (right.value > 0.0) -1 else 1
-        else -> numericDecimal(left).compareTo(numericDecimal(right))
-    }
-
-private fun numericDecimal(cell: ResultCell): BigDecimal =
-    when (cell) {
-        is ResultCell.IntegerCell -> BigDecimal.valueOf(cell.value)
-        is ResultCell.FloatCell -> BigDecimal.valueOf(cell.value)
-        else -> error("not numeric")
-    }

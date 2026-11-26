@@ -1,12 +1,20 @@
 package com.safedb.mcp
 
+import com.safedb.explore.DimensionSortMode
 import com.safedb.explore.ExploreConfig
 import com.safedb.explore.ExploreMode
 import com.safedb.explore.ExploreRecipe
+import com.safedb.explore.ExploreSort
+import com.safedb.explore.ExploreSortTarget
+import com.safedb.explore.MeasureFn
 import com.safedb.explore.PivotDimension
+import com.safedb.explore.PivotFilter
 import com.safedb.explore.PivotMeasure
 import com.safedb.explore.RecipeField
+import com.safedb.explore.SortDir
+import com.safedb.explore.ValueFilterOp
 import com.safedb.explore.VisualizationConfig
+import com.safedb.explore.WorksheetCalculation
 import com.safedb.explore.WorksheetConfig
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
@@ -20,7 +28,9 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.double
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -93,7 +103,19 @@ class RecipeToolsTest {
                 pivot =
                     ExploreConfig(
                         rowDimensions = listOf(PivotDimension("region")),
-                        measures = listOf(PivotMeasure.countRows()),
+                        measures = emptyList(),
+                        filters =
+                            listOf(
+                                PivotFilter.Value(
+                                    id = "size",
+                                    column = "region",
+                                    label = "Region",
+                                    measureAlias = "count",
+                                    op = ValueFilterOp.Between,
+                                    value = " 2 ",
+                                    secondValue = " 2.0 ",
+                                ),
+                            ),
                     ),
             )
         withTempMcpClient(service) { client ->
@@ -111,10 +133,96 @@ class RecipeToolsTest {
                 listOf("region", "Count"),
                 body.getValue("columns").jsonArray.map { it.jsonObject.string("name") },
             )
-            assertEquals("4", body.string("row_count"))
+            assertEquals("3", body.string("row_count"))
             assertFalse(body.containsKey("sample_capped"))
             assertEquals("false", body.string("pivot_truncated"))
-            assertTrue(body.getValue("rows").jsonArray.isNotEmpty())
+            assertEquals(
+                listOf("east", "west", "Total"),
+                body.getValue("rows").jsonArray.map { it.jsonObject.string("region") },
+            )
+        }
+    }
+
+    @Test
+    fun applyRecipeRejectsMalformedStoredPivotConfigs() = runBlocking {
+        val service = exploreSampleService()
+        val default = ExploreConfig(rowDimensions = listOf(PivotDimension("region")))
+        val filter =
+            PivotFilter.Value(
+                id = "size",
+                column = "region",
+                label = "Region",
+                measureAlias = "count",
+                op = ValueFilterOp.Between,
+                value = "1",
+            )
+        val sort = ExploreSort(ExploreSortTarget.Measure("count"), SortDir.Desc)
+        val droppedMeasure = PivotMeasure("count", MeasureFn.Sum, "not_in_result")
+        val cases =
+            listOf(
+                default.copy(
+                    measures =
+                        listOf(
+                            PivotMeasure("count", MeasureFn.Sum, "amount"),
+                            PivotMeasure.countRows(),
+                        ),
+                ) to "measures[1].alias reuses measure alias 'count'",
+                default.copy(
+                    filters = listOf(filter.copy(op = ValueFilterOp.Top, measureAlias = "typo")),
+                ) to "filters[0].measure_alias references unknown measure alias 'typo'",
+                default.copy(sort = sort.copy(target = ExploreSortTarget.Measure("typo"))) to
+                    "sort.measure_alias references unknown measure alias 'typo'",
+                default.copy(
+                    columnDimensions =
+                        listOf(
+                            PivotDimension(
+                                "created",
+                                sortMode = DimensionSortMode.ValueAscending,
+                                sortMeasureAlias = "typo",
+                            ),
+                        ),
+                ) to
+                    "column_dimensions[0].sort_measure_alias references unknown measure alias 'typo'",
+                default.copy(filters = listOf(filter.copy(value = "10O", secondValue = "10"))) to
+                    "filters[0].value must be a finite decimal",
+                default.copy(filters = listOf(filter.copy(secondValue = "Infinity"))) to
+                    "filters[0].second_value must be a finite decimal",
+                default.copy(filters = listOf(filter)) to "filters[0].second_value is required",
+                default.copy(measures = listOf(droppedMeasure), sort = sort) to
+                    "sort.measure_alias references measure alias 'count' without a usable source column",
+            )
+        cases.forEachIndexed { index, (config, _) ->
+            service.exploreRecipes += sampleRecipe(id = "bad-$index", pivot = config)
+        }
+        service.exploreRecipes +=
+            sampleRecipe(id = "fallback", pivot = default.copy(measures = listOf(droppedMeasure)))
+        withTempMcpClient(service) { client ->
+            val resultId = storeRecipeResult(client)
+            cases.forEachIndexed { index, (_, message) ->
+                assertError(
+                    client.callTool(
+                        "apply_recipe",
+                        mapOf("result_id" to resultId, "recipe_id" to "bad-$index"),
+                    ),
+                    "validation",
+                    message,
+                )
+            }
+            val fallback =
+                client.callJson(
+                    "apply_recipe",
+                    mapOf("result_id" to resultId, "recipe_id" to "fallback"),
+                )
+            assertEquals("5", fallback.getValue("rows").jsonArray.last().jsonObject.string("Count"))
+            assertTrue(
+                fallback
+                    .getValue("warnings")
+                    .jsonArray
+                    .single()
+                    .jsonPrimitive
+                    .content
+                    .contains("unknown source column"),
+            )
         }
     }
 
@@ -154,6 +262,114 @@ class RecipeToolsTest {
                     mapOf("result_id" to resultId, "recipe_id" to "r2", "mode" to "WORKSHEET"),
                 )
             assertEquals("5", explicit.string("row_count"))
+        }
+    }
+
+    @Test
+    fun applyRecipeSummarizesWorksheetErrorsBeyondThePageAndKeepsValidAndNullCells() = runBlocking {
+        val service = exploreSampleService()
+        val amounts =
+            listOf(ResultCell.integer(2), ResultCell.Null) +
+                List(GET_RESULT_ROWS_MAX - 2) { ResultCell.integer(2) } +
+                List(2) { ResultCell.integer(0) }
+        service.runQueryResult =
+            QueryRunResult(
+                sampleExploreQueryResult()
+                    .copy(
+                        columns = listOf(ResultColumn("amount", "int")),
+                        rows = amounts.map { listOf(it) },
+                        rowCount = amounts.size,
+                    ),
+                allowedMcpRisk(),
+            )
+        service.exploreRecipes +=
+            sampleRecipe(
+                defaultMode = ExploreMode.Worksheet,
+                pivot = null,
+                worksheet =
+                    WorksheetConfig(
+                        calculations =
+                            listOf(
+                                WorksheetCalculation.RowFormula(
+                                    id = "ratio",
+                                    label = "Ratio",
+                                    formula = "10 / [amount]",
+                                ),
+                                WorksheetCalculation.RowFormula(
+                                    id = "missing",
+                                    label = "Missing",
+                                    formula = "[unknown]",
+                                ),
+                                WorksheetCalculation.RowFormula(
+                                    id = "a",
+                                    label = "A",
+                                    formula = "[b]",
+                                ),
+                                WorksheetCalculation.RowFormula(
+                                    id = "b",
+                                    label = "B",
+                                    formula = "[a]",
+                                ),
+                            ),
+                    ),
+                requiredFields = emptyList(),
+            )
+        withTempMcpClient(service) { client ->
+            val body =
+                client.callJson(
+                    "apply_recipe",
+                    mapOf("result_id" to storeRecipeResult(client), "recipe_id" to "r1"),
+                )
+            val rows = body.getValue("rows").jsonArray
+            assertEquals("true", body.string("worksheet_truncated"))
+            assertEquals(GET_RESULT_ROWS_MAX, rows.size)
+            assertEquals(amounts.size.toString(), body.string("row_count"))
+            assertEquals(5.0, rows[0].jsonObject.getValue("calculation:ratio").jsonPrimitive.double)
+            assertEquals(JsonNull, rows[1].jsonObject["calculation:ratio"])
+            assertEquals(JsonNull, rows[0].jsonObject["calculation:missing"])
+            assertEquals(
+                listOf(
+                    "Calculated columns contain a circular reference",
+                    "Calculation 'Missing' (missing): Unknown field 'unknown' (${amounts.size} cells)",
+                    "Calculation 'A' (a): Unknown field 'b' (${amounts.size} cells)",
+                    "Calculation 'Ratio' (ratio): Division by zero (2 cells)",
+                ),
+                body.getValue("warnings").jsonArray.map { it.jsonPrimitive.content },
+            )
+        }
+    }
+
+    @Test
+    fun applyRecipeBoundsDistinctWorksheetErrorWarnings() = runBlocking {
+        val service = exploreSampleService()
+        service.exploreRecipes +=
+            sampleRecipe(
+                defaultMode = ExploreMode.Worksheet,
+                pivot = null,
+                worksheet =
+                    WorksheetConfig(
+                        calculations =
+                            List(21) { index ->
+                                WorksheetCalculation.RowFormula(
+                                    id = "calc-$index",
+                                    label = "calc-$index",
+                                    formula = "1 / 0",
+                                )
+                            },
+                    ),
+                requiredFields = emptyList(),
+            )
+        withTempMcpClient(service) { client ->
+            val body =
+                client.callJson(
+                    "apply_recipe",
+                    mapOf("result_id" to storeRecipeResult(client), "recipe_id" to "r1"),
+                )
+            assertEquals(
+                List(20) { "Calculation 'calc-$it': Division by zero (5 cells)" } +
+                    "Additional worksheet calculation errors omitted: 5 cells",
+                body.getValue("warnings").jsonArray.map { it.jsonPrimitive.content },
+            )
         }
     }
 
@@ -243,10 +459,11 @@ class RecipeToolsTest {
                             listOf(
                                 PivotMeasure(
                                     alias = "total",
-                                    fn = com.safedb.explore.MeasureFn.Sum,
+                                    fn = MeasureFn.Sum,
                                     sourceColumn = "amount_total",
                                 ),
                             ),
+                        sort = ExploreSort(ExploreSortTarget.Measure("total"), SortDir.Desc),
                     ),
             )
         withTempMcpClient(service) { client ->
@@ -273,7 +490,10 @@ class RecipeToolsTest {
                     ),
                 )
             assertEquals("4", mapped.string("row_count"))
-            assertTrue(mapped.getValue("rows").jsonArray.isNotEmpty())
+            assertEquals(
+                "west",
+                mapped.getValue("rows").jsonArray.first().jsonObject.string("region"),
+            )
 
             val unknownKey =
                 client.callTool(

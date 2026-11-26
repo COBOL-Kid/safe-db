@@ -4,11 +4,15 @@ import io.modelcontextprotocol.kotlin.sdk.client.Client
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 class ExportToolsTest {
@@ -28,6 +32,45 @@ class ExportToolsTest {
             assertEquals(
                 "id,email\r\n1,user1@example.com\r\n2,user2@example.com\r\n",
                 Files.readString(target),
+            )
+        }
+    }
+
+    @Test
+    fun exportResultUsesTheOriginalSampleEvenAfterFilteringAndProjection() = runBlocking {
+        withExportClient(exportService()) { client, _, exportsDir ->
+            val description =
+                client.listTools().tools.single { it.name == "export_result" }.description.orEmpty()
+            assertContains(description, "original stored sample")
+            assertContains(description, "not filtered, projected, or pivoted output")
+
+            val resultId = storeExportResult(client)
+            val filtered =
+                client.callJson(
+                    "filter_result_rows",
+                    mapOf(
+                        "result_id" to resultId,
+                        "filters" to
+                            listOf(
+                                Json.parseToJsonElement(
+                                    """{"column":"id","op":"eq","value":"1"}""",
+                                ),
+                            ),
+                        "columns" to listOf("id"),
+                    ),
+                )
+            val echoedResultId = filtered.string("result_id")
+            assertEquals(resultId, echoedResultId)
+            assertEquals("1", filtered.string("matched_row_count"))
+            val row = filtered.getValue("rows").jsonArray.single().jsonObject
+            assertEquals(setOf("id"), row.keys)
+            assertEquals("1", row.string("id"))
+
+            val receipt = client.callJson("export_result", mapOf("result_id" to echoedResultId))
+            assertEquals("2", receipt.string("row_count"))
+            assertEquals(
+                "id,email\r\n1,user1@example.com\r\n2,user2@example.com\r\n",
+                Files.readString(exportsDir.resolve("$echoedResultId.csv")),
             )
         }
     }
@@ -59,9 +102,12 @@ class ExportToolsTest {
             val dotted =
                 client.callJson(
                     "export_result",
-                    mapOf("result_id" to resultId, "filename" to "daily.summary"),
+                    mapOf("result_id" to resultId, "filename" to "  daily_summary-2.v1  "),
                 )
-            assertTrue(dotted.string("file_path").endsWith("daily.summary.csv"))
+            assertEquals(
+                exportsDir.resolve("daily_summary-2.v1.csv").toString(),
+                dotted.string("file_path"),
+            )
 
             val blank =
                 client.callJson("export_result", mapOf("result_id" to resultId, "filename" to ""))
@@ -73,29 +119,39 @@ class ExportToolsTest {
     }
 
     @Test
-    fun exportResultRejectsPathSeparatorsAndUnknownResults() = runBlocking {
+    fun exportResultRejectsUnsafeFilenamesAndUnknownResults() = runBlocking {
         val service = exportService()
         withExportClient(service) { client, resultsDir, exportsDir ->
             val resultId = storeExportResult(client)
             val exportsBefore = directoryNames(exportsDir)
-            listOf("../evil", "sub/evil", "..", ".", ".hidden", "file.", "a b.csv", """a\b.csv""")
-                .forEach { filename ->
-                    val result =
-                        client.callTool(
-                            "export_result",
-                            mapOf("result_id" to resultId, "filename" to filename),
-                        )
-                    assertEquals(true, result.isError, "expected failure for $filename")
-                    assertEquals(
-                        "invalid_arguments",
-                        result.json().string("error"),
-                        "expected invalid_arguments for $filename",
+            listOf("../evil", "sub/evil", "..", ".", ".hidden", "a b.csv", """a\b.csv""").forEach {
+                filename ->
+                val result =
+                    client.callTool(
+                        "export_result",
+                        mapOf("result_id" to resultId, "filename" to filename),
                     )
-                    assertEquals(
-                        "filename must be a simple file name without path separators",
-                        result.json().string("message"),
-                    )
-                }
+                assertEquals(true, result.isError, "expected failure for $filename")
+                assertEquals(
+                    "invalid_arguments",
+                    result.json().string("error"),
+                    "expected invalid_arguments for $filename",
+                )
+                assertEquals(
+                    "filename must be a simple file name without path separators",
+                    result.json().string("message"),
+                )
+            }
+            val trailingDot =
+                client.callTool(
+                    "export_result",
+                    mapOf("result_id" to resultId, "filename" to "file."),
+                )
+            assertError(
+                trailingDot,
+                "invalid_arguments",
+                "filename must not end with a dot; remove the trailing dot or use a .csv extension",
+            )
             assertFalse(Files.exists(resultsDir.resolve("evil.csv")))
             assertFalse(Files.exists(resultsDir.resolve("evil")))
             assertFalse(Files.exists(exportsDir.resolve("evil")))

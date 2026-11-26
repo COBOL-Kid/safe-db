@@ -186,6 +186,77 @@ class PivotResultToolTest {
     }
 
     @Test
+    fun pivotResultRejectsAmbiguousOrUnknownAliasesAndInvalidThresholds(): Unit = runBlocking {
+        withTempMcpClient(exploreSampleService()) { client ->
+            val resultId = storeExploreResult(client)
+            val cases =
+                listOf(
+                    """{"measures":[{"alias":"revenue","fn":"sum","source_column":"amount"},{"alias":"revenue","fn":"count"}]}""" to
+                        "measures[1].alias reuses measure alias 'revenue'",
+                    """{"filters":[{"column":"region","op":"top","measure_alias":"reveneu","count":1}]}""" to
+                        "filters[0].measure_alias references unknown measure alias 'reveneu'",
+                    """{"sort":{"measure_alias":"Count"}}""" to
+                        "sort.measure_alias references unknown measure alias 'Count'",
+                    """{"row_dimensions":[{"column":"region","sort_mode":"value_asc","sort_measure_alias":"typo"}]}""" to
+                        "row_dimensions[0].sort_measure_alias references unknown measure alias 'typo'",
+                    """{"column_dimensions":[{"column":"region","sort_mode":"value_desc","sort_measure_alias":"typo"}]}""" to
+                        "column_dimensions[0].sort_measure_alias references unknown measure alias 'typo'",
+                    """{"filters":[{"column":"region","op":"gt","measure_alias":"count","value":"10O"}]}""" to
+                        "filters[0].value must be a finite decimal",
+                    """{"measures":[{"alias":"count","fn":"sum"}],"sort":{"measure_alias":"count"}}""" to
+                        "sort.measure_alias references measure alias 'count' without a usable source column",
+                    """{"measures":[{"alias":"n","fn":"count"}],"sort":{"measure_alias":"count"}}""" to
+                        "sort.measure_alias references unknown measure alias 'count'",
+                )
+            for ((json, message) in cases) {
+                val args =
+                    Json.parseToJsonElement(json).jsonObject +
+                        ("result_id" to JsonPrimitive(resultId))
+                assertError(client.callTool("pivot_result", args), "invalid_arguments", message)
+            }
+        }
+    }
+
+    @Test
+    fun pivotResultFiltersByCountWithDefaultAndEmptyMeasures(): Unit = runBlocking {
+        withTempMcpClient(exploreSampleService()) { client ->
+            val resultId = storeExploreResult(client)
+            val args =
+                mapOf(
+                    "result_id" to resultId,
+                    "filters" to
+                        listOf(
+                            Json.parseToJsonElement(
+                                """{"column":"region","op":"between","measure_alias":"count","value":" 2 ","second_value":" 2.0 "}""",
+                            ),
+                        ),
+                    "show_column_totals" to false,
+                )
+            val explicit =
+                mapOf(
+                    "row_dimensions" to
+                        listOf(
+                            Json.parseToJsonElement(
+                                """{"column":"region","sort_mode":"label_desc","sort_measure_alias":"ignored"}""",
+                            ),
+                        ),
+                    "measures" to emptyList<JsonObject>(),
+                )
+            val sort = "sort" to Json.parseToJsonElement("""{"measure_alias":"count"}""")
+            for ((request, regions) in
+                listOf(
+                    (args + sort) to listOf("east", "west"),
+                    (args + explicit) to listOf("west", "east"),
+                )) {
+                val body = client.callTool("pivot_result", request).json()
+                val rows = body.getValue("rows").jsonArray.map { it.jsonObject }
+                assertEquals(regions, rows.map { it.getValue("region").jsonPrimitive.content })
+                assertTrue(rows.all { it.getValue("Count").jsonPrimitive.content == "2" })
+            }
+        }
+    }
+
+    @Test
     fun pivotResultRejectsUnknownNestedKeysAndWrongTypes(): Unit = runBlocking {
         val service = exploreSampleService()
         withTempMcpClient(service) { client ->
@@ -648,39 +719,48 @@ class PivotResultToolTest {
     }
 
     @Test
-    fun pivotEvaluatesFormulaWithoutFn(): Unit = runBlocking {
+    fun pivotRanksFormulaWithoutFnUsingForwardCaseSensitiveReferences(): Unit = runBlocking {
         val service = exploreSampleService()
         withTempMcpClient(service) { client ->
             val resultId = storeExploreResult(client)
-            val formulaPivot =
-                client
-                    .callTool(
-                        "pivot_result",
-                        mapOf(
-                            "result_id" to resultId,
-                            "row_dimensions" to listOf("region"),
-                            "measures" to
-                                listOf(
-                                    Json.parseToJsonElement(
-                                        """{"alias":"s","fn":"sum","source_column":"amount"}""",
-                                    ),
-                                    Json.parseToJsonElement("""{"alias":"c","fn":"count"}"""),
-                                    Json.parseToJsonElement(
-                                        """{"alias":"avg_calc","formula":"[s] / [c]","label":"AvgCalc"}""",
-                                    ),
-                                ),
-                            "show_column_totals" to false,
-                        ),
+            val measures =
+                listOf(
+                        """{"alias":"avg_calc","formula":"[s] / [S]","label":"AvgCalc"}""",
+                        """{"alias":"s","fn":"sum","source_column":"amount"}""",
+                        """{"alias":"S","fn":"count"}""",
+                        """{"alias":"bad_calc","formula":"[missing]","label":"BadCalc"}""",
                     )
-                    .json()
-            assertTrue(formulaPivot.getValue("warnings").jsonArray.isEmpty())
-            val eastRow =
-                formulaPivot
-                    .getValue("rows")
-                    .jsonArray
-                    .first { it.jsonObject.getValue("region").jsonPrimitive.content == "east" }
-                    .jsonObject
-            assertEquals("15", eastRow.getValue("AvgCalc").jsonPrimitive.content)
+                    .map(Json::parseToJsonElement)
+            for ((op, region, avg) in
+                listOf(Triple("top", "north", "50"), Triple("bottom", "east", "15"))) {
+                val body =
+                    client
+                        .callTool(
+                            "pivot_result",
+                            mapOf(
+                                "result_id" to resultId,
+                                "row_dimensions" to listOf("region"),
+                                "measures" to measures,
+                                "filters" to
+                                    listOf(
+                                        Json.parseToJsonElement(
+                                            """{"column":"region","op":"$op","measure_alias":"avg_calc","count":1}""",
+                                        ),
+                                    ),
+                                "show_column_totals" to false,
+                            ),
+                        )
+                        .json()
+                val row = body.getValue("rows").jsonArray.single().jsonObject
+                assertEquals(region, row.getValue("region").jsonPrimitive.content)
+                assertEquals(avg, row.getValue("AvgCalc").jsonPrimitive.content)
+                assertEquals(JsonNull, row.getValue("BadCalc"))
+                assertTrue(
+                    body.getValue("warnings").jsonArray.any {
+                        "unknown measure 'missing'" in it.jsonPrimitive.content.lowercase()
+                    },
+                )
+            }
         }
     }
 }

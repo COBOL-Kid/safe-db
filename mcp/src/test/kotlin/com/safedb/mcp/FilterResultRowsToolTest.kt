@@ -327,6 +327,52 @@ class FilterResultRowsToolTest {
     }
 
     @Test
+    fun filterResultRowsUsesReceiptTypesForDecimalEquality(): Unit = runBlocking {
+        val service = exploreSampleService()
+        service.runQueryResult =
+            QueryRunResult(
+                QueryResult.fromRows(
+                    listOf(ResultColumn("total", "decimal(10,2)"), ResultColumn("code", "varchar")),
+                    listOf(
+                        listOf(ResultCell.text("146.97"), ResultCell.text("001")),
+                        listOf(ResultCell.text("146.98"), ResultCell.text("1")),
+                    ),
+                ),
+                allowedMcpRisk(),
+            )
+        withTempMcpClient(service) { client ->
+            val resultId = storeExploreResult(client)
+            suspend fun filter(column: String, op: String, value: String): JsonObject =
+                client
+                    .callJson(
+                        "filter_result_rows",
+                        mapOf(
+                            "result_id" to resultId,
+                            "filters" to
+                                listOf(mapOf("column" to column, "op" to op, "value" to value)),
+                        ),
+                    )
+                    .getValue("rows")
+                    .jsonArray
+                    .single()
+                    .jsonObject
+
+            assertEquals(
+                "146.97",
+                filter("total", "equals", "146.970").getValue("total").jsonPrimitive.content,
+            )
+            assertEquals(
+                "146.98",
+                filter("total", "not_equals", "146.970").getValue("total").jsonPrimitive.content,
+            )
+            assertEquals(
+                "146.98",
+                filter("code", "equals", "1").getValue("total").jsonPrimitive.content,
+            )
+        }
+    }
+
+    @Test
     fun filterResultRowsRejectsInvalidMembersAndWrongNestedTypes(): Unit = runBlocking {
         val service = exploreSampleService()
         withTempMcpClient(service) { client ->

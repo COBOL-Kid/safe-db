@@ -26,6 +26,9 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 
+private const val MAX_WORKSHEET_ERROR_WARNINGS = 20
+private const val MAX_WORKSHEET_WARNING_DETAIL_CHARS = 160
+
 internal fun registerRecipeTools(
     server: Server,
     service: SafeDbService,
@@ -189,10 +192,15 @@ private suspend fun handleApplyRecipe(
                         ERROR_VALIDATION,
                         "Recipe '${recipe.id}' has no pivot configuration",
                     )
+            val columns = entry.result.columns.map { it.name }.toSet()
+            val validatedConfig =
+                validatePivotConfig(config, columns, ERROR_VALIDATION).getOrElse {
+                    return it
+                }
             val preview =
                 applyExplore(
                     entry.result,
-                    config.withTableAwareLabels(entry.result.columns, entry.tables),
+                    validatedConfig.withTableAwareLabels(entry.result.columns, entry.tables),
                 )
             pivotResultReceipt(resultId, entry, preview)
         }
@@ -237,11 +245,48 @@ private fun worksheetResultReceipt(
             rowCount = worksheet.rows.size,
             sampleCapped = entry.result.truncated,
             worksheetTruncated = slice.moreRowsRemain || slice.cellsTruncated,
-            warnings = worksheet.warnings,
+            warnings = worksheet.warnings + worksheet.calculationWarnings(),
             rows = slice.rows,
         )
     return objectToolResult(receipt)
 }
+
+private fun WorksheetPreview.calculationWarnings(): List<String> {
+    val counts = linkedMapOf<Pair<Int, String>, Int>()
+    var omitted = 0
+    for (row in rows) {
+        for ((index, cell) in row.cells.withIndex()) {
+            val reason = cell.error ?: continue
+            val key = index to reason
+            val count = counts[key]
+            if (count != null || counts.size < MAX_WORKSHEET_ERROR_WARNINGS) {
+                counts[key] = (count ?: 0) + 1
+            } else {
+                omitted++
+            }
+        }
+    }
+    return buildList {
+        for ((key, count) in counts) {
+            val (index, reason) = key
+            val column = columns[index]
+            val label = column.label.warningDetail()
+            val id = column.calculationId.orEmpty().warningDetail()
+            val calculation =
+                if (column.label == column.calculationId) "'$label'" else "'$label' ($id)"
+            val cells = if (count == 1) "cell" else "cells"
+            add("Calculation $calculation: ${reason.warningDetail()} ($count $cells)")
+        }
+        if (omitted > 0) add("Additional worksheet calculation errors omitted: $omitted cells")
+    }
+}
+
+private fun String.warningDetail(): String =
+    if (length > MAX_WORKSHEET_WARNING_DETAIL_CHARS) {
+        take(MAX_WORKSHEET_WARNING_DETAIL_CHARS) + "…"
+    } else {
+        this
+    }
 
 private fun parseFieldMapping(objectArg: JsonObject?): Arg<Map<String, String>> {
     if (objectArg == null) return Arg.Ok(emptyMap())

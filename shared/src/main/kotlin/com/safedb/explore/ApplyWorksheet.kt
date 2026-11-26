@@ -4,6 +4,8 @@ import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
 import com.safedb.model.ResultColumn
 import com.safedb.model.TableRef
+import com.safedb.model.classifyColumn
+import com.safedb.model.isNumeric
 import java.math.BigDecimal
 import java.math.MathContext
 
@@ -104,6 +106,8 @@ private class WorksheetEngine(
     private val tables: List<TableRef>,
 ) {
     private val sampleIndex = SampleIndex(sample)
+    private val numericColumns =
+        sample.columns.associate { it.name to classifyColumn(it.dataType).isNumeric() }
     private val rowFormulas =
         config.calculations.filterIsInstance<WorksheetCalculation.RowFormula>()
     private val uniqueSampleLabels = uniqueSampleDisplayLabels(sample.columns, tables)
@@ -272,23 +276,35 @@ private class WorksheetEngine(
         config.filters.all { filter ->
             val cell = record.source(filter.column)
             val text = resultCellText(cell)
-            val comparison = compareTextOrNumber(text, filter.value)
+            val numericText = numericColumns[filter.column] == true
+            val numeric = cell.usesNumericComparison(numericText)
+            fun compareNumber(expected: String): Int? {
+                val number = ResultNumber.fromCell(cell, numericText) ?: return null
+                return ResultNumber.parse(expected)?.let(number::compareTo)
+            }
+            fun equalsExpected(): Boolean =
+                if (numeric) compareNumber(filter.value) == 0
+                else text.equals(filter.value, ignoreCase = true)
+            fun ordered(expected: String, matches: (Int) -> Boolean): Boolean =
+                (if (numeric) compareNumber(expected) else compareTextOrNumber(text, expected))
+                    ?.let(matches) == true
             when (filter.op) {
                 WorksheetFilterOp.Members -> pivotCellMatches(cell, filter.includedKeys)
-                WorksheetFilterOp.Equals -> filterEquals(cell, text, filter.value)
-                WorksheetFilterOp.NotEquals -> !filterEquals(cell, text, filter.value)
+                WorksheetFilterOp.Equals -> equalsExpected()
+                WorksheetFilterOp.NotEquals -> !equalsExpected()
                 WorksheetFilterOp.Contains ->
                     matchesLabelOp(text, LabelFilterOp.Contains, filter.value)
                 WorksheetFilterOp.StartsWith ->
                     matchesLabelOp(text, LabelFilterOp.StartsWith, filter.value)
                 WorksheetFilterOp.EndsWith ->
                     matchesLabelOp(text, LabelFilterOp.EndsWith, filter.value)
-                WorksheetFilterOp.GreaterThan -> comparison > 0
-                WorksheetFilterOp.GreaterThanOrEqual -> comparison >= 0
-                WorksheetFilterOp.LessThan -> comparison < 0
-                WorksheetFilterOp.LessThanOrEqual -> comparison <= 0
+                WorksheetFilterOp.GreaterThan -> ordered(filter.value) { it > 0 }
+                WorksheetFilterOp.GreaterThanOrEqual -> ordered(filter.value) { it >= 0 }
+                WorksheetFilterOp.LessThan -> ordered(filter.value) { it < 0 }
+                WorksheetFilterOp.LessThanOrEqual -> ordered(filter.value) { it <= 0 }
                 WorksheetFilterOp.Between ->
-                    comparison >= 0 && compareTextOrNumber(text, filter.secondValue.orEmpty()) <= 0
+                    ordered(filter.value) { it >= 0 } &&
+                        ordered(filter.secondValue.orEmpty()) { it <= 0 }
                 WorksheetFilterOp.IsNull -> cell is ResultCell.Null
                 WorksheetFilterOp.IsNotNull -> cell !is ResultCell.Null
             }
@@ -336,7 +352,9 @@ private class WorksheetEngine(
 
     private fun recordComparator(): Comparator<WorksheetRecord> = Comparator { left, right ->
         for ((target, dir) in config.sorts) {
-            val compared = compareCells(left.value(target), right.value(target))
+            val numericText =
+                target is WorksheetValueRef.Column && numericColumns[target.column] == true
+            val compared = compareCells(left.value(target), right.value(target), numericText)
             if (compared != 0) return@Comparator if (dir == SortDir.Desc) -compared else compared
         }
         left.index.compareTo(right.index)
@@ -366,15 +384,22 @@ private class WorksheetEngine(
                     for ((target, dir) in config.sorts) {
                         val compared =
                             when (target) {
-                                is WorksheetValueRef.Column ->
+                                is WorksheetValueRef.Column -> {
+                                    val numericText = numericColumns[target.column] == true
                                     if (target.column == group.column) {
-                                        compareCells(leftKey.sortValue, rightKey.sortValue)
+                                        compareCells(
+                                            leftKey.sortValue,
+                                            rightKey.sortValue,
+                                            numericText,
+                                        )
                                     } else {
                                         compareCells(
                                             leftRecords.firstOrNull()?.source(target.column),
                                             rightRecords.firstOrNull()?.source(target.column),
+                                            numericText,
                                         )
                                     }
+                                }
                                 is WorksheetValueRef.Calculation ->
                                     compareCells(
                                         groupCalculationValue(leftRecords, group.column, target.id),
@@ -531,10 +556,19 @@ private class WorksheetEngine(
                         .divide(values.size.toBigDecimal(), MathContext.DECIMAL128)
                         .toResultCell()
             }
-            WorksheetAggregateFn.Minimum ->
-                concrete.minWithOrNull(::compareCells) ?: ResultCell.Null
-            WorksheetAggregateFn.Maximum ->
-                concrete.maxWithOrNull(::compareCells) ?: ResultCell.Null
+            WorksheetAggregateFn.Minimum,
+            WorksheetAggregateFn.Maximum -> {
+                val numericText = numericColumns[calculation.sourceColumn] == true
+                val usable = concrete.filter { cell ->
+                    !cell.usesNumericComparison(numericText) ||
+                        ResultNumber.fromCell(cell, numericText) != null
+                }
+                val comparator =
+                    Comparator<ResultCell> { left, right -> compareCells(left, right, numericText) }
+                (if (calculation.fn == WorksheetAggregateFn.Minimum)
+                    usable.minWithOrNull(comparator)
+                else usable.maxWithOrNull(comparator)) ?: ResultCell.Null
+            }
         }
     }
 
@@ -717,29 +751,38 @@ private fun BigDecimal?.toResultCell(): ResultCell =
 
 private fun List<BigDecimal>.sumDecimals(): BigDecimal = fold(BigDecimal.ZERO, BigDecimal::add)
 
-private fun compareCells(left: ResultCell?, right: ResultCell?): Int {
-    if (left == null || left is ResultCell.Null)
-        return if (right == null || right is ResultCell.Null) 0 else -1
-    if (right == null || right is ResultCell.Null) return 1
-    val leftNumber = resultCellDecimal(left)
-    val rightNumber = resultCellDecimal(right)
-    return if (leftNumber != null && rightNumber != null) leftNumber.compareTo(rightNumber)
-    else resultCellText(left).compareTo(resultCellText(right), ignoreCase = true)
+private fun ResultCell?.usesNumericComparison(numericText: Boolean): Boolean =
+    this is ResultCell.IntegerCell ||
+        this is ResultCell.FloatCell ||
+        (numericText && this is ResultCell.TextCell)
+
+private fun compareCells(
+    left: ResultCell?,
+    right: ResultCell?,
+    numericText: Boolean = false,
+): Int {
+    val leftNumber = ResultNumber.fromCell(left, numericText)
+    val rightNumber = ResultNumber.fromCell(right, numericText)
+    val leftMissing =
+        left == null ||
+            left is ResultCell.Null ||
+            (left.usesNumericComparison(numericText) && leftNumber == null)
+    val rightMissing =
+        right == null ||
+            right is ResultCell.Null ||
+            (right.usesNumericComparison(numericText) && rightNumber == null)
+    if (leftMissing || rightMissing) return rightMissing.compareTo(leftMissing)
+    // Keep numeric and text keys in separate ranges even if a column mixes representations.
+    if (leftNumber != null && rightNumber != null) return leftNumber.compareTo(rightNumber)
+    if (leftNumber != null) return -1
+    if (rightNumber != null) return 1
+    return resultCellText(left).compareTo(resultCellText(right), ignoreCase = true)
 }
 
+// Ordered text filters keep their legacy numeric comparison for pairs of decimal-looking strings.
 private fun compareTextOrNumber(left: String, right: String): Int {
     val leftNumber = left.toBigDecimalOrNull()
     val rightNumber = right.toBigDecimalOrNull()
     return if (leftNumber != null && rightNumber != null) leftNumber.compareTo(rightNumber)
     else left.compareTo(right, ignoreCase = true)
-}
-
-private fun filterEquals(cell: ResultCell, text: String, expected: String): Boolean {
-    val numeric = cell is ResultCell.IntegerCell || cell is ResultCell.FloatCell
-    if (numeric) {
-        val left = resultCellDecimal(cell)
-        val right = expected.toBigDecimalOrNull()
-        if (left != null && right != null) return left.compareTo(right) == 0
-    }
-    return text.equals(expected, ignoreCase = true)
 }

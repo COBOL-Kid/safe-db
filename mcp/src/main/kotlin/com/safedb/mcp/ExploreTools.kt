@@ -337,10 +337,14 @@ private suspend fun handlePivotResult(
             showSubtotals = showSubtotals ?: defaults.showSubtotals,
         )
 
+    val validatedConfig =
+        validatePivotConfig(config, columns, ERROR_INVALID_ARGUMENTS).getOrElse {
+            return it
+        }
     val preview =
         applyExplore(
             entry.result,
-            config.withTableAwareLabels(entry.result.columns, entry.tables),
+            validatedConfig.withTableAwareLabels(entry.result.columns, entry.tables),
         )
     return pivotResultReceipt(resultId, entry, preview)
 }

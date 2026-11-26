@@ -2,6 +2,7 @@ package com.safedb.mcp
 
 import com.safedb.explore.DateGroupUnit
 import com.safedb.explore.DimensionSortMode
+import com.safedb.explore.ExploreConfig
 import com.safedb.explore.ExploreSort
 import com.safedb.explore.ExploreSortTarget
 import com.safedb.explore.LabelFilterOp
@@ -448,6 +449,94 @@ internal fun parseExploreSort(obj: JsonObject, columns: Set<String>): Arg<Explor
             return Arg.Err(it)
         }
     return Arg.Ok(ExploreSort(target = target, dir = dir))
+}
+
+internal fun validatePivotConfig(
+    config: ExploreConfig,
+    columns: Set<String>,
+    errorCode: String,
+): Arg<ExploreConfig> {
+    fun invalid(message: String) = Arg.Err(toolError(errorCode, message))
+
+    val declaredAliases = mutableSetOf<String>()
+    val executableAliases = mutableSetOf<String>()
+    for ((index, measure) in config.measures.withIndex()) {
+        if (!declaredAliases.add(measure.alias)) {
+            return invalid("measures[$index].alias reuses measure alias '${measure.alias}'")
+        }
+        // Match the engine's eligibility checks without dropping its warnings or fallback.
+        if (
+            !measure.formula.isNullOrBlank() ||
+                measure.fn == MeasureFn.Count ||
+                measure.sourceColumn in columns
+        ) {
+            executableAliases += measure.alias
+        }
+    }
+    val countAlias = PivotMeasure.countRows().alias
+    // A reference to a dropped measure named "count" must not silently target the fallback.
+    if (executableAliases.isEmpty() && countAlias !in declaredAliases) {
+        executableAliases += countAlias
+    }
+
+    fun aliasError(path: String, alias: String): Arg.Err? =
+        when (alias) {
+            in executableAliases -> null
+            in declaredAliases ->
+                invalid("$path references measure alias '$alias' without a usable source column")
+            else -> invalid("$path references unknown measure alias '$alias'")
+        }
+
+    val sortTarget = config.sort?.target
+    if (sortTarget is ExploreSortTarget.Measure) {
+        aliasError("sort.measure_alias", sortTarget.alias)?.let {
+            return it
+        }
+    }
+    for ((path, dimensions) in
+        listOf(
+            "row_dimensions" to config.rowDimensions,
+            "column_dimensions" to config.columnDimensions,
+        )) {
+        for ((index, dimension) in dimensions.withIndex()) {
+            val alias = dimension.sortMeasureAlias ?: continue
+            when (dimension.sortMode) {
+                DimensionSortMode.ValueAscending,
+                DimensionSortMode.ValueDescending ->
+                    aliasError("$path[$index].sort_measure_alias", alias)?.let {
+                        return it
+                    }
+                else -> Unit
+            }
+        }
+    }
+
+    val filters =
+        config.filters.mapIndexed { index, filter ->
+            if (filter !is PivotFilter.Value) return@mapIndexed filter
+            val path = "filters[$index]"
+            aliasError("$path.measure_alias", filter.measureAlias)?.let {
+                return it
+            }
+            if (filter.op == ValueFilterOp.Top || filter.op == ValueFilterOp.Bottom) {
+                return@mapIndexed filter
+            }
+            val value = filter.value.trim()
+            if (value.toBigDecimalOrNull() == null) {
+                return invalid("$path.value must be a finite decimal")
+            }
+            if (filter.op == ValueFilterOp.Between) {
+                val secondValue =
+                    filter.secondValue?.trim() ?: return invalid("$path.second_value is required")
+                if (secondValue.toBigDecimalOrNull() == null) {
+                    return invalid("$path.second_value must be a finite decimal")
+                }
+                filter.copy(value = value, secondValue = secondValue)
+            } else {
+                filter.copy(value = value)
+            }
+        }
+    return Arg.Ok(config.copy(filters = filters))
 }
 
 internal fun parseWorksheetFilters(

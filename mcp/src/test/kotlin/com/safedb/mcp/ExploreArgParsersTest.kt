@@ -2,6 +2,7 @@ package com.safedb.mcp
 
 import com.safedb.explore.DateGroupUnit
 import com.safedb.explore.DimensionSortMode
+import com.safedb.explore.ExploreConfig
 import com.safedb.explore.ExploreSort
 import com.safedb.explore.ExploreSortTarget
 import com.safedb.explore.LabelFilterOp
@@ -274,6 +275,46 @@ class ExploreArgParsersTest {
         assertEquals(ValueFilterOp.Between, value.op)
         assertEquals("count", value.measureAlias)
         assertEquals("10", value.secondValue)
+    }
+
+    @Test
+    fun validatePivotConfigRequiresFiniteDecimalBoundsAndTrimsForExecution() {
+        val filter =
+            PivotFilter.Value(
+                id = "filter-0",
+                column = "region",
+                label = "Region",
+                measureAlias = "count",
+                op = ValueFilterOp.Between,
+                value = " +1.00000000000000000001 ",
+                secondValue = " 1e309 ",
+            )
+        val config = ExploreConfig(measures = emptyList(), filters = listOf(filter))
+        val validated =
+            assertIs<Arg.Ok<ExploreConfig>>(
+                validatePivotConfig(config, columns, ERROR_INVALID_ARGUMENTS),
+            )
+        assertEquals(
+            listOf(filter.copy(value = "+1.00000000000000000001", secondValue = "1e309")),
+            validated.value.filters,
+        )
+        for (bad in listOf("  ", "10O", "NaN", "-Infinity", "0x1p3")) {
+            for ((candidate, field) in
+                listOf(
+                    filter.copy(value = bad) to "value",
+                    filter.copy(secondValue = bad) to "second_value",
+                )) {
+                val error =
+                    assertIs<Arg.Err>(
+                        validatePivotConfig(
+                            config.copy(filters = listOf(candidate)),
+                            columns,
+                            ERROR_INVALID_ARGUMENTS,
+                        ),
+                    )
+                assertEquals("filters[0].$field must be a finite decimal", error.message())
+            }
+        }
     }
 
     @Test

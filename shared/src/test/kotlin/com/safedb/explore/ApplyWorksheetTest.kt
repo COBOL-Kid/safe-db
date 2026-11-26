@@ -136,6 +136,120 @@ class ApplyWorksheetTest {
     }
 
     @Test
+    fun numericTextFiltersAndSortUseExactDecimalsWithoutCoercingTextEquality() {
+        val smaller = "9007199254740993.000000000000000001"
+        val larger = "9007199254740993.000000000000000002"
+        val big = 1L shl 53
+        val sample =
+            QueryResult.fromRows(
+                listOf(
+                    ResultColumn("amount", "NUMBER"),
+                    ResultColumn("code", "varchar"),
+                    ResultColumn("id", "bigint"),
+                ),
+                listOf("146.97", larger, smaller, "001", "1", "bad").mapIndexed { index, text ->
+                    listOf(
+                        ResultCell.text(text),
+                        ResultCell.text(text),
+                        ResultCell.integer(big + index),
+                    )
+                },
+            )
+        fun matched(
+            op: WorksheetFilterOp,
+            value: String,
+            secondValue: String? = null,
+            column: String = "amount",
+        ): List<Int> =
+            sample.filteredIndexes(
+                WorksheetFilter("f", column, op = op, value = value, secondValue = secondValue),
+            )
+
+        assertEquals(listOf(0), matched(WorksheetFilterOp.Equals, "146.970"))
+        assertEquals(listOf(2), matched(WorksheetFilterOp.Equals, "${smaller}0"))
+        assertEquals(listOf(0, 1, 3, 4, 5), matched(WorksheetFilterOp.NotEquals, "${smaller}0"))
+        assertEquals(listOf(2), matched(WorksheetFilterOp.Between, smaller, "${smaller}0"))
+        assertEquals(listOf(1), matched(WorksheetFilterOp.GreaterThan, smaller))
+        assertEquals(emptyList(), matched(WorksheetFilterOp.LessThan, "bad"))
+        assertEquals(emptyList(), matched(WorksheetFilterOp.Between, "0", "bad"))
+        assertEquals(listOf(4), matched(WorksheetFilterOp.Equals, "1", column = "code"))
+        assertEquals(
+            listOf(0, 1, 2, 3, 5),
+            matched(WorksheetFilterOp.NotEquals, "1", column = "code"),
+        )
+        assertEquals(listOf(1, 5), matched(WorksheetFilterOp.GreaterThan, smaller, column = "code"))
+        assertEquals(listOf(1), matched(WorksheetFilterOp.Equals, "${big + 1}.00", column = "id"))
+        assertEquals(emptyList(), matched(WorksheetFilterOp.LessThan, "bad", column = "id"))
+
+        val sorted =
+            applyWorksheet(
+                sample,
+                WorksheetConfig(sorts = listOf(WorksheetSort(WorksheetValueRef.Column("amount")))),
+            )
+        assertEquals(listOf(5, 3, 4, 0, 2, 1), sorted.rows.map { it.sourceRowIndex })
+    }
+
+    @Test
+    fun nonFiniteNumbersSortAndFilterWithoutTreatingTextAsNumeric() {
+        val values =
+            listOf(Double.POSITIVE_INFINITY, 2.0, Double.NaN, Double.NEGATIVE_INFINITY, 10.0)
+        val sample =
+            QueryResult.fromRows(
+                listOf(
+                    ResultColumn("float", "float8"),
+                    ResultColumn("decimal", "numeric"),
+                    ResultColumn("text", "varchar"),
+                ),
+                values.map {
+                    listOf(
+                        ResultCell.float(it),
+                        ResultCell.text(it.toString()),
+                        ResultCell.text(it.toString()),
+                    )
+                } + listOf(List(3) { ResultCell.Null }),
+            )
+        fun sorted(column: String, direction: SortDir, grouped: Boolean = false): List<Int> =
+            applyWorksheet(
+                    sample,
+                    WorksheetConfig(
+                        sorts = listOf(WorksheetSort(WorksheetValueRef.Column(column), direction)),
+                        groups = if (grouped) listOf(WorksheetGroup("g", column)) else emptyList(),
+                    ),
+                )
+                .rows
+                .mapNotNull { it.sourceRowIndex }
+
+        for (column in listOf("float", "decimal")) {
+            assertEquals(listOf(2, 5, 3, 1, 4, 0), sorted(column, SortDir.Asc))
+            assertEquals(listOf(0, 4, 1, 3, 2, 5), sorted(column, SortDir.Desc))
+            assertEquals(listOf(2, 5, 3, 1, 4, 0), sorted(column, SortDir.Asc, grouped = true))
+
+            fun matched(op: WorksheetFilterOp, value: String): List<Int> =
+                sample.filteredIndexes(WorksheetFilter("f", column, op = op, value = value))
+
+            assertEquals(listOf(0), matched(WorksheetFilterOp.GreaterThan, "10"))
+            assertEquals(listOf(0), matched(WorksheetFilterOp.Equals, "+Infinity"))
+            assertEquals(emptyList(), matched(WorksheetFilterOp.GreaterThanOrEqual, "NaN"))
+            assertEquals(emptyList(), matched(WorksheetFilterOp.Equals, "NaN"))
+
+            val calculations =
+                listOf(WorksheetAggregateFn.Minimum, WorksheetAggregateFn.Maximum).map {
+                    WorksheetCalculation.Aggregate(it.name, it.name, it, column)
+                }
+            val extrema =
+                applyWorksheet(sample, WorksheetConfig(calculations = calculations))
+                    .rows
+                    .last()
+                    .cells
+                    .takeLast(2)
+                    .map { it.value }
+            val index = sample.columns.indexOfFirst { it.name == column }
+            assertEquals(listOf(sample.rows[3][index], sample.rows[0][index]), extrema)
+        }
+        assertEquals(listOf(5, 3, 4, 1, 0, 2), sorted("text", SortDir.Asc))
+    }
+
+    @Test
     fun nestedGroupsCollapseAndAggregateAtSelectedLevel() {
         val aggregate =
             WorksheetCalculation.Aggregate(
@@ -999,6 +1113,11 @@ class ApplyWorksheetTest {
             .filter { it.kind == WorksheetRowKind.Detail }
             .map { row -> (row.cells[index].value as ResultCell.TextCell).value.text }
     }
+
+    private fun QueryResult.filteredIndexes(filter: WorksheetFilter): List<Int> =
+        applyWorksheet(this, WorksheetConfig(filters = listOf(filter))).rows.mapNotNull {
+            it.sourceRowIndex
+        }
 
     private fun sample(): QueryResult =
         QueryResult(
