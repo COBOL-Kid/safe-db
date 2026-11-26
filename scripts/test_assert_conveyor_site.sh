@@ -165,6 +165,8 @@ grep -q 'publish-release-prune-policy.txt' "$PUBLISH" ||
 	fail "publish-release.sh does not read the prune policy table"
 grep -q 'publish-release-prune-policy.txt' "$ROOT/scripts/publish-release.ps1" ||
 	fail "publish-release.ps1 does not read the prune policy table"
+grep -q '\$Keep -eq "current"' "$ROOT/scripts/publish-release.ps1" ||
+	fail "publish-release.ps1 does not implement current-version delta pruning"
 reject_publish() {
 	local dir="$1" reason="$2" out
 	if out="$("$PUBLISH" "$dir" 2>&1)"; then
@@ -237,26 +239,34 @@ safedb-0.1.6-0.1.7-mac-aarch64.delta
 safedb-0.1.5-0.1.7-mac-aarch64.delta
 safedb-0.1.4-0.1.7-mac-aarch64.delta
 safedb-0.1.3-0.1.7-mac-aarch64.delta
-safedb-0.1.2-0.1.7-mac-aarch64.delta
-safedb-0.1.1-0.1.7-mac-aarch64.delta
-safedb-0.1.0-0.1.7-mac-aarch64.delta
+safedb-0.1.5-0.1.6-mac-aarch64.delta
+safedb-0.1.4-0.1.6-mac-aarch64.delta
+safedb-0.1.7-0.1.8-mac-aarch64.delta
+safedb-0.1.6-0.1.70-mac-aarch64.delta
+safedb-0.1.6-10.1.7-mac-aarch64.delta
 safedb-0.1.6.x64.msix
 safedb-0.1.6-mac-aarch64.zip
 safedb-0.1.6-windows-amd64.zip
 safedb-0.1.5.x64.msix
 safedb-0.1.5-mac-aarch64.zip
 safedb-0.1.5-windows-amd64.zip
+safedb-0.1.4-mac-aarch64.zip
+safedb-0.1.3-mac-aarch64.zip
 metadata.properties
 safedb.appinstaller
 safedb-windows-x64.exe
+appcast-aarch64.rss
 EOF
 rm_log="$TEST_ROOT/pruned-objects.txt"
 expected="$TEST_ROOT/expected-pruned-objects.txt"
 cat >"$expected" <<'EOF'
-gs://safedb-download/safedb-0.1.6-mac-aarch64.zip
-gs://safedb-download/safedb-0.1.5-mac-aarch64.zip
-gs://safedb-download/safedb-0.1.1-0.1.7-mac-aarch64.delta
-gs://safedb-download/safedb-0.1.0-0.1.7-mac-aarch64.delta
+gs://safedb-download/safedb-0.1.4-mac-aarch64.zip
+gs://safedb-download/safedb-0.1.3-mac-aarch64.zip
+gs://safedb-download/safedb-0.1.5-0.1.6-mac-aarch64.delta
+gs://safedb-download/safedb-0.1.4-0.1.6-mac-aarch64.delta
+gs://safedb-download/safedb-0.1.7-0.1.8-mac-aarch64.delta
+gs://safedb-download/safedb-0.1.6-0.1.70-mac-aarch64.delta
+gs://safedb-download/safedb-0.1.6-10.1.7-mac-aarch64.delta
 gs://safedb-download/safedb-0.1.6-windows-amd64.zip
 gs://safedb-download/safedb-0.1.5-windows-amd64.zip
 gs://safedb-download/safedb-0.1.6.x64.msix
@@ -270,4 +280,30 @@ if ! PATH="$fake_bin:$PATH" \
 fi
 if ! diff -u "$expected" "$rm_log"; then
 	fail "publish-release.sh pruned the wrong objects"
+fi
+
+noop_objects="$TEST_ROOT/bucket-noop-objects.txt"
+cat >"$noop_objects" <<'EOF'
+safedb-0.1.7.x64.msix
+safedb-0.1.7-mac-aarch64.zip
+safedb-0.1.7-windows-amd64.zip
+safedb-0.1.6-0.1.7-mac-aarch64.delta
+safedb-0.1.5-0.1.7-mac-aarch64.delta
+safedb-0.1.4-0.1.7-mac-aarch64.delta
+safedb-0.1.6-mac-aarch64.zip
+safedb-0.1.5-mac-aarch64.zip
+metadata.properties
+safedb.appinstaller
+safedb-windows-x64.exe
+appcast-aarch64.rss
+EOF
+noop_rm_log="$TEST_ROOT/noop-pruned-objects.txt"
+if ! PATH="$fake_bin:$PATH" \
+	FAKE_OBJECTS="$noop_objects" \
+	FAKE_RM_LOG="$noop_rm_log" \
+	"$PUBLISH" "$cleanup_site" >/dev/null; then
+	fail "publish-release.sh failed when no objects needed pruning"
+fi
+if [[ -s "$noop_rm_log" ]]; then
+	fail "publish-release.sh pruned objects when nothing should have been removed"
 fi

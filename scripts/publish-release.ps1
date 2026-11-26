@@ -130,9 +130,10 @@ Upload-ReleaseFiles image/svg+xml $Immutable @("*.svg")
 Upload-ReleaseFiles image/png $Immutable @("*.png")
 
 # Old payloads are immutable, so nothing links to them after an update. Keep a
-# small history for manual downloads and Sparkle deltas, but do not let the flat
-# bucket grow without bound. Cloud Storage update times follow release order, so
-# list newest first and drop everything past the retention count.
+# short history of full macOS zips so Conveyor can generate Sparkle deltas for
+# the next release, and retain only deltas targeting the current version. Cloud
+# Storage update times follow release order, so list newest first when pruning
+# by count.
 function Get-ReleaseObjectNames {
     if (-not $script:releaseObjectsLoaded) {
         $script:releaseObjectNames = @(
@@ -148,18 +149,35 @@ function Get-ReleaseObjectNames {
 
 function Remove-OldReleaseObjects {
     param(
-        [int]$Keep,
+        [string]$Keep,
         [string]$Description,
         [string]$Pattern
     )
 
     $objects = Get-ReleaseObjectNames
     $candidates = @($objects | Where-Object { $_ -and ($_ -like $Pattern) })
-    if ($candidates.Count -le $Keep) {
+    if ($candidates.Count -eq 0) {
         return
     }
 
-    $doomed = @($candidates | Select-Object -Skip $Keep)
+    if ($Keep -eq "current") {
+        $escapedVersion = [System.Management.Automation.WildcardPattern]::Escape($script:siteVersion)
+        $keepPattern = "*-*-$escapedVersion-mac-*"
+        $doomed = @($candidates | Where-Object { -not ($_ -like $keepPattern) })
+    } elseif ($Keep -match '^\d+$') {
+        $keepCount = [int]$Keep
+        if ($candidates.Count -le $keepCount) {
+            return
+        }
+        $doomed = @($candidates | Select-Object -Skip $keepCount)
+    } else {
+        throw "publish aborted: invalid prune policy keep value '$Keep'"
+    }
+
+    if ($doomed.Count -eq 0) {
+        return
+    }
+
     Write-Host "==> Pruning $($doomed.Count) old $Description object(s)"
     $uris = @()
     foreach ($name in $doomed) {
@@ -189,7 +207,7 @@ Get-Content -LiteralPath $prunePolicy | ForEach-Object {
     if ($parts.Count -ne 3) {
         throw "publish aborted: invalid prune policy line: $line"
     }
-    Remove-OldReleaseObjects ([int]$parts[0]) $parts[2] $parts[1]
+    Remove-OldReleaseObjects $parts[0] $parts[2] $parts[1]
 }
 
 function Assert-NoCacheControl {

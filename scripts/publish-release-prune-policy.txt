@@ -1,7 +1,9 @@
 # keep glob description
 # Copied by publish-release.sh and publish-release.ps1. Do not merge those scripts.
 # scripts/test_assert_conveyor_site.sh is the behavioral lock; publish-release.ps1 must match.
-1 *-mac-*.zip macOS zip
-5 *.delta macOS delta
+# Numeric keep retains the N newest matching objects; "current" retains only
+# objects targeting app.version (*-*-<version>-mac-*).
+3 *-mac-*.zip macOS zip
+current *.delta macOS delta
 1 *-windows-*.zip Windows zip
 1 *.msix Windows MSIX
