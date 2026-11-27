@@ -254,9 +254,9 @@ private fun worksheetResultReceipt(
 private fun WorksheetPreview.calculationWarnings(): List<String> {
     val counts = linkedMapOf<Pair<Int, String>, Int>()
     var omitted = 0
-    for (row in rows) {
-        for ((index, cell) in row.cells.withIndex()) {
-            val reason = cell.error ?: continue
+    rows.forEach { row ->
+        row.cells.forEachIndexed { index, cell ->
+            val reason = cell.error ?: return@forEachIndexed
             val key = index to reason
             val count = counts[key]
             if (count != null || counts.size < MAX_WORKSHEET_ERROR_WARNINGS) {

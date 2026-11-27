@@ -38,10 +38,14 @@ sealed class ResultNumber(private val order: Int) : Comparable<ResultNumber> {
 
     companion object {
         fun fromCell(cell: ResultCell?, numericText: Boolean): ResultNumber? =
-            when {
-                cell is ResultCell.TextCell -> if (numericText) parse(cell.value.text) else null
-                cell is ResultCell.FloatCell && cell.value.isInfinite() ->
-                    if (cell.value < 0) NegativeInfinity else PositiveInfinity
+            when (cell) {
+                is ResultCell.TextCell -> if (numericText) parse(cell.value.text) else null
+                is ResultCell.FloatCell ->
+                    if (cell.value.isInfinite()) {
+                        if (cell.value < 0) NegativeInfinity else PositiveInfinity
+                    } else {
+                        resultCellDecimal(cell)?.let(::Finite)
+                    }
                 else -> resultCellDecimal(cell)?.let(::Finite)
             }
 

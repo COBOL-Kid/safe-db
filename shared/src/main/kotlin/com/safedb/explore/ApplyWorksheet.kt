@@ -109,7 +109,7 @@ fun applyWorksheet(
 private class WorksheetEngine(
     private val sample: QueryResult,
     private val config: WorksheetConfig,
-    private val tables: List<TableRef>,
+    tables: List<TableRef>,
 ) {
     private val sampleIndex = SampleIndex(sample)
     private val numericColumns =

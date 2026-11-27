@@ -279,7 +279,7 @@ On put it also writes `{dataDir}/results/{result_id}.jsonl` for LRU accounting: 
 
 `summarize_result` reports per-column `null_count`, min/max, and up to 8 distinct flattened values (`distinct_truncated` if more). Numeric bounds order negative infinity below finite numbers and positive infinity above them, for floats and numeric-typed text. `NaN` and unparseable numeric text are excluded from bounds. Other text is ordered lexicographically; boolean bounds are supported. Bounds are omitted for binary columns and when there are no comparable values. `summarize_result` echoes `sample_capped` (omitted when false) from the original query.
 
-## Not in 1.1.4
+## Not in 1.1.5
 
 - Sharing macOS Keychain items with the signed desktop app
 - MCP tools that add or update a connection

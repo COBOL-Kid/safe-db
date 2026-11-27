@@ -53,8 +53,8 @@ Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less bui
 | `./gradlew :mcp:run` | Stdio MCP server. Speaks JSON-RPC on stdin/stdout; use an MCP client or Inspector. Behavior and tools: [mcp.md](mcp.md). |
 | `./gradlew :mcp:run --args='connections list'` | List saved MCP connections (human CLI; not JSON-RPC). |
 | `./gradlew :mcp:run --args='setup --dialect postgres --database app --username readonly --password-file /absolute/path'` | Non-interactive connection add. Gradle typically has a null `System.console()`, so this is not a password prompt. |
-| `./gradlew :mcp:shadowJar` | Fat JAR at `mcp/build/libs/safe-db-mcp-1.1.4-all.jar`. |
-| `./gradlew :mcp:assembleNpm` | jlink the current OS into `mcp/build/npm/@safe-db/mcp` plus one platform package, stamped 1.1.4 from Gradle (`mcp/npm/package.json` stays `0.0.0-dev` until assemble). Downloads a pinned Temurin 25 jlink JDK only on Linux x64; JMODs for the current platform go into `mcp/build/npm-cache/`. |
+| `./gradlew :mcp:shadowJar` | Fat JAR at `mcp/build/libs/safe-db-mcp-1.1.5-all.jar`. |
+| `./gradlew :mcp:assembleNpm` | jlink the current OS into `mcp/build/npm/@safe-db/mcp` plus one platform package, stamped 1.1.5 from Gradle (`mcp/npm/package.json` stays `0.0.0-dev` until assemble). Downloads a pinned Temurin 25 jlink JDK only on Linux x64; JMODs for the current platform go into `mcp/build/npm-cache/`. |
 | `./gradlew :mcp:assembleNpmAllPlatforms` | jlink every platform into `mcp/build/npm-all/@safe-db/mcp` plus platform packages. Linux x64 only (cross-links with Temurin JMODs). |
 | `./gradlew :mcp:npmCliTest` | `node --test` for the npm CLI shim. Part of `check` when `node` is on `PATH`; skips otherwise. |
 | `./gradlew :mcp:npmPackagedTest` | Runs MCP integration tests against the current-OS jlink bundle via `node cli.js` (`NODE_PATH`) when `node` is on `PATH`, falling back to bundled `java` (`bundledJava`) and the packaged shadow JAR when `node` is absent. Not part of `check`. |
