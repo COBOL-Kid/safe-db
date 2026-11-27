@@ -311,15 +311,37 @@ jobs:
             if ($apps.Count -eq 0 -or [string]::IsNullOrWhiteSpace($apps[0].Executable)) {
               throw "missing Application/@Executable in AppxManifest.xml"
             }
-            $appExe = Join-Path $extractDir $apps[0].Executable
-            if (-not (Test-Path -LiteralPath $appExe)) {
-              throw "missing MSIX executable $appExe"
+            $manifestExe = $apps[0].Executable
+            $manifestExePath = Join-Path $extractDir $manifestExe
+            if (-not (Test-Path -LiteralPath $manifestExePath)) {
+              throw "missing MSIX manifest executable $manifestExePath"
             }
-            $smokeLines = @(& $appExe --smoke-check)
-            $smokeExit = $LASTEXITCODE
+            $appExe = if ([IO.Path]::GetFileName($manifestExe) -ieq "updatecheck.exe") {
+              Join-Path $extractDir "bin\safe-db.exe"
+            } else {
+              $manifestExePath
+            }
+            if (-not (Test-Path -LiteralPath $appExe)) {
+              throw "missing MSIX app launcher $appExe"
+            }
+            $stdoutPath = Join-Path $extractDir "smoke-stdout.txt"
+            $stderrPath = Join-Path $extractDir "smoke-stderr.txt"
+            $proc = Start-Process -FilePath $appExe `
+              -ArgumentList @("--smoke-check") `
+              -WorkingDirectory $extractDir `
+              -NoNewWindow `
+              -Wait `
+              -PassThru `
+              -RedirectStandardOutput $stdoutPath `
+              -RedirectStandardError $stderrPath
+            $smokeLines = if (Test-Path -LiteralPath $stdoutPath) { @(Get-Content -LiteralPath $stdoutPath) } else { @() }
+            $stderrLines = if (Test-Path -LiteralPath $stderrPath) { @(Get-Content -LiteralPath $stderrPath) } else { @() }
             $smokeLines | ForEach-Object { Write-Host $_ }
-            if ($smokeExit -ne 0) {
-              throw "$appExe --smoke-check exited $smokeExit"
+            if ($stderrLines.Count -gt 0) {
+              $stderrLines | ForEach-Object { Write-Host "[stderr] $_" }
+            }
+            if ($null -eq $proc.ExitCode -or $proc.ExitCode -ne 0) {
+              throw "$appExe --smoke-check exited $($proc.ExitCode)"
             }
             $expected = "safe-db $version smoke-check ok"
             if (-not ($smokeLines | Where-Object { $_.Trim() -eq $expected })) {
