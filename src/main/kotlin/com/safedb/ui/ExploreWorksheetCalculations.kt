@@ -32,6 +32,7 @@ import com.safedb.explore.WorksheetSort
 import com.safedb.explore.WorksheetValueRef
 import com.safedb.explore.WorksheetWindowFn
 import com.safedb.explore.displayColumnLabel
+import com.safedb.explore.displayColumnLabels
 import com.safedb.explore.evaluatePivotFormula
 import com.safedb.explore.formatExploreNumber
 import com.safedb.explore.precedingWorksheetCalculations
@@ -99,6 +100,9 @@ internal fun WorksheetCalculationEditor(
     }
     val id =
         remember(existing?.id) { existing?.id ?: "calc_${UUID.randomUUID().toString().take(8)}" }
+    val columnLabels =
+        remember(sample.columns, tables) { displayColumnLabels(sample.columns, tables) }
+    fun columnLabel(raw: String): String = columnLabels[raw] ?: displayColumnLabel(raw, tables)
     val numericColumns = sample.columns.filter { isNumericType(it.dataType) }
     val sourceOptions =
         when (kind) {
@@ -258,7 +262,7 @@ internal fun WorksheetCalculationEditor(
                     "Value",
                     sourceOptions,
                     source,
-                    { if (it.isBlank()) "Rows" else displayColumnLabel(it, tables) },
+                    { if (it.isBlank()) "Rows" else columnLabel(it) },
                 ) {
                     source = it
                 }
@@ -278,7 +282,7 @@ internal fun WorksheetCalculationEditor(
                     source,
                     { token ->
                         config.calculations.firstOrNull { it.id == token }?.label
-                            ?: displayColumnLabel(token, tables)
+                            ?: columnLabel(token)
                     },
                 ) {
                     source = it
@@ -319,7 +323,7 @@ internal fun WorksheetCalculationEditor(
                 "Group level",
                 listOf("") + config.groups.map { it.column },
                 groupColumn,
-                { if (it.isBlank()) "All / grand total" else displayColumnLabel(it, tables) },
+                { if (it.isBlank()) "All / grand total" else columnLabel(it) },
             ) {
                 groupColumn = it
             }
@@ -474,11 +478,19 @@ internal fun cycleSort(sorts: List<WorksheetSort>, target: WorksheetValueRef): L
     }
 }
 
-internal fun calculationSummary(calculation: WorksheetCalculation): String =
+internal fun calculationSummary(
+    calculation: WorksheetCalculation,
+    columnLabels: Map<String, String> = emptyMap(),
+    tables: List<TableRef> = emptyList(),
+): String =
     when (calculation) {
         is WorksheetCalculation.RowFormula -> calculation.formula
-        is WorksheetCalculation.Aggregate ->
-            "${calculation.fn.name.toDisplayWords()} · ${calculation.sourceColumn?.let(::displayColumnLabel) ?: "rows"}"
+        is WorksheetCalculation.Aggregate -> {
+            val source =
+                calculation.sourceColumn?.let { columnLabels[it] ?: displayColumnLabel(it, tables) }
+                    ?: "rows"
+            "${calculation.fn.name.toDisplayWords()} · $source"
+        }
         is WorksheetCalculation.GroupFormula -> calculation.formula
         is WorksheetCalculation.Window ->
             "${calculation.fn.name.toDisplayWords()} · ${calculation.grain.name.toDisplayWords()}"

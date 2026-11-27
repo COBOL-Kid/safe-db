@@ -1022,12 +1022,105 @@ class ApplyWorksheetTest {
         val calcNamedAmount = WorksheetCalculation.RowFormula("r1", "amount", "[t0__amount] * 2")
         assertEquals(
             listOf(
-                "t0__amount" to "amount",
-                "t1__amount" to "amount",
+                "t0.amount" to "t0.amount",
+                "t1.amount" to "t1.amount",
                 "amount" to "amount",
             ),
             worksheetFormulaTokens(duplicateDisplaySample().columns, listOf(calcNamedAmount)),
         )
+    }
+
+    @Test
+    fun joinedTableFormulaTokensDisambiguateDuplicateColumnsAndEvaluateBothQualifiedAndLegacyRefs() {
+        val tables =
+            listOf(
+                com.safedb.model.TableRef("safedb_test", "orders", "t0"),
+                com.safedb.model.TableRef("safedb_test", "customers", "t1"),
+            )
+        val joinedSample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__id", "int"),
+                        ResultColumn("t1__id", "int"),
+                        ResultColumn("t0__total", "decimal"),
+                    ),
+                rows =
+                    listOf(
+                        listOf(
+                            ResultCell.IntegerCell(12),
+                            ResultCell.IntegerCell(10),
+                            ResultCell.FloatCell(97.64),
+                        ),
+                    ),
+                rowCount = 1,
+                truncated = false,
+                warnings = emptyList(),
+            )
+
+        assertEquals(
+            listOf(
+                "orders.id" to "orders.id",
+                "customers.id" to "customers.id",
+                "total" to "total",
+            ),
+            worksheetFormulaTokens(joinedSample.columns, emptyList(), tables),
+        )
+
+        val preview =
+            applyWorksheet(
+                joinedSample,
+                WorksheetConfig(
+                    calculations =
+                        listOf(
+                            WorksheetCalculation.RowFormula(
+                                "qualified",
+                                "SumIds",
+                                "[orders.id] + [customers.id]",
+                            ),
+                            WorksheetCalculation.RowFormula(
+                                "legacy",
+                                "LegacyIds",
+                                "[t0__id] + [t1__id]",
+                            ),
+                        ),
+                ),
+                tables = tables,
+            )
+        assertEquals(0, preview.calculationErrorCount)
+        assertEquals(22.0, (preview.rows.single().cells[3].value as ResultCell.FloatCell).value)
+        assertEquals(22.0, (preview.rows.single().cells[4].value as ResultCell.FloatCell).value)
+
+        // Ensure a display label matching another column's raw name does not alias it.
+        val collidingSample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__id", "int"),
+                        ResultColumn("id", "int"),
+                    ),
+                rows =
+                    listOf(
+                        listOf(ResultCell.IntegerCell(1), ResultCell.IntegerCell(99)),
+                    ),
+                rowCount = 1,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val singleTable = listOf(com.safedb.model.TableRef("safedb_test", "orders", "t0"))
+        val values =
+            worksheetFormulaValues(
+                sampleColumns = collidingSample.columns,
+                sourceValue = { col ->
+                    if (col == "t0__id") java.math.BigDecimal.ONE
+                    else java.math.BigDecimal.valueOf(99)
+                },
+                priorCalculations = emptyList(),
+                calculationValue = { null },
+                tables = singleTable,
+            )
+        assertEquals(java.math.BigDecimal.valueOf(99), values["id"])
+        assertEquals(java.math.BigDecimal.ONE, values["orders.id"])
     }
 
     @Test

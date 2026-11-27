@@ -633,4 +633,95 @@ class BuilderScreenStateTest {
         val kept = applyInListInput(text, 0, "a, b", splitOnComma = false)
         assertEquals(listOf("a, b"), kept.map { it.text })
     }
+
+    @Test
+    fun applyInListEditForwardsFastBurstKeystrokesBeforeFocusTransfers() {
+        var literals = listOf(FilterLiteral(LiteralKind.Int, ""))
+        var pending: PendingInListSplit? = null
+        var fieldTextAt0 = ""
+
+        fun typeCharAtIndex0(ch: Char) {
+            val result =
+                applyInListEdit(
+                    literals = literals,
+                    index = 0,
+                    text = fieldTextAt0 + ch,
+                    splitOnComma = true,
+                    pendingSplit = pending,
+                )
+            literals = result.literals
+            pending = result.pendingSplit
+            fieldTextAt0 = result.literals[0].text
+        }
+
+        // Simulate "1,2,3,4" typed into chip 0 before LaunchedEffect moves focus.
+        typeCharAtIndex0('1')
+        typeCharAtIndex0(',')
+        assertEquals(listOf("1", ""), literals.map { it.text })
+        assertEquals(PendingInListSplit(0, "1", 1), pending)
+
+        typeCharAtIndex0('2')
+        typeCharAtIndex0(',')
+        assertEquals(listOf("1", "2", ""), literals.map { it.text })
+        assertEquals(PendingInListSplit(0, "1", 2), pending)
+
+        typeCharAtIndex0('3')
+        typeCharAtIndex0(',')
+        assertEquals(listOf("1", "2", "3", ""), literals.map { it.text })
+        assertEquals(PendingInListSplit(0, "1", 3), pending)
+
+        typeCharAtIndex0('4')
+        assertEquals(listOf("1", "2", "3", "4"), literals.map { it.text })
+        assertEquals(3, pending?.targetIndex)
+
+        // Prefix insertion (e.g. cursor reset to 0) is also forwarded cleanly.
+        val prefixLiterals = listOf(FilterLiteral(LiteralKind.Int, "2"))
+        val split =
+            applyInListEdit(prefixLiterals, 0, "2,", splitOnComma = true, pendingSplit = null)
+        val afterPrefix =
+            applyInListEdit(
+                split.literals,
+                0,
+                "32",
+                splitOnComma = true,
+                pendingSplit = split.pendingSplit,
+            )
+        assertEquals(listOf("2", "3"), afterPrefix.literals.map { it.text })
+
+        // Backspace on source clears pendingSplit instead of forwarding.
+        val backspace =
+            applyInListEdit(
+                literals,
+                0,
+                "",
+                splitOnComma = true,
+                pendingSplit = pending,
+            )
+        assertEquals(listOf("", "2", "3", "4"), backspace.literals.map { it.text })
+        assertEquals(null, backspace.pendingSplit)
+
+        // Text IN never sets pendingSplit, and capped numeric IN does not set pendingSplit.
+        val textRes =
+            applyInListEdit(
+                listOf(FilterLiteral(LiteralKind.Text, "")),
+                0,
+                "a, b",
+                splitOnComma = false,
+                pendingSplit = null,
+            )
+        assertEquals(listOf("a, b"), textRes.literals.map { it.text })
+        assertEquals(null, textRes.pendingSplit)
+
+        val capped =
+            applyInListEdit(
+                listOf(FilterLiteral(LiteralKind.Int, "")),
+                0,
+                "1,",
+                splitOnComma = true,
+                pendingSplit = null,
+                maxSize = 1,
+            )
+        assertEquals(listOf("1"), capped.literals.map { it.text })
+        assertEquals(null, capped.pendingSplit)
+    }
 }

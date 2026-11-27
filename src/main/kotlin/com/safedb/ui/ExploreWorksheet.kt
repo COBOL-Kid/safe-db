@@ -84,6 +84,7 @@ import com.safedb.explore.WorksheetRowKind
 import com.safedb.explore.WorksheetSort
 import com.safedb.explore.WorksheetValueRef
 import com.safedb.explore.displayColumnLabel
+import com.safedb.explore.displayColumnLabels
 import com.safedb.explore.moveWorksheetColumn
 import com.safedb.explore.projectWorksheetTable
 import com.safedb.explore.toWorksheetColumnLayout
@@ -961,6 +962,8 @@ private fun CalculationRail(
     modifier: Modifier,
 ) {
     val scroll = rememberScrollState()
+    val columnLabels =
+        remember(sample.columns, tables) { displayColumnLabels(sample.columns, tables) }
     Surface(modifier = modifier, color = SafeDbTheme.colors.workspacePanel) {
         Box(modifier = Modifier.fillMaxSize()) {
             Column(
@@ -1069,7 +1072,7 @@ private fun CalculationRail(
                                     overflow = TextOverflow.Ellipsis,
                                 )
                                 Text(
-                                    calculationSummary(calculation),
+                                    calculationSummary(calculation, columnLabels, tables),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 2,

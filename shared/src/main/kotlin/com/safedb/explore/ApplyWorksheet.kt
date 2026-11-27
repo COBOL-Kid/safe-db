@@ -19,13 +19,17 @@ fun precedingWorksheetCalculations(
 
 private fun uniqueSampleDisplayLabels(
     sampleColumns: List<ResultColumn>,
+    labels: Map<String, String>,
     tables: List<TableRef> = emptyList(),
 ): Map<String, String> {
-    val displays = sampleColumns.map { it.name to displayColumnLabel(it.name, tables) }
+    val rawNames = sampleColumns.mapTo(mutableSetOf()) { it.name }
+    val displays = sampleColumns.map {
+        it.name to (labels[it.name] ?: displayColumnLabel(it.name, tables))
+    }
     val labelCounts = displays.groupingBy { it.second }.eachCount()
     return buildMap {
         displays.forEach { (rawName, display) ->
-            if (labelCounts[display] == 1) {
+            if (labelCounts[display] == 1 && (display == rawName || display !in rawNames)) {
                 put(rawName, display)
             }
         }
@@ -54,10 +58,11 @@ fun worksheetFormulaTokens(
     priorCalculations: List<WorksheetCalculation>,
     tables: List<TableRef> = emptyList(),
 ): List<Pair<String, String>> {
-    val uniqueSampleLabels = uniqueSampleDisplayLabels(sampleColumns, tables)
+    val labels = displayColumnLabels(sampleColumns, tables)
+    val uniqueSampleLabels = uniqueSampleDisplayLabels(sampleColumns, labels, tables)
     val columnTokens = sampleColumns.map { col ->
-        val uniqueDisplay = uniqueSampleLabels[col.name]
-        (uniqueDisplay ?: col.name) to (uniqueDisplay ?: displayColumnLabel(col.name, tables))
+        val display = labels[col.name] ?: displayColumnLabel(col.name, tables)
+        (uniqueSampleLabels[col.name] ?: col.name) to display
     }
     val reservedNames = sampleColumns.mapTo(mutableSetOf()) { it.name } + uniqueSampleLabels.values
     val uniqueCalcLabels = uniqueCalculationLabels(priorCalculations, reservedNames)
@@ -74,7 +79,8 @@ fun worksheetFormulaValues(
     calculationValue: (String) -> BigDecimal?,
     tables: List<TableRef> = emptyList(),
 ): Map<String, BigDecimal?> = buildMap {
-    val uniqueSampleLabels = uniqueSampleDisplayLabels(sampleColumns, tables)
+    val labels = displayColumnLabels(sampleColumns, tables)
+    val uniqueSampleLabels = uniqueSampleDisplayLabels(sampleColumns, labels, tables)
     sampleColumns.forEach { col -> put(col.name, sourceValue(col.name)) }
     uniqueSampleLabels.forEach { (rawName, display) ->
         if (display !in this) {
@@ -110,7 +116,8 @@ private class WorksheetEngine(
         sample.columns.associate { it.name to classifyColumn(it.dataType).isNumeric() }
     private val rowFormulas =
         config.calculations.filterIsInstance<WorksheetCalculation.RowFormula>()
-    private val uniqueSampleLabels = uniqueSampleDisplayLabels(sample.columns, tables)
+    private val columnLabels = displayColumnLabels(sample.columns, tables)
+    private val uniqueSampleLabels = uniqueSampleDisplayLabels(sample.columns, columnLabels, tables)
     private val reservedRowSampleNames =
         sample.columns.mapTo(mutableSetOf()) { it.name } + uniqueSampleLabels.values
     private val warnings = linkedSetOf<String>()
@@ -154,13 +161,12 @@ private class WorksheetEngine(
         }
         applyWindowCalculations(entries)
 
-        val labels = displayColumnLabels(sample.columns, tables)
         val columns = buildList {
             sample.columns.forEach { column ->
                 add(
                     WorksheetDisplayColumn(
                         id = "column:${column.name}",
-                        label = labels[column.name] ?: displayColumnLabel(column.name),
+                        label = columnLabels[column.name] ?: displayColumnLabel(column.name),
                         dataType = column.dataType,
                         sourceColumn = column.name,
                     ),
