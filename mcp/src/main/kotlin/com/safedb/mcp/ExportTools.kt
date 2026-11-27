@@ -23,10 +23,11 @@ internal fun registerExportTools(server: Server, resultStore: ResultStore, expor
     server.addTool(
         name = "export_result",
         description =
-            "Write the in-memory sample of a previous run_query to a CSV file under the " +
-                "MCP exports directory. Pass result_id and an optional simple filename " +
-                "(letters, digits, dot, underscore, and dash only); .csv is appended when " +
-                "missing. Returns result_id, file_path, row_count, bytes, and sample_capped. " +
+            "Write the original stored sample from run_query or run_saved_query to a CSV " +
+                "file under the MCP exports directory. This exports all original sample rows and " +
+                "columns, not filtered, projected, or pivoted output, even if those tools echo " +
+                "the same result_id. Pass result_id and an optional simple filename. " +
+                "Returns result_id, file_path, row_count, bytes, and sample_capped. " +
                 "Unknown or expired result_id returns not_found.",
         inputSchema =
             ToolSchema(
@@ -36,8 +37,10 @@ internal fun registerExportTools(server: Server, resultStore: ResultStore, expor
                         put(
                             "filename",
                             stringProp(
-                                "Optional simple filename without path separators. " +
-                                    "Defaults to <result_id>.csv.",
+                                "After trimming, use only ASCII letters, digits, dots, " +
+                                    "underscores, and dashes, with no leading or trailing dot. " +
+                                    "A .csv suffix is appended unless already present " +
+                                    "(case-insensitive). Omit or leave blank for <result_id>.csv.",
                             ),
                         )
                     },
@@ -108,16 +111,19 @@ private suspend fun handleExportResult(
 
 private fun resolveExportFilename(resultId: String, filename: String?): Arg<String> {
     if (filename == null) return Arg.Ok("$resultId.csv")
-    if (
-        !SAFE_EXPORT_FILENAME.matches(filename) ||
-            filename == "." ||
-            filename == ".." ||
-            filename.startsWith(".")
-    ) {
+    if (!SAFE_EXPORT_FILENAME.matches(filename) || filename.startsWith(".")) {
         return Arg.Err(
             toolError(
                 ERROR_INVALID_ARGUMENTS,
                 "filename must be a simple file name without path separators",
+            ),
+        )
+    }
+    if (filename.endsWith(".")) {
+        return Arg.Err(
+            toolError(
+                ERROR_INVALID_ARGUMENTS,
+                "filename must not end with a dot; remove the trailing dot or use a .csv extension",
             ),
         )
     }

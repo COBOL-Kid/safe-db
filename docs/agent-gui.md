@@ -78,6 +78,7 @@ Tips:
 | `scripts/agent_gui.sh scroll up\|down [N [X Y]]` | Scroll `N` wheel ticks (default `3`), optionally moving to `(X, Y)` first (`N` is required before `X Y`, e.g. `scroll down 5 400 500`). |
 | `scripts/agent_gui.sh type "<text>"` | Type text into the focused window. |
 | `scripts/agent_gui.sh key <combo>...` | Press key(s), e.g. `ctrl+a`, `Return`, `Tab`, `Escape`. |
+| `scripts/agent_gui.sh resize W H [title]` | Resize the matching window (default `Safe-DB`) to `W`x`H` pixels, to test small-window layouts. |
 | `scripts/agent_gui.sh logs [N]` | Tail the last `N` lines of `build/agent-gui/app.log` (default `50`). |
 | `scripts/agent_gui.sh reset` | Stop everything and delete `build/agent-gui/data` and `build/agent-gui/shots` (an overridden `SAFEDB_AGENT_GUI_DATA_DIR` outside those paths is left in place). |
 | `scripts/agent_gui.sh smoke [--require-db]` | Run an isolated headless Xvfb + `Ctrl+K` Command Palette smoke test in a temp directory (`SAFEDB_AGENT_GUI_CREDENTIALS=file`, seeds `"Smoke MySQL"` via the repo-built MCP CLI when reachable, validates 5 distinct PNGs and `app.log`, and cleans up on exit). |

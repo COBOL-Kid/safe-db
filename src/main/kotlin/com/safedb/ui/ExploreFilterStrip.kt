@@ -114,6 +114,14 @@ private fun SlicerControl(
                     onClick = { onSelectionChange(emptySet()) },
                 )
                 ScrollableMenuColumn {
+                    if (visible.isEmpty()) {
+                        Text(
+                            "No matching values",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        )
+                    }
                     visible.forEach { option ->
                         val checked = selected.isEmpty() || option.key in selected
                         MenuActionRow(

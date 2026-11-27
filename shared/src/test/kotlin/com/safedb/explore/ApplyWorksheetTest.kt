@@ -136,6 +136,120 @@ class ApplyWorksheetTest {
     }
 
     @Test
+    fun numericTextFiltersAndSortUseExactDecimalsWithoutCoercingTextEquality() {
+        val smaller = "9007199254740993.000000000000000001"
+        val larger = "9007199254740993.000000000000000002"
+        val big = 1L shl 53
+        val sample =
+            QueryResult.fromRows(
+                listOf(
+                    ResultColumn("amount", "NUMBER"),
+                    ResultColumn("code", "varchar"),
+                    ResultColumn("id", "bigint"),
+                ),
+                listOf("146.97", larger, smaller, "001", "1", "bad").mapIndexed { index, text ->
+                    listOf(
+                        ResultCell.text(text),
+                        ResultCell.text(text),
+                        ResultCell.integer(big + index),
+                    )
+                },
+            )
+        fun matched(
+            op: WorksheetFilterOp,
+            value: String,
+            secondValue: String? = null,
+            column: String = "amount",
+        ): List<Int> =
+            sample.filteredIndexes(
+                WorksheetFilter("f", column, op = op, value = value, secondValue = secondValue),
+            )
+
+        assertEquals(listOf(0), matched(WorksheetFilterOp.Equals, "146.970"))
+        assertEquals(listOf(2), matched(WorksheetFilterOp.Equals, "${smaller}0"))
+        assertEquals(listOf(0, 1, 3, 4, 5), matched(WorksheetFilterOp.NotEquals, "${smaller}0"))
+        assertEquals(listOf(2), matched(WorksheetFilterOp.Between, smaller, "${smaller}0"))
+        assertEquals(listOf(1), matched(WorksheetFilterOp.GreaterThan, smaller))
+        assertEquals(emptyList(), matched(WorksheetFilterOp.LessThan, "bad"))
+        assertEquals(emptyList(), matched(WorksheetFilterOp.Between, "0", "bad"))
+        assertEquals(listOf(4), matched(WorksheetFilterOp.Equals, "1", column = "code"))
+        assertEquals(
+            listOf(0, 1, 2, 3, 5),
+            matched(WorksheetFilterOp.NotEquals, "1", column = "code"),
+        )
+        assertEquals(listOf(1, 5), matched(WorksheetFilterOp.GreaterThan, smaller, column = "code"))
+        assertEquals(listOf(1), matched(WorksheetFilterOp.Equals, "${big + 1}.00", column = "id"))
+        assertEquals(emptyList(), matched(WorksheetFilterOp.LessThan, "bad", column = "id"))
+
+        val sorted =
+            applyWorksheet(
+                sample,
+                WorksheetConfig(sorts = listOf(WorksheetSort(WorksheetValueRef.Column("amount")))),
+            )
+        assertEquals(listOf(5, 3, 4, 0, 2, 1), sorted.rows.map { it.sourceRowIndex })
+    }
+
+    @Test
+    fun nonFiniteNumbersSortAndFilterWithoutTreatingTextAsNumeric() {
+        val values =
+            listOf(Double.POSITIVE_INFINITY, 2.0, Double.NaN, Double.NEGATIVE_INFINITY, 10.0)
+        val sample =
+            QueryResult.fromRows(
+                listOf(
+                    ResultColumn("float", "float8"),
+                    ResultColumn("decimal", "numeric"),
+                    ResultColumn("text", "varchar"),
+                ),
+                values.map {
+                    listOf(
+                        ResultCell.float(it),
+                        ResultCell.text(it.toString()),
+                        ResultCell.text(it.toString()),
+                    )
+                } + listOf(List(3) { ResultCell.Null }),
+            )
+        fun sorted(column: String, direction: SortDir, grouped: Boolean = false): List<Int> =
+            applyWorksheet(
+                    sample,
+                    WorksheetConfig(
+                        sorts = listOf(WorksheetSort(WorksheetValueRef.Column(column), direction)),
+                        groups = if (grouped) listOf(WorksheetGroup("g", column)) else emptyList(),
+                    ),
+                )
+                .rows
+                .mapNotNull { it.sourceRowIndex }
+
+        for (column in listOf("float", "decimal")) {
+            assertEquals(listOf(2, 5, 3, 1, 4, 0), sorted(column, SortDir.Asc))
+            assertEquals(listOf(0, 4, 1, 3, 2, 5), sorted(column, SortDir.Desc))
+            assertEquals(listOf(2, 5, 3, 1, 4, 0), sorted(column, SortDir.Asc, grouped = true))
+
+            fun matched(op: WorksheetFilterOp, value: String): List<Int> =
+                sample.filteredIndexes(WorksheetFilter("f", column, op = op, value = value))
+
+            assertEquals(listOf(0), matched(WorksheetFilterOp.GreaterThan, "10"))
+            assertEquals(listOf(0), matched(WorksheetFilterOp.Equals, "+Infinity"))
+            assertEquals(emptyList(), matched(WorksheetFilterOp.GreaterThanOrEqual, "NaN"))
+            assertEquals(emptyList(), matched(WorksheetFilterOp.Equals, "NaN"))
+
+            val calculations =
+                listOf(WorksheetAggregateFn.Minimum, WorksheetAggregateFn.Maximum).map {
+                    WorksheetCalculation.Aggregate(it.name, it.name, it, column)
+                }
+            val extrema =
+                applyWorksheet(sample, WorksheetConfig(calculations = calculations))
+                    .rows
+                    .last()
+                    .cells
+                    .takeLast(2)
+                    .map { it.value }
+            val index = sample.columns.indexOfFirst { it.name == column }
+            assertEquals(listOf(sample.rows[3][index], sample.rows[0][index]), extrema)
+        }
+        assertEquals(listOf(5, 3, 4, 1, 0, 2), sorted("text", SortDir.Asc))
+    }
+
+    @Test
     fun nestedGroupsCollapseAndAggregateAtSelectedLevel() {
         val aggregate =
             WorksheetCalculation.Aggregate(
@@ -743,12 +857,360 @@ class ApplyWorksheetTest {
         assertEquals(listOf("Cyan"), missingNull.detailValues("name"))
     }
 
+    @Test
+    fun formulaCyclesAreDetectedAcrossLabelReferences() {
+        val rowCycle =
+            applyWorksheet(
+                sample(),
+                WorksheetConfig(
+                    calculations =
+                        listOf(
+                            WorksheetCalculation.RowFormula("r1", "First", "[Second] + 1"),
+                            WorksheetCalculation.RowFormula("r2", "Second", "[First] + 1"),
+                        ),
+                ),
+            )
+        assertTrue("Calculated columns contain a circular reference" in rowCycle.warnings)
+
+        val selfRowCycle =
+            applyWorksheet(
+                sample(),
+                WorksheetConfig(
+                    calculations =
+                        listOf(
+                            WorksheetCalculation.RowFormula("r1", "First", "[First] + 1"),
+                        ),
+                ),
+            )
+        assertTrue("Calculated columns contain a circular reference" in selfRowCycle.warnings)
+
+        val groupCycle =
+            applyWorksheet(
+                sample(),
+                WorksheetConfig(
+                    groups = listOf(WorksheetGroup("g", "region")),
+                    calculations =
+                        listOf(
+                            WorksheetCalculation.GroupFormula(
+                                "g1",
+                                "Alpha",
+                                "[Beta] + 1",
+                                "region",
+                            ),
+                            WorksheetCalculation.GroupFormula(
+                                "g2",
+                                "Beta",
+                                "[Alpha] + 1",
+                                "region",
+                            ),
+                        ),
+                ),
+            )
+        assertTrue("Calculated columns contain a circular reference" in groupCycle.warnings)
+
+        val duplicateLabelRowCycle =
+            applyWorksheet(
+                duplicateDisplaySample(),
+                WorksheetConfig(
+                    calculations =
+                        listOf(
+                            WorksheetCalculation.RowFormula("r1", "amount", "[Second] + 1"),
+                            WorksheetCalculation.RowFormula("r2", "Second", "[amount] + 1"),
+                        ),
+                ),
+            )
+        assertTrue(
+            "Calculated columns contain a circular reference" in duplicateLabelRowCycle.warnings,
+        )
+
+        val groupCycleMatchingRowId =
+            applyWorksheet(
+                sample(),
+                WorksheetConfig(
+                    groups = listOf(WorksheetGroup("g", "region")),
+                    calculations =
+                        listOf(
+                            WorksheetCalculation.RowFormula("r1", "Row One", "[amount] * 2"),
+                            WorksheetCalculation.GroupFormula(
+                                "g1",
+                                "r1",
+                                "[Beta] + 1",
+                                "region",
+                            ),
+                            WorksheetCalculation.GroupFormula(
+                                "g2",
+                                "Beta",
+                                "[r1] + 1",
+                                "region",
+                            ),
+                        ),
+                ),
+            )
+        assertTrue(
+            "Calculated columns contain a circular reference" in groupCycleMatchingRowId.warnings,
+        )
+    }
+
+    @Test
+    fun formulaTokensAvoidRawColumnCollisionsAndPrecedingFiltersAfterEditingIndex() {
+        val prefixedSample =
+            QueryResult(
+                columns = listOf(ResultColumn("t0__amount", "decimal")),
+                rows = listOf(listOf(ResultCell.FloatCell(10.0))),
+                rowCount = 1,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val first = WorksheetCalculation.RowFormula("c1", "t0__amount", "[amount] * 2")
+        val second = WorksheetCalculation.RowFormula("c2", "Later", "[c1] + 1")
+
+        val tokens = worksheetFormulaTokens(prefixedSample.columns, listOf(first))
+        assertEquals(listOf("amount" to "amount", "c1" to "t0__amount"), tokens)
+
+        val sqlPrefixedSample =
+            QueryResult(
+                columns = listOf(ResultColumn("wide_rows__indexed_key", "int")),
+                rows = listOf(listOf(ResultCell.IntegerCell(7))),
+                rowCount = 1,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val sqlTables = listOf(com.safedb.model.TableRef("safedb_lab", "wide_rows", "wide_rows"))
+        assertEquals(
+            listOf("indexed_key" to "indexed_key"),
+            worksheetFormulaTokens(sqlPrefixedSample.columns, emptyList(), sqlTables),
+        )
+        val sqlPreview =
+            applyWorksheet(
+                sqlPrefixedSample,
+                WorksheetConfig(
+                    calculations =
+                        listOf(
+                            WorksheetCalculation.RowFormula(
+                                "s1",
+                                "Doubled",
+                                "[indexed_key] * 2",
+                            ),
+                            WorksheetCalculation.RowFormula(
+                                "s2",
+                                "Legacy",
+                                "[wide_rows__indexed_key] * 2",
+                            ),
+                        ),
+                ),
+                tables = sqlTables,
+            )
+        assertEquals(0, sqlPreview.calculationErrorCount)
+        assertEquals(14.0, (sqlPreview.rows.single().cells[1].value as ResultCell.FloatCell).value)
+        assertEquals(14.0, (sqlPreview.rows.single().cells[2].value as ResultCell.FloatCell).value)
+
+        val values =
+            worksheetFormulaValues(
+                sampleColumns = prefixedSample.columns,
+                sourceValue = { java.math.BigDecimal.TEN },
+                priorCalculations = listOf(first),
+                calculationValue = { java.math.BigDecimal.valueOf(20) },
+            )
+        assertEquals(java.math.BigDecimal.TEN, values["t0__amount"])
+        assertEquals(java.math.BigDecimal.valueOf(20), values["c1"])
+
+        val calcs = listOf(first, second)
+        assertEquals(emptyList(), precedingWorksheetCalculations(calcs, "c1"))
+        assertEquals(listOf(first), precedingWorksheetCalculations(calcs, "c2"))
+        assertEquals(calcs, precedingWorksheetCalculations(calcs, null))
+
+        val calcNamedAmount = WorksheetCalculation.RowFormula("r1", "amount", "[t0__amount] * 2")
+        assertEquals(
+            listOf(
+                "t0.amount" to "t0.amount",
+                "t1.amount" to "t1.amount",
+                "amount" to "amount",
+            ),
+            worksheetFormulaTokens(duplicateDisplaySample().columns, listOf(calcNamedAmount)),
+        )
+    }
+
+    @Test
+    fun joinedTableFormulaTokensDisambiguateDuplicateColumnsAndEvaluateBothQualifiedAndLegacyRefs() {
+        val tables =
+            listOf(
+                com.safedb.model.TableRef("safedb_test", "orders", "t0"),
+                com.safedb.model.TableRef("safedb_test", "customers", "t1"),
+            )
+        val joinedSample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__id", "int"),
+                        ResultColumn("t1__id", "int"),
+                        ResultColumn("t0__total", "decimal"),
+                    ),
+                rows =
+                    listOf(
+                        listOf(
+                            ResultCell.IntegerCell(12),
+                            ResultCell.IntegerCell(10),
+                            ResultCell.FloatCell(97.64),
+                        ),
+                    ),
+                rowCount = 1,
+                truncated = false,
+                warnings = emptyList(),
+            )
+
+        assertEquals(
+            listOf(
+                "orders.id" to "orders.id",
+                "customers.id" to "customers.id",
+                "total" to "total",
+            ),
+            worksheetFormulaTokens(joinedSample.columns, emptyList(), tables),
+        )
+
+        val preview =
+            applyWorksheet(
+                joinedSample,
+                WorksheetConfig(
+                    calculations =
+                        listOf(
+                            WorksheetCalculation.RowFormula(
+                                "qualified",
+                                "SumIds",
+                                "[orders.id] + [customers.id]",
+                            ),
+                            WorksheetCalculation.RowFormula(
+                                "legacy",
+                                "LegacyIds",
+                                "[t0__id] + [t1__id]",
+                            ),
+                        ),
+                ),
+                tables = tables,
+            )
+        assertEquals(0, preview.calculationErrorCount)
+        assertEquals(22.0, (preview.rows.single().cells[3].value as ResultCell.FloatCell).value)
+        assertEquals(22.0, (preview.rows.single().cells[4].value as ResultCell.FloatCell).value)
+
+        // Ensure a display label matching another column's raw name does not alias it.
+        val collidingSample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__id", "int"),
+                        ResultColumn("id", "int"),
+                    ),
+                rows =
+                    listOf(
+                        listOf(ResultCell.IntegerCell(1), ResultCell.IntegerCell(99)),
+                    ),
+                rowCount = 1,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val singleTable = listOf(com.safedb.model.TableRef("safedb_test", "orders", "t0"))
+        val values =
+            worksheetFormulaValues(
+                sampleColumns = collidingSample.columns,
+                sourceValue = { col ->
+                    if (col == "t0__id") java.math.BigDecimal.ONE
+                    else java.math.BigDecimal.valueOf(99)
+                },
+                priorCalculations = emptyList(),
+                calculationValue = { null },
+                tables = singleTable,
+            )
+        assertEquals(java.math.BigDecimal.valueOf(99), values["id"])
+        assertEquals(java.math.BigDecimal.ONE, values["orders.id"])
+    }
+
+    @Test
+    fun chainedMultiRowFormulasResolveCollidingLabelsIdsAndIncrementalDuplicates() {
+        val multiRowSample =
+            duplicateDisplaySample()
+                .copy(
+                    rows =
+                        listOf(
+                            listOf(ResultCell.FloatCell(10.0), ResultCell.FloatCell(20.0)),
+                            listOf(ResultCell.FloatCell(5.0), ResultCell.FloatCell(15.0)),
+                        ),
+                    rowCount = 2,
+                )
+        val preview =
+            applyWorksheet(
+                multiRowSample,
+                WorksheetConfig(
+                    calculations =
+                        listOf(
+                            WorksheetCalculation.RowFormula(
+                                "r1",
+                                "amount",
+                                "[t0__amount] + [t1__amount]",
+                            ),
+                            WorksheetCalculation.RowFormula("r2", "t0__amount", "[amount] * 2"),
+                            WorksheetCalculation.RowFormula(
+                                "r3",
+                                "Combined",
+                                "[r2] + [t0__amount]",
+                            ),
+                            WorksheetCalculation.RowFormula("r4", "Combined", "[Combined] + 1"),
+                            WorksheetCalculation.RowFormula("r5", "AfterDup", "[Combined] + 1"),
+                            WorksheetCalculation.RowFormula("r6", "AfterDupById", "[r3] + [r4]"),
+                        ),
+                ),
+            )
+
+        assertEquals(emptyList(), preview.warnings)
+        assertEquals(2, preview.calculationErrorCount)
+        assertEquals(
+            listOf(30.0, 20.0),
+            preview.rows.map { (it.cells[2].value as ResultCell.FloatCell).value },
+        )
+        assertEquals(
+            listOf(60.0, 40.0),
+            preview.rows.map { (it.cells[3].value as ResultCell.FloatCell).value },
+        )
+        assertEquals(
+            listOf(70.0, 45.0),
+            preview.rows.map { (it.cells[4].value as ResultCell.FloatCell).value },
+        )
+        assertEquals(
+            listOf(71.0, 46.0),
+            preview.rows.map { (it.cells[5].value as ResultCell.FloatCell).value },
+        )
+        assertEquals(
+            listOf("Unknown field 'Combined'", "Unknown field 'Combined'"),
+            preview.rows.map { it.cells[6].error },
+        )
+        assertEquals(
+            listOf(141.0, 91.0),
+            preview.rows.map { (it.cells[7].value as ResultCell.FloatCell).value },
+        )
+    }
+
+    private fun duplicateDisplaySample(): QueryResult =
+        QueryResult(
+            columns =
+                listOf(
+                    ResultColumn("t0__amount", "decimal"),
+                    ResultColumn("t1__amount", "decimal"),
+                ),
+            rows = listOf(listOf(ResultCell.FloatCell(10.0), ResultCell.FloatCell(20.0))),
+            rowCount = 1,
+            truncated = false,
+            warnings = emptyList(),
+        )
+
     private fun WorksheetPreview.detailValues(column: String): List<String> {
         val index = columns.indexOfFirst { it.sourceColumn == column }
         return rows
             .filter { it.kind == WorksheetRowKind.Detail }
             .map { row -> (row.cells[index].value as ResultCell.TextCell).value.text }
     }
+
+    private fun QueryResult.filteredIndexes(filter: WorksheetFilter): List<Int> =
+        applyWorksheet(this, WorksheetConfig(filters = listOf(filter))).rows.mapNotNull {
+            it.sourceRowIndex
+        }
 
     private fun sample(): QueryResult =
         QueryResult(

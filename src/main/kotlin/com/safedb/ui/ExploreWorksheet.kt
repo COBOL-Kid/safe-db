@@ -84,11 +84,13 @@ import com.safedb.explore.WorksheetRowKind
 import com.safedb.explore.WorksheetSort
 import com.safedb.explore.WorksheetValueRef
 import com.safedb.explore.displayColumnLabel
+import com.safedb.explore.displayColumnLabels
 import com.safedb.explore.moveWorksheetColumn
 import com.safedb.explore.projectWorksheetTable
 import com.safedb.explore.toWorksheetColumnLayout
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
+import com.safedb.model.TableRef
 import com.safedb.ui.components.MenuActionRow
 import com.safedb.ui.components.PrimaryButton
 import com.safedb.ui.components.SafeDropdownMenu
@@ -110,6 +112,7 @@ internal fun ExploreWorksheet(
     railVisible: Boolean,
     onRailVisibilityChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    tables: List<TableRef> = emptyList(),
     // Rendered under the table so the rail spans the full height, matching Pivot/Visualization.
     exportBar: @Composable () -> Unit = {},
 ) {
@@ -151,7 +154,7 @@ internal fun ExploreWorksheet(
             column = column,
             displayLabel =
                 preview.columns.firstOrNull { it.sourceColumn == column }?.label
-                    ?: displayColumnLabel(column),
+                    ?: displayColumnLabel(column, tables),
             dataType = sample.columns.firstOrNull { it.name == column }?.dataType.orEmpty(),
             existing = existing,
             onSave = { group ->
@@ -176,6 +179,7 @@ internal fun ExploreWorksheet(
             Column(modifier = Modifier.width(320.dp).fillMaxHeight()) {
                 CalculationRail(
                     sample = sample,
+                    tables = tables,
                     config = config,
                     existing = editingCalculation,
                     editorActive = calculationEditorActive,
@@ -944,6 +948,7 @@ private fun WorksheetCellText(value: ResultCell, error: String?, numberFormat: P
 @Composable
 private fun CalculationRail(
     sample: QueryResult,
+    tables: List<TableRef>,
     config: WorksheetConfig,
     existing: WorksheetCalculation?,
     editorActive: Boolean,
@@ -957,6 +962,8 @@ private fun CalculationRail(
     modifier: Modifier,
 ) {
     val scroll = rememberScrollState()
+    val columnLabels =
+        remember(sample.columns, tables) { displayColumnLabels(sample.columns, tables) }
     Surface(modifier = modifier, color = SafeDbTheme.colors.workspacePanel) {
         Box(modifier = Modifier.fillMaxSize()) {
             Column(
@@ -995,6 +1002,7 @@ private fun CalculationRail(
                             existing = existing,
                             onSave = onSave,
                             onCancel = onCancel,
+                            tables = tables,
                         )
                     }
                 } else {
@@ -1064,7 +1072,7 @@ private fun CalculationRail(
                                     overflow = TextOverflow.Ellipsis,
                                 )
                                 Text(
-                                    calculationSummary(calculation),
+                                    calculationSummary(calculation, columnLabels, tables),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 2,

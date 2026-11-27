@@ -41,6 +41,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
@@ -232,8 +234,10 @@ fun CommandPalette(
         }
 
     LaunchedEffect(filtered.size) { selectedIndex = 0 }
+    val searchFocusRequester = remember { FocusRequester() }
 
     Dialog(onDismissRequest = onDismiss) {
+        LaunchedEffect(Unit) { searchFocusRequester.requestFocus() }
         Surface(
             modifier =
                 Modifier.widthIn(max = 560.dp).fillMaxWidth().onPreviewKeyEvent { event ->
@@ -243,7 +247,8 @@ fun CommandPalette(
                             onDismiss()
                             true
                         }
-                        Key.Enter -> {
+                        Key.Enter,
+                        Key.NumPadEnter -> {
                             filtered.getOrNull(selectedIndex)?.action?.invoke()
                             true
                         }
@@ -273,7 +278,7 @@ fun CommandPalette(
                     TextField(
                         value = search,
                         onValueChange = { search = it },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().focusRequester(searchFocusRequester),
                         placeholder = {
                             Text("Type a command...", style = MaterialTheme.typography.bodyMedium)
                         },

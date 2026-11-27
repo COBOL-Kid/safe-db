@@ -234,10 +234,8 @@ class QueryViewModel(
     override fun addTable(tableInfo: TableInfo) {
         invalidateForEdit()
         val alias = "t${aliasCounter++}"
-        val offset = canvasTables.size * 30f
-        canvasTables.add(
-            CanvasTable(tableInfo = tableInfo, alias = alias, x = 40f + offset, y = offset),
-        )
+        val (x, y) = nextCanvasTablePosition(canvasTables)
+        canvasTables.add(CanvasTable(tableInfo = tableInfo, alias = alias, x = x, y = y))
     }
 
     override val tables: List<AliasRef>
@@ -724,3 +722,22 @@ private fun <T> List<T>.moveItem(fromIndex: Int, toIndex: Int): List<T> {
 }
 
 private fun newNodeId(): String = java.util.UUID.randomUUID().toString()
+
+internal fun nextCanvasTablePosition(existing: List<CanvasTable>): Pair<Float, Float> {
+    val columns = 3
+    val xStart = 40f
+    val yStart = 24f
+    val xStep = CANVAS_CARD_WIDTH + 62f
+    val yStep = CANVAS_CARD_HEIGHT + 36f
+    return generateSequence(0) { it + 1 }
+        .firstNotNullOf { slot ->
+            val col = slot % columns
+            val row = slot / columns
+            val x = xStart + col * xStep
+            val y = yStart + row * yStep
+            val occupied = existing.any {
+                kotlin.math.abs(it.x - x) < 40f && kotlin.math.abs(it.y - y) < 40f
+            }
+            if (occupied) null else x to y
+        }
+}

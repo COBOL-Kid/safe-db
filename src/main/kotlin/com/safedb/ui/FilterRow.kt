@@ -35,6 +35,8 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -53,6 +55,115 @@ import com.safedb.ui.components.SafeDropdownMenu
 import com.safedb.ui.components.ScrollableMenuColumn
 import com.safedb.viewmodel.QueryViewModel
 import com.safedb.viewmodel.buildFilterValue
+
+internal data class PendingInListSplit(
+    val sourceIndex: Int,
+    val sourceText: String,
+    val targetIndex: Int,
+)
+
+internal data class InListEditResult(
+    val literals: List<FilterLiteral>,
+    val pendingSplit: PendingInListSplit?,
+)
+
+private class InListSessionState {
+    var literals: List<FilterLiteral> = emptyList()
+    var pendingSplit: PendingInListSplit? = null
+}
+
+private fun extractForwardedText(text: String, sourceText: String): String? =
+    when {
+        sourceText.isEmpty() -> text.takeIf { it.isNotEmpty() }
+        text.length <= sourceText.length -> null
+        text.startsWith(sourceText) -> text.removePrefix(sourceText)
+        text.endsWith(sourceText) -> text.removeSuffix(sourceText)
+        else -> null
+    }
+
+internal fun applyInListEdit(
+    literals: List<FilterLiteral>,
+    index: Int,
+    text: String,
+    splitOnComma: Boolean,
+    pendingSplit: PendingInListSplit?,
+    maxSize: Int = MAX_IN_LIST_SIZE,
+): InListEditResult {
+    if (
+        pendingSplit != null &&
+            index == pendingSplit.sourceIndex &&
+            pendingSplit.targetIndex in literals.indices
+    ) {
+        val forwarded = extractForwardedText(text, pendingSplit.sourceText)
+        if (forwarded != null) {
+            val targetIndex = pendingSplit.targetIndex
+            val combined = literals[targetIndex].text + forwarded
+            val items =
+                applyInListInput(
+                    literals = literals,
+                    index = targetIndex,
+                    text = combined,
+                    splitOnComma = splitOnComma,
+                    maxSize = maxSize,
+                )
+            val nextTarget =
+                if (items.size > literals.size && combined.trimEnd().endsWith(',')) {
+                    (targetIndex + (items.size - literals.size)).coerceAtMost(items.lastIndex)
+                } else {
+                    targetIndex
+                }
+            return InListEditResult(
+                literals = items,
+                pendingSplit = pendingSplit.copy(targetIndex = nextTarget),
+            )
+        }
+    }
+    val items =
+        applyInListInput(
+            literals = literals,
+            index = index,
+            text = text,
+            splitOnComma = splitOnComma,
+            maxSize = maxSize,
+        )
+    val nextPending =
+        if (items.size > literals.size && text.trimEnd().endsWith(',')) {
+            PendingInListSplit(
+                sourceIndex = index,
+                sourceText = items.getOrNull(index)?.text.orEmpty(),
+                targetIndex = (index + (items.size - literals.size)).coerceAtMost(items.lastIndex),
+            )
+        } else {
+            null
+        }
+    return InListEditResult(literals = items, pendingSplit = nextPending)
+}
+
+internal fun applyInListInput(
+    literals: List<FilterLiteral>,
+    index: Int,
+    text: String,
+    splitOnComma: Boolean,
+    maxSize: Int = MAX_IN_LIST_SIZE,
+): List<FilterLiteral> {
+    val targetKind = literals.getOrNull(index)?.kind ?: LiteralKind.Text
+    if (!splitOnComma || ',' !in text) {
+        return literals.mapIndexed { i, lit -> if (i == index) lit.copy(text = text) else lit }
+    }
+    val trailingComma = text.trimEnd().endsWith(',')
+    val parts = text.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+    val replacement =
+        when {
+            parts.isEmpty() -> listOf(FilterLiteral(targetKind, ""))
+            trailingComma ->
+                parts.map { FilterLiteral(targetKind, it) } + FilterLiteral(targetKind, "")
+            else -> parts.map { FilterLiteral(targetKind, it) }
+        }
+    val combined = buildList {
+        literals.forEachIndexed { i, lit -> if (i == index) addAll(replacement) else add(lit) }
+    }
+    return combined.take(maxSize)
+}
 
 @Composable
 fun FilterRow(
@@ -244,26 +355,66 @@ fun FilterRow(
                 }
                 ValueKind.List -> {
                     val listValue = filter.value as? FilterValue.ListValue
+                    val session = remember(filter.id) { InListSessionState() }
+                    val currentLiterals = listValue?.literals.orEmpty()
+                    session.literals = currentLiterals
+                    var pendingSplitState by
+                        remember(filter.id) { mutableStateOf<PendingInListSplit?>(null) }
+                    if (
+                        session.pendingSplit != null &&
+                            session.pendingSplit?.targetIndex !in currentLiterals.indices
+                    ) {
+                        session.pendingSplit = null
+                        pendingSplitState = null
+                    }
+                    val listItemFocusRequester = remember(filter.id) { FocusRequester() }
+                    val pendingTargetIndex = pendingSplitState?.targetIndex
+                    if (pendingTargetIndex != null) {
+                        LaunchedEffect(pendingTargetIndex, currentLiterals.size) {
+                            if (pendingTargetIndex in currentLiterals.indices) {
+                                listItemFocusRequester.requestFocus()
+                            }
+                            if (session.pendingSplit?.targetIndex == pendingTargetIndex) {
+                                session.pendingSplit = null
+                                pendingSplitState = null
+                            }
+                        }
+                    }
                     // Each input and its remove action form one FlowRow item, so wrapping never
                     // splits a value from the button that deletes it.
                     listValue?.literals?.forEachIndexed { index, literal ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             CompactTextInput(
                                 value = literal.text,
-                                onValueChange = { text ->
-                                    val items =
-                                        listValue.literals.mapIndexed { i, lit ->
-                                            if (i == index) lit.copy(text = text) else lit
-                                        }
-                                    update(filter.copy(value = FilterValue.ListValue(items)))
+                                onValueChange = {},
+                                onTextChange = { text ->
+                                    val result =
+                                        applyInListEdit(
+                                            literals = session.literals,
+                                            index = index,
+                                            text = text,
+                                            splitOnComma = literal.kind != LiteralKind.Text,
+                                            pendingSplit = session.pendingSplit,
+                                        )
+                                    session.literals = result.literals
+                                    session.pendingSplit = result.pendingSplit
+                                    pendingSplitState = result.pendingSplit
+                                    update(
+                                        filter.copy(value = FilterValue.ListValue(result.literals)),
+                                    )
+                                    result.literals.getOrNull(index)?.text.orEmpty()
                                 },
                                 modifier = Modifier.width(FILTER_LIST_VALUE_WIDTH_DP.dp),
-                                placeholder = "value",
+                                placeholder =
+                                    if (literal.kind != LiteralKind.Text) "value, …" else "value",
                                 contentDescription =
                                     "Filter value ${index + 1} for ${filter.column}",
                                 focusRequester =
-                                    if (shouldFocusValue && index == 0) valueFocusRequester
-                                    else null,
+                                    when {
+                                        pendingTargetIndex == index -> listItemFocusRequester
+                                        shouldFocusValue && index == 0 -> valueFocusRequester
+                                        else -> null
+                                    },
                             )
                             if ((listValue.literals.size) > 1) {
                                 val removeDescription =
@@ -271,8 +422,11 @@ fun FilterRow(
                                 CompactIconButton(
                                     contentDescription = removeDescription,
                                     onClick = {
+                                        session.pendingSplit = null
+                                        pendingSplitState = null
                                         val items =
                                             listValue.literals.filterIndexed { i, _ -> i != index }
+                                        session.literals = items
                                         update(filter.copy(value = FilterValue.ListValue(items)))
                                     },
                                 ) {
@@ -286,15 +440,12 @@ fun FilterRow(
                         onClick = {
                             val current = listValue?.literals.orEmpty()
                             if (current.size < MAX_IN_LIST_SIZE) {
+                                session.pendingSplit = null
+                                pendingSplitState = null
                                 val kind = current.firstOrNull()?.kind ?: LiteralKind.Text
-                                update(
-                                    filter.copy(
-                                        value =
-                                            FilterValue.ListValue(
-                                                current + FilterLiteral(kind, ""),
-                                            ),
-                                    ),
-                                )
+                                val items = current + FilterLiteral(kind, "")
+                                session.literals = items
+                                update(filter.copy(value = FilterValue.ListValue(items)))
                             }
                         },
                     ) {
@@ -403,9 +554,16 @@ private fun CompactTextInput(
     contentDescription: String,
     modifier: Modifier = Modifier,
     focusRequester: FocusRequester? = null,
+    onTextChange: ((String) -> String)? = null,
 ) {
     val textStyle =
         MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurface)
+    var textFieldValue by remember {
+        mutableStateOf(TextFieldValue(value, TextRange(value.length)))
+    }
+    if (textFieldValue.text != value) {
+        textFieldValue = TextFieldValue(value, TextRange(value.length))
+    }
     Box(
         modifier =
             modifier
@@ -415,8 +573,18 @@ private fun CompactTextInput(
                 .padding(horizontal = 8.dp, vertical = 7.dp),
     ) {
         BasicTextField(
-            value = value,
-            onValueChange = onValueChange,
+            value = textFieldValue,
+            onValueChange = { next ->
+                val accepted =
+                    onTextChange?.invoke(next.text)
+                        ?: run {
+                            onValueChange(next.text)
+                            next.text
+                        }
+                textFieldValue =
+                    if (accepted == next.text) next
+                    else TextFieldValue(accepted, TextRange(accepted.length))
+            },
             singleLine = true,
             textStyle = textStyle,
             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
@@ -428,7 +596,7 @@ private fun CompactTextInput(
                     ),
             decorationBox = { innerTextField ->
                 Box(contentAlignment = Alignment.CenterStart) {
-                    if (value.isEmpty()) {
+                    if (textFieldValue.text.isEmpty()) {
                         Text(
                             placeholder,
                             style = MaterialTheme.typography.labelSmall,

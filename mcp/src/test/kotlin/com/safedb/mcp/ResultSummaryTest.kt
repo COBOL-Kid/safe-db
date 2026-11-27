@@ -142,20 +142,16 @@ class ResultSummaryTest {
 
     @Test
     fun decimalTextColumnComparesNumerically() {
+        val smaller = "9007199254740993.000000000000000001"
+        val larger = "9007199254740993.000000000000000002"
         val result =
-            QueryResult(
-                columns = listOf(ResultColumn("amount", "decimal")),
-                rows =
-                    listOf("146.97", "97.64", "25.68", "501.23").map {
-                        listOf(ResultCell.text(it))
-                    },
-                rowCount = 4,
-                truncated = false,
-                warnings = emptyList(),
+            QueryResult.fromRows(
+                listOf(ResultColumn("amount", "decimal")),
+                listOf("146.97", "25.68", smaller, larger).map { listOf(ResultCell.text(it)) },
             )
         val column = summarizeColumns(result).single()
         assertEquals(JsonPrimitive("25.68"), column.min)
-        assertEquals(JsonPrimitive("501.23"), column.max)
+        assertEquals(JsonPrimitive(larger), column.max)
     }
 
     @Test
@@ -224,5 +220,55 @@ class ResultSummaryTest {
         assertEquals(JsonPrimitive(3.5), columns[0].max)
         assertNull(columns[1].min)
         assertNull(columns[1].max)
+    }
+
+    @Test
+    fun mixedIntegerAndInfiniteFloatColumnResolvesMinMaxWithoutThrowing() {
+        val result =
+            QueryResult(
+                columns = listOf(ResultColumn("val", "float8")),
+                rows =
+                    listOf(
+                        listOf(ResultCell.integer(42L)),
+                        listOf(ResultCell.float(Double.POSITIVE_INFINITY)),
+                        listOf(ResultCell.float(Double.NEGATIVE_INFINITY)),
+                        listOf(ResultCell.integer(7L)),
+                        listOf(ResultCell.float(Double.NaN)),
+                    ),
+                rowCount = 5,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val column = summarizeColumns(result).single()
+        assertEquals(JsonPrimitive("-Infinity"), column.min)
+        assertEquals(JsonPrimitive("Infinity"), column.max)
+        assertEquals(
+            listOf(
+                JsonPrimitive(42L),
+                JsonPrimitive("Infinity"),
+                JsonPrimitive("-Infinity"),
+                JsonPrimitive(7L),
+                JsonPrimitive("NaN"),
+            ),
+            column.distinct,
+        )
+    }
+
+    @Test
+    fun numericTextInfinityIsABoundWhileNaNRemainsDistinct() {
+        val values = listOf("1.5", "NaN", "-Infinity", "+Infinity")
+        val result =
+            QueryResult.fromRows(
+                listOf(ResultColumn("number", "numeric"), ResultColumn("text", "varchar")),
+                values.map { listOf(ResultCell.text(it), ResultCell.text(it)) },
+            )
+        val (number, text) = summarizeColumns(result)
+        assertEquals(JsonPrimitive("-Infinity"), number.min)
+        assertEquals(JsonPrimitive("+Infinity"), number.max)
+        assertEquals(0, number.nullCount)
+        assertEquals(values.map(::JsonPrimitive), number.distinct)
+        assertEquals(JsonPrimitive("+Infinity"), text.min)
+        assertEquals(JsonPrimitive("NaN"), text.max)
+        assertEquals(number.distinct, text.distinct)
     }
 }

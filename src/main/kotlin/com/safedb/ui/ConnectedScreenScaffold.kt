@@ -138,10 +138,21 @@ internal fun resolveSchemaFallback(
     selectedSchema: String?,
     schemaOptions: List<String>,
     preferredSchemaWarning: String?,
+    preferredDatabase: String? = null,
 ): SchemaFallback? {
     if (!loaded || selectedSchema != null) return null
-    val first = schemaOptions.firstOrNull() ?: return null
-    return SchemaFallback(first, preferredSchemaWarning?.let { "$it Showing \"$first\" instead." })
+    val chosen =
+        preferredDatabase
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { target ->
+                schemaOptions.firstOrNull { it == target }
+                    ?: schemaOptions.firstOrNull { it.equals(target, ignoreCase = true) }
+            } ?: schemaOptions.firstOrNull() ?: return null
+    return SchemaFallback(
+        chosen,
+        preferredSchemaWarning?.let { "$it Showing \"$chosen\" instead." },
+    )
 }
 
 // Fallback is display-only: it never goes through the user-pick handler, so it cannot overwrite
@@ -176,6 +187,7 @@ internal fun rememberSchemaLoad(
                     selectedSchema = schemaViewModel.selectedSchema,
                     schemaOptions = schemaViewModel.schemaOptions,
                     preferredSchemaWarning = schemaViewModel.preferredSchemaWarning,
+                    preferredDatabase = connection.database,
                 ) ?: return@load
             fallbackWarning.value = fallback.warning
             schemaViewModel.selectSchema(fallback.schema)

@@ -114,9 +114,10 @@ upload image/svg+xml   "$IMMUTABLE"  '*.svg'
 upload image/png       "$IMMUTABLE"  '*.png'
 
 # Old payloads are immutable, so nothing links to them after an update. Keep a
-# small history for manual downloads and Sparkle deltas, but do not let the flat
-# bucket grow without bound. Cloud Storage update times follow release order, so
-# list newest first and drop everything past the retention count.
+# short history of full macOS zips so Conveyor can generate Sparkle deltas for
+# the next release, and retain only deltas targeting the current version. Cloud
+# Storage update times follow release order, so list newest first when pruning
+# by count.
 all_objects=""
 load_objects() {
 	if [[ -z "$all_objects" ]]; then
@@ -136,15 +137,33 @@ prune_old_objects() {
 		[[ "$name" == $pattern ]] && matches+=("$name")
 	done <<<"$all_objects"
 
-	if ((${#matches[@]} <= keep)); then
+	if ((${#matches[@]} == 0)); then
 		return 0
 	fi
 
 	local -a doomed=()
-	local i
-	for ((i = keep; i < ${#matches[@]}; i++)); do
-		doomed+=("$BUCKET/${matches[i]}")
-	done
+	if [[ "$keep" == "current" ]]; then
+		for name in "${matches[@]}"; do
+			if [[ "$name" != *-*-"$site_version"-mac-* ]]; then
+				doomed+=("$BUCKET/$name")
+			fi
+		done
+	elif [[ "$keep" =~ ^[0-9]+$ ]]; then
+		if ((${#matches[@]} <= keep)); then
+			return 0
+		fi
+		local i
+		for ((i = keep; i < ${#matches[@]}; i++)); do
+			doomed+=("$BUCKET/${matches[i]}")
+		done
+	else
+		echo "publish aborted: invalid prune policy keep value '$keep'" >&2
+		exit 1
+	fi
+
+	if ((${#doomed[@]} == 0)); then
+		return 0
+	fi
 
 	echo "==> Pruning ${#doomed[@]} old $description object(s)"
 	printf '    %s\n' "${doomed[@]}"

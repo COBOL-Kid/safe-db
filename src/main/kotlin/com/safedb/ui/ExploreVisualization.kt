@@ -34,7 +34,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -87,17 +86,12 @@ internal fun VisualizationConfigPanel(
     onHide: () -> Unit,
     modifier: Modifier = Modifier,
     resolvedChartType: ChartType? = null,
+    transitionMessage: String? = null,
+    onChartTypeChange: (ChartType) -> Unit = { onConfigChange(config.forChartType(it, fields)) },
 ) {
     var templatesOpen by remember { mutableStateOf(false) }
     var optionsExpanded by remember { mutableStateOf(false) }
     var editingFilter by remember { mutableStateOf<PivotFilter?>(null) }
-    var transitionNotice by remember { mutableStateOf<Pair<VisualizationConfig, String>?>(null) }
-    LaunchedEffect(config) {
-        if (transitionNotice?.first != config) {
-            transitionNotice = null
-        }
-    }
-    val transitionMessage = transitionNotice?.takeIf { it.first == config }?.second
     val effectiveType =
         if (config.chartType == ChartType.Auto) resolvedChartType else config.chartType
     val dualAxisEligible = config.supportsSecondaryAxis(effectiveType)
@@ -197,10 +191,7 @@ internal fun VisualizationConfigPanel(
                 ) {
                     ChartType.entries.forEach { type ->
                         SelectablePill(chartTypeLabel(type), config.chartType == type) {
-                            val next = config.forChartType(type, fields)
-                            transitionNotice =
-                                chartTypeTransitionMessage(config, next)?.let { next to it }
-                            onConfigChange(next)
+                            onChartTypeChange(type)
                         }
                     }
                 }
@@ -226,7 +217,7 @@ internal fun VisualizationConfigPanel(
                     SearchableExploreFieldDropdown(
                         label = if (config.x == null) "Add X field" else "Replace X field",
                         fields = fields,
-                        compatible = { field -> xCompatible(config.chartType, field) },
+                        compatible = { field -> visualizationXCompatible(config.chartType, field) },
                         incompatibleReason = {
                             "Not compatible with ${chartTypeLabel(config.chartType).lowercase()}"
                         },
@@ -715,14 +706,6 @@ private fun ConfigSection(title: String, content: @Composable () -> Unit) {
         content()
     }
 }
-
-private fun xCompatible(type: ChartType, field: ExploreFieldOption): Boolean =
-    when (type) {
-        ChartType.Scatter,
-        ChartType.Histogram -> field.category.isNumeric()
-        ChartType.Kpi -> false
-        else -> field.category !in setOf(ColumnCategory.Binary, ColumnCategory.Json)
-    }
 
 private fun asPivotMeasure(value: VisualizationMeasure) =
     PivotMeasure(

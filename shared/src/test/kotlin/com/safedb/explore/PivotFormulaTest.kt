@@ -24,4 +24,15 @@ class PivotFormulaTest {
         assertNotNull(evaluatePivotFormula("[missing] + 1", emptyMap()).error)
         assertEquals("Division by zero", evaluatePivotFormula("1 / 0", emptyMap()).error)
     }
+
+    @Test
+    fun customReferenceLabelUsesFieldInErrors() {
+        val result =
+            evaluatePivotFormula(
+                "[amount] * 2",
+                mapOf("t0__amount" to BigDecimal.TEN),
+                referenceLabel = "field",
+            )
+        assertEquals("Unknown field 'amount'", result.error)
+    }
 }

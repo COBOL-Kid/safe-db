@@ -1,5 +1,6 @@
 package com.safedb.ui
 
+import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -44,6 +46,7 @@ import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -56,12 +59,19 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -81,6 +91,7 @@ import com.safedb.query.parseLimit
 import com.safedb.ui.components.BannerKind
 import com.safedb.ui.components.MessageBanner
 import com.safedb.ui.components.SecondaryButton
+import com.safedb.ui.components.shouldShowMenuScrollbar
 import com.safedb.ui.theme.ChipShape
 import com.safedb.ui.theme.DialogShape
 import com.safedb.ui.theme.SafeDbTheme
@@ -113,6 +124,11 @@ internal val BuilderSchemaBrowserDividerWidth = 1.dp
 internal val BuilderToolbarConnectionMinWidth = 160.dp
 internal val BuilderQueryOptionsButtonReserve = 48.dp
 internal val BuilderFilterPanelMinHeight = 96.dp
+
+internal fun builderCanvasReservePx(hasFilters: Boolean): Float = if (hasFilters) 288f else 180f
+
+internal fun builderFilterPanelMinHeight(workspaceHeight: Dp): Dp =
+    if (workspaceHeight < 360.dp) 64.dp else BuilderFilterPanelMinHeight
 
 internal fun builderFilterPanelMaxHeight(workspaceHeight: Dp): Dp {
     val budget =
@@ -155,11 +171,17 @@ internal fun BuilderQueryChrome(
             }
             if (queryViewModel.filterCount > 0) {
                 val filterPanelHeight = builderFilterPanelMaxHeight(workspaceHeight)
+                val minPanelHeight = builderFilterPanelMinHeight(workspaceHeight)
+                val filterScroll = rememberScrollState()
+                val density = LocalDensity.current
+                var filterViewportHeightPx by remember { mutableIntStateOf(0) }
+                val showFilterScrollbar =
+                    shouldShowMenuScrollbar(filterViewportHeightPx, filterScroll.maxValue)
                 Box(
                     modifier =
                         Modifier.fillMaxWidth()
                             .requiredHeightIn(
-                                min = BuilderFilterPanelMinHeight,
+                                min = minPanelHeight,
                                 max = filterPanelHeight,
                             )
                             .clipToBounds()
@@ -171,8 +193,20 @@ internal fun BuilderQueryChrome(
                         group = queryViewModel.filters,
                         path = emptyList(),
                         depth = 0,
-                        modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                        modifier =
+                            Modifier.fillMaxWidth()
+                                .onSizeChanged { filterViewportHeightPx = it.height }
+                                .verticalScroll(filterScroll)
+                                .padding(end = if (showFilterScrollbar) 10.dp else 0.dp),
                     )
+                    if (showFilterScrollbar) {
+                        VerticalScrollbar(
+                            adapter = rememberScrollbarAdapter(filterScroll),
+                            modifier =
+                                Modifier.align(Alignment.CenterEnd)
+                                    .height(with(density) { filterViewportHeightPx.toDp() }),
+                        )
+                    }
                 }
             }
             Row(
@@ -781,6 +815,14 @@ internal fun LimitValueField(
 ) {
     var draft by remember { mutableStateOf(limitFieldText(limit, uncapped)) }
     var focused by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+    val invalidDraft = focused && draft.isNotEmpty() && commitBuilderLimitDraft(draft) == null
+    val borderColor =
+        when {
+            invalidDraft -> MaterialTheme.colorScheme.error
+            focused -> SafeDbTheme.colors.actionPrimary
+            else -> MaterialTheme.colorScheme.outline
+        }
     val textStyle =
         MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurface)
     BasicTextField(
@@ -792,6 +834,18 @@ internal fun LimitValueField(
         modifier =
             Modifier.width(120.dp)
                 .height(30.dp)
+                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(2.dp))
+                .onPreviewKeyEvent { event ->
+                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    if (event.key != Key.Enter && event.key != Key.NumPadEnter) {
+                        return@onPreviewKeyEvent false
+                    }
+                    commitBuilderLimitDraft(draft)?.let { committed ->
+                        onCommit(committed)
+                        focusManager.clearFocus(force = true)
+                    }
+                    true
+                }
                 .onFocusChanged { state ->
                     if (!focused && state.isFocused) {
                         draft = limitFieldText(limit, uncapped)
@@ -801,7 +855,7 @@ internal fun LimitValueField(
                     }
                     focused = state.isFocused
                 }
-                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(2.dp))
+                .border(1.dp, borderColor, RoundedCornerShape(2.dp))
                 .padding(horizontal = 8.dp, vertical = 7.dp)
                 .semantics { contentDescription = "Row limit" },
     )

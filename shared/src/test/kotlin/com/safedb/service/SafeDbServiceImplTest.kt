@@ -872,18 +872,97 @@ class SafeDbServiceImplTest {
                     querySessionFactory = null,
                 )
 
-            assertFailsWith<ConnectionNotFoundException> {
-                service.testConnection(sampleConnection().copy(id = "missing"), password = null)
-            }
+            val missingPasswordFailure =
+                assertFailsWith<IllegalArgumentException> {
+                    service.testConnection(sampleConnection().copy(id = "missing"), password = null)
+                }
+            assertEquals(
+                "A password is required for a new connection",
+                missingPasswordFailure.message,
+            )
             assertFailsWith<ConnectionNotFoundException> {
                 service.updateConnection(sampleConnection().copy(id = "missing"), password = null)
             }
             assertEquals(emptyList(), service.listExploreRecipes())
             assertFailsWith<IllegalStateException> { service.deleteExploreRecipe("r1") }
+            Unit
         } finally {
             dir.toFile().deleteRecursively()
         }
     }
+
+    @Test
+    fun createConnectionRejectsCaseInsensitiveAndTrimmedDuplicateNames(): Unit = runBlocking {
+        SecretsManager.useStoreForTest(DisabledMemoryStore())
+        val dir = Files.createTempDirectory("safedb-service-dup-name")
+        try {
+            val configStore = ConfigStore.new(dir)
+            val service =
+                SafeDbServiceImpl(
+                    configStore = configStore,
+                    queryStore = QueryStore.new(dir),
+                    settingsStore = SettingsStore.new(dir),
+                )
+            service.createConnection(sampleConnection().copy(id = "c1", name = "Primary DB"), "pw1")
+
+            val caseCollision =
+                assertFailsWith<IllegalArgumentException> {
+                    service.createConnection(
+                        sampleConnection().copy(id = "c2", name = "primary db"),
+                        "pw2",
+                    )
+                }
+            assertEquals("A connection named 'primary db' already exists", caseCollision.message)
+            assertNull(configStore.get("c2"))
+
+            val trimmedCollision =
+                assertFailsWith<IllegalArgumentException> {
+                    service.createConnection(
+                        sampleConnection().copy(id = "c3", name = "  PRIMARY DB  "),
+                        "pw3",
+                    )
+                }
+            assertEquals("A connection named 'PRIMARY DB' already exists", trimmedCollision.message)
+            assertNull(configStore.get("c3"))
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun updateConnectionAllowsSameIdNameAndRejectsCollisionWithOtherConnection(): Unit =
+        runBlocking {
+            SecretsManager.useStoreForTest(DisabledMemoryStore())
+            val dir = Files.createTempDirectory("safedb-service-update-dup-name")
+            try {
+                val configStore = ConfigStore.new(dir)
+                val service =
+                    SafeDbServiceImpl(
+                        configStore = configStore,
+                        queryStore = QueryStore.new(dir),
+                        settingsStore = SettingsStore.new(dir),
+                    )
+                val first = sampleConnection().copy(id = "c1", name = "Primary DB")
+                val second = sampleConnection().copy(id = "c2", name = "Analytics DB")
+                service.createConnection(first, "pw1")
+                service.createConnection(second, "pw2")
+
+                service.updateConnection(first.copy(name = "primary db"), password = null)
+                assertEquals("primary db", configStore.get("c1")?.name)
+
+                val collision =
+                    assertFailsWith<IllegalArgumentException> {
+                        service.updateConnection(
+                            second.copy(name = "  PRIMARY DB  "),
+                            password = null,
+                        )
+                    }
+                assertEquals("A connection named 'PRIMARY DB' already exists", collision.message)
+                assertEquals("Analytics DB", configStore.get("c2")?.name)
+            } finally {
+                dir.toFile().deleteRecursively()
+            }
+        }
 }
 
 private fun sampleQuerySpec() =

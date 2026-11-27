@@ -9,6 +9,7 @@ import com.safedb.connection.DIALECTS
 import com.safedb.connection.formatConnectionString
 import com.safedb.connection.inferLocation
 import com.safedb.connection.parseConnectionString
+import com.safedb.connection.sanitizeBestEffortConnectionString
 import com.safedb.connection.transportPresetForLocation
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
@@ -96,10 +97,16 @@ class ConnectionFormState(val original: ConnectionDef? = null) {
         testResult = null
         testError = null
         formError = null
+        parseError = null
+    }
+
+    fun updateConnectionString(value: String) {
+        connectionString = value
+        parseWarnings = emptyList()
+        resetResultState()
     }
 
     fun applyParsedInput() {
-        parseError = null
         parseWarnings = emptyList()
         resetResultState()
         try {
@@ -135,8 +142,10 @@ class ConnectionFormState(val original: ConnectionDef? = null) {
                     )
             connectionString = parsed.sanitizedInput
         } catch (error: ConnectionStringParseError) {
+            connectionString = sanitizeBestEffortConnectionString(connectionString)
             parseError = error.message
         } catch (_: Exception) {
+            connectionString = sanitizeBestEffortConnectionString(connectionString)
             parseError = "This connection string could not be parsed."
         }
     }
@@ -197,7 +206,8 @@ class ConnectionFormState(val original: ConnectionDef? = null) {
     }
 
     fun handlePortInput(value: String) {
-        port = value.toIntOrNull() ?: 0
+        val digits = value.filter(Char::isDigit).take(5)
+        port = digits.toIntOrNull() ?: 0
         portIsAuto = false
         resetResultState()
     }
@@ -253,6 +263,9 @@ class ConnectionFormState(val original: ConnectionDef? = null) {
         resetResultState()
     }
 
+    private fun resolvedName(): String =
+        name.trim().ifEmpty { "${dialect.displayName()} ${host.trim()}:$port" }
+
     fun buildDef(): ConnectionDef {
         val preserveLoadedTransport = original != null && !transportSettingsChanged
         val persistedWallet =
@@ -267,7 +280,7 @@ class ConnectionFormState(val original: ConnectionDef? = null) {
             }
         return ConnectionDef(
             id = connectionId,
-            name = name.trim().ifEmpty { "${dialect.displayName()} ${host.trim()}:$port" },
+            name = resolvedName(),
             dialect = dialect,
             host = host.trim(),
             port = port,
@@ -296,11 +309,19 @@ class ConnectionFormState(val original: ConnectionDef? = null) {
             .exceptionOrNull()
             ?.message
 
-    fun validateForm(): String? {
+    fun validateForm(existingConnections: List<ConnectionDef> = emptyList()): String? {
         if (host.trim().isEmpty()) return "Host is required"
         if (database.trim().isEmpty()) return "Database is required"
         if (username.trim().isEmpty()) return "Username is required"
         if (port !in 1..65535) return "Port must be between 1 and 65535"
+        val resolvedName = resolvedName()
+        if (
+            existingConnections.any {
+                it.id != connectionId && it.name.trim().equals(resolvedName, ignoreCase = true)
+            }
+        ) {
+            return "A connection named '$resolvedName' already exists"
+        }
         if (
             dialect == Dialect.Oracle &&
                 transportMode != TransportSecurityMode.Disabled &&

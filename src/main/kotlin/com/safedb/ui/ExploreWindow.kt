@@ -236,6 +236,7 @@ fun ExploreWindowContent(
                 ExploreMode.Worksheet ->
                     ExploreWorksheet(
                         sample = session.sample,
+                        tables = session.baseSpec.tables,
                         config = viewModel.worksheetConfig,
                         preview = viewModel.worksheetPreview,
                         onConfigChange = { next -> viewModel.updateWorksheet { next } },
@@ -280,6 +281,8 @@ fun ExploreWindowContent(
                                     fields = fields,
                                     memberOptionsFor = viewModel::memberOptions,
                                     resolvedChartType = viewModel.visualizationPreview.chartType,
+                                    transitionMessage = viewModel.visualizationTransitionNotice,
+                                    onChartTypeChange = viewModel::selectVisualizationChartType,
                                     onConfigChange = { next ->
                                         viewModel.updateVisualization { next }
                                     },

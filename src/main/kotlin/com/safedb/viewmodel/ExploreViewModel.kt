@@ -3,6 +3,7 @@ package com.safedb.viewmodel
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.safedb.explore.ChartType
 import com.safedb.explore.ExploreConfig
 import com.safedb.explore.ExploreMode
 import com.safedb.explore.ExplorePivotLayout
@@ -37,6 +38,11 @@ import com.safedb.model.QueryResult
 import com.safedb.model.QuerySpec
 import com.safedb.model.ResultCell
 import com.safedb.model.ThemePalette
+import com.safedb.ui.VisualizationChartSwitchMemory
+import com.safedb.ui.buildExploreFieldOptions
+import com.safedb.ui.chartTypeTransitionMessage
+import com.safedb.ui.reconcileSwitchMemoryOnEdit
+import com.safedb.ui.transitionVisualizationChartType
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.milliseconds
@@ -131,10 +137,15 @@ class ExploreViewModel(
 
     private val dirtyModes = mutableSetOf<ExploreMode>()
     private val memberOptionsCache = mutableMapOf<String, List<MemberOption>>()
+    private val fieldOptions = buildExploreFieldOptions(session.sample, session.baseSpec.tables)
+    private var visualizationSwitchMemory = VisualizationChartSwitchMemory()
     var appliedRecipeId by mutableStateOf<String?>(null)
         private set
 
     var worksheetConfigReplacementRevision by mutableStateOf(0)
+        private set
+
+    var visualizationTransitionNotice by mutableStateOf<String?>(null)
         private set
 
     var pendingRecipe by mutableStateOf<ExploreRecipe?>(null)
@@ -184,7 +195,28 @@ class ExploreViewModel(
         }
 
     fun updateVisualization(block: (VisualizationConfig) -> VisualizationConfig) {
-        workspace = workspace.copy(visualization = block(workspace.visualization))
+        val previous = workspace.visualization
+        val next = block(previous)
+        visualizationSwitchMemory =
+            reconcileSwitchMemoryOnEdit(previous, next, visualizationSwitchMemory)
+        visualizationTransitionNotice = null
+        workspace = workspace.copy(visualization = next)
+        refreshMode(ExploreMode.Visualization)
+        clearExportMessages()
+    }
+
+    fun selectVisualizationChartType(target: ChartType) {
+        val previous = workspace.visualization
+        val (next, nextMemory) =
+            transitionVisualizationChartType(
+                previous,
+                target,
+                fieldOptions,
+                visualizationSwitchMemory,
+            )
+        visualizationSwitchMemory = nextMemory
+        visualizationTransitionNotice = chartTypeTransitionMessage(previous, next)
+        workspace = workspace.copy(visualization = next)
         refreshMode(ExploreMode.Visualization)
         clearExportMessages()
     }
@@ -202,6 +234,8 @@ class ExploreViewModel(
     }
 
     fun resetVisualization() {
+        visualizationSwitchMemory = VisualizationChartSwitchMemory()
+        visualizationTransitionNotice = null
         workspace = workspace.copy(visualization = VisualizationConfig())
         refreshMode(ExploreMode.Visualization)
         clearExportMessages()
@@ -218,6 +252,8 @@ class ExploreViewModel(
     fun isDirty(): Boolean = !isDefaultConfig()
 
     fun applyVisualizationTemplate(templateConfig: VisualizationConfig) {
+        visualizationSwitchMemory = VisualizationChartSwitchMemory()
+        visualizationTransitionNotice = null
         workspace =
             workspace.copy(activeMode = ExploreMode.Visualization, visualization = templateConfig)
         refreshMode(ExploreMode.Visualization)
@@ -231,6 +267,9 @@ class ExploreViewModel(
     private fun applyRecipe(recipe: ExploreRecipe, debounceMs: Long) {
         val worksheetWasReplaced =
             recipe.worksheet?.let { replacement -> replacement != workspace.worksheet } == true
+        val visualizationWasReplaced =
+            recipe.visualization?.let { replacement -> replacement != workspace.visualization } ==
+                true
         workspace =
             workspace.copy(
                 activeMode = recipe.defaultMode,
@@ -239,6 +278,10 @@ class ExploreViewModel(
                 visualization = recipe.visualization ?: workspace.visualization,
             )
         if (worksheetWasReplaced) worksheetConfigReplacementRevision += 1
+        if (visualizationWasReplaced) {
+            visualizationSwitchMemory = VisualizationChartSwitchMemory()
+            visualizationTransitionNotice = null
+        }
         dirtyModes += setOf(ExploreMode.Pivot, ExploreMode.Worksheet, ExploreMode.Visualization)
         refreshMode(workspace.activeMode, debounceMs = debounceMs)
         appliedRecipeId = recipe.id

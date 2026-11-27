@@ -8,8 +8,12 @@ import androidx.compose.ui.text.AnnotatedString
 import com.safedb.explore.BarArrangement
 import com.safedb.explore.BarOrientation
 import com.safedb.explore.ChartType
+import com.safedb.explore.ExploreConfig
 import com.safedb.explore.ExploreMode
+import com.safedb.explore.ExploreRecipe
+import com.safedb.explore.ExploreWorkspaceState
 import com.safedb.explore.MeasureFn
+import com.safedb.explore.NumberFormatKind
 import com.safedb.explore.PivotFilter
 import com.safedb.explore.PivotGrouping
 import com.safedb.explore.ValueAxis
@@ -310,6 +314,56 @@ class VisualizationConfigPanelTest {
             chartTypeTransitionMessage(countOnlyBar, countOnlyHistogram),
         )
 
+        val secondMeasure = VisualizationMeasure.countRows()
+        val twoMeasureBar = barWithoutSeries.copy(values = barWithoutSeries.values + secondMeasure)
+        assertEquals(
+            "Removed incompatible X, extra value assignments.",
+            chartTypeTransitionMessage(
+                twoMeasureBar,
+                twoMeasureBar.forChartType(ChartType.Kpi, fields),
+            ),
+        )
+        assertEquals(
+            "Moved amount to X for histogram; removed incompatible extra value assignment.",
+            chartTypeTransitionMessage(
+                twoMeasureBar,
+                twoMeasureBar.forChartType(ChartType.Histogram, fields),
+            ),
+        )
+        val threeMeasureNumericBar =
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("t0__amount", "amount"),
+                values =
+                    listOf(
+                        VisualizationMeasure(
+                            "sum_amount",
+                            MeasureFn.Sum,
+                            "t0__amount",
+                            "Sum amount",
+                        ),
+                        VisualizationMeasure(
+                            "avg_amount",
+                            MeasureFn.Avg,
+                            "t0__amount",
+                            "Avg amount",
+                        ),
+                        VisualizationMeasure(
+                            "min_amount",
+                            MeasureFn.Min,
+                            "t0__amount",
+                            "Min amount",
+                        ),
+                    ),
+            )
+        assertEquals(
+            "Removed incompatible extra values assignment.",
+            chartTypeTransitionMessage(
+                threeMeasureNumericBar,
+                threeMeasureNumericBar.forChartType(ChartType.Scatter, fields),
+            ),
+        )
+
         // Options summary adapts to active chart type.
         assertEquals(
             "value sort · Top 20",
@@ -341,7 +395,34 @@ class VisualizationConfigPanelTest {
         )
         assertEquals("Title & display", visualizationOptionsSummary(VisualizationConfig(), null))
 
-        var config by mutableStateOf(barWithoutSeries)
+        val spec =
+            QuerySpec(
+                tables = emptyList(),
+                columns = emptyList(),
+                joins = emptyList(),
+                filters = FilterGroup.empty(),
+                limit = 100,
+            )
+        val connection =
+            ConnectionDef(
+                id = "c1",
+                name = "Local",
+                dialect = Dialect.Postgres,
+                host = "localhost",
+                port = 5432,
+                database = "app",
+                username = "reader",
+            )
+        val viewModel =
+            ExploreViewModel(
+                createExploreSession(connection, spec, sample),
+                initialWorkspace =
+                    ExploreWorkspaceState(
+                        pivot = ExploreConfig(),
+                        activeMode = ExploreMode.Visualization,
+                        visualization = barWithoutSeries,
+                    ),
+            )
         // Keep resolvedChartType pinned to stale ChartType.Bar to verify explicit chartType
         // switches update Options immediately before debounced preview recomputation finishes.
         withComposeScene(
@@ -350,15 +431,17 @@ class VisualizationConfigPanelTest {
             content = {
                 SafeDbTheme(isDark = false) {
                     VisualizationConfigPanel(
-                        config = config,
+                        config = viewModel.visualizationConfig,
                         sample = sample,
                         tables = emptyList(),
                         fields = fields,
-                        memberOptionsFor = { emptyList() },
+                        memberOptionsFor = viewModel::memberOptions,
                         resolvedChartType = ChartType.Bar,
-                        onConfigChange = { config = it },
-                        onApplyTemplate = { config = it },
-                        onReset = { config = VisualizationConfig() },
+                        transitionMessage = viewModel.visualizationTransitionNotice,
+                        onChartTypeChange = viewModel::selectVisualizationChartType,
+                        onConfigChange = { next -> viewModel.updateVisualization { next } },
+                        onApplyTemplate = viewModel::applyVisualizationTemplate,
+                        onReset = viewModel::resetVisualization,
                         onHide = {},
                     )
                 }
@@ -367,7 +450,7 @@ class VisualizationConfigPanelTest {
             // Switch Bar -> Histogram: promotes amount to X and shows the transition note.
             scene.click(scene.requireExact("Histogram").boundsInRoot.center)
             scene.settle()
-            assertEquals("t0__amount", config.x?.column)
+            assertEquals("t0__amount", viewModel.visualizationConfig.x?.column)
             assertNotNull(scene.findContaining("Moved amount to X for histogram."))
             assertNotNull(scene.findContaining("Auto bins"))
 
@@ -382,25 +465,31 @@ class VisualizationConfigPanelTest {
 
             // Editing Bin size preserves any existing start and clearing it with no start resets
             // grouping to None instead of leaving an invalid NumberBin("").
-            config =
-                config.copy(
-                    x = config.x?.copy(grouping = PivotGrouping.NumberBin("250", start = "17")),
+            viewModel.updateVisualization { current ->
+                current.copy(
+                    x = current.x?.copy(grouping = PivotGrouping.NumberBin("250", start = "17")),
                 )
+            }
             scene.settle()
             val setText = binSizeField.config[SemanticsActions.SetText].action!!
             setText.invoke(AnnotatedString("500"))
             scene.settle()
-            assertEquals(PivotGrouping.NumberBin("500", start = "17"), config.x?.grouping)
+            assertEquals(
+                PivotGrouping.NumberBin("500", start = "17"),
+                viewModel.visualizationConfig.x?.grouping,
+            )
 
-            config = config.copy(x = config.x?.copy(grouping = PivotGrouping.NumberBin("500")))
+            viewModel.updateVisualization { current ->
+                current.copy(x = current.x?.copy(grouping = PivotGrouping.NumberBin("500")))
+            }
             scene.settle()
             setText.invoke(AnnotatedString(""))
             scene.settle()
-            assertEquals(PivotGrouping.Exact, config.x?.grouping)
+            assertEquals(PivotGrouping.Exact, viewModel.visualizationConfig.x?.grouping)
 
             // Re-trigger transition note via Bar -> Histogram, then toggle Show value labels to
             // verify it clears immediately and reverting does not resurrect it.
-            config = barWithoutSeries
+            viewModel.updateVisualization { barWithoutSeries }
             scene.settle()
             scene.click(scene.requireExact("Histogram").boundsInRoot.center)
             scene.settle()
@@ -584,6 +673,339 @@ class VisualizationConfigPanelTest {
             ) { scene ->
                 scene.settle()
                 expectedWarnings.forEach { warning -> assertNotNull(scene.findContaining(warning)) }
+            }
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun chartSwitchMemoryClearsStaleValuesAndSeriesOnExplicitUiSelection() {
+        val sample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__category", "varchar"),
+                        ResultColumn("t0__region", "varchar"),
+                        ResultColumn("t0__amount", "decimal"),
+                        ResultColumn("t0__qty", "integer"),
+                    ),
+                rows =
+                    listOf(
+                        listOf(
+                            ResultCell.text("Services"),
+                            ResultCell.text("East"),
+                            ResultCell.float(100.0),
+                            ResultCell.integer(2),
+                        ),
+                    ),
+                rowCount = 1,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val fields = buildExploreFieldOptions(sample, emptyList())
+        val sumAmount =
+            VisualizationMeasure("sum_amount", MeasureFn.Sum, "t0__amount", "Sum amount")
+        val countRows = VisualizationMeasure.countRows("count_rows")
+        val spec =
+            QuerySpec(
+                tables = emptyList(),
+                columns = emptyList(),
+                joins = emptyList(),
+                filters = FilterGroup.empty(),
+                limit = 100,
+            )
+        val connection =
+            ConnectionDef(
+                id = "c1",
+                name = "Local",
+                dialect = Dialect.Postgres,
+                host = "localhost",
+                port = 5432,
+                database = "app",
+                username = "reader",
+            )
+        val viewModel =
+            ExploreViewModel(
+                createExploreSession(connection, spec, sample),
+                initialWorkspace =
+                    ExploreWorkspaceState(
+                        pivot = ExploreConfig(),
+                        activeMode = ExploreMode.Visualization,
+                        visualization =
+                            VisualizationConfig(
+                                chartType = ChartType.Bar,
+                                x = VisualizationField("t0__category", "category"),
+                                values = listOf(sumAmount, countRows),
+                            ),
+                    ),
+            )
+
+        withComposeScene(
+            width = 480,
+            height = 1200,
+            content = {
+                SafeDbTheme(isDark = false) {
+                    VisualizationConfigPanel(
+                        config = viewModel.visualizationConfig,
+                        sample = sample,
+                        tables = emptyList(),
+                        fields = fields,
+                        memberOptionsFor = viewModel::memberOptions,
+                        resolvedChartType = viewModel.visualizationPreview.chartType,
+                        transitionMessage = viewModel.visualizationTransitionNotice,
+                        onChartTypeChange = viewModel::selectVisualizationChartType,
+                        onConfigChange = { next -> viewModel.updateVisualization { next } },
+                        onApplyTemplate = viewModel::applyVisualizationTemplate,
+                        onReset = viewModel::resetVisualization,
+                        onHide = {},
+                    )
+                }
+            },
+        ) { scene ->
+            var frameNanos = 0L
+            fun advance() {
+                repeat(4) {
+                    frameNanos += 100_000_000L
+                    scene.render(frameNanos)
+                }
+            }
+
+            // Bar([Sum amount, Count rows]) -> KPI stashes Count rows; editing only numberFormat
+            // in Options preserves the stashed measure when switching back to Bar.
+            scene.click(scene.requireExact("KPI").boundsInRoot.center)
+            advance()
+            assertEquals(
+                listOf("sum_amount"),
+                viewModel.visualizationConfig.values.map { it.alias },
+            )
+
+            scene.click(scene.requireContaining("Options").boundsInRoot.center)
+            advance()
+            scene.click(scene.requireExact("Currency").boundsInRoot.center)
+            advance()
+            assertEquals(
+                NumberFormatKind.Currency,
+                viewModel.visualizationConfig.values.single().numberFormat.kind,
+            )
+
+            scene.click(scene.requireExact("Bar").boundsInRoot.center)
+            advance()
+            assertEquals(
+                listOf("sum_amount", "count_rows"),
+                viewModel.visualizationConfig.values.map { it.alias },
+            )
+            assertEquals(
+                NumberFormatKind.Currency,
+                viewModel.visualizationConfig.values.first().numberFormat.kind,
+            )
+
+            // Bar([Sum amount, Count rows]) -> Scatter stashes both measures; selecting Series
+            // clears stashed values so returning to Bar keeps 1 measure and removing Series does
+            // not resurrect Count rows on Line.
+            scene.click(scene.requireExact("Scatter").boundsInRoot.center)
+            advance()
+            assertEquals(
+                listOf("sum_amount"),
+                viewModel.visualizationConfig.values.map { it.alias },
+            )
+
+            scene.click(scene.requireContaining("Add series").boundsInRoot.center)
+            advance()
+            scene.click(scene.requireContaining("region").boundsInRoot.center)
+            advance()
+            assertEquals("t0__region", viewModel.visualizationConfig.series?.column)
+
+            scene.click(scene.requireExact("Bar").boundsInRoot.center)
+            advance()
+            assertEquals(
+                listOf("sum_amount"),
+                viewModel.visualizationConfig.values.map { it.alias },
+            )
+            assertEquals("t0__region", viewModel.visualizationConfig.series?.column)
+
+            // Removing Series and switching to Line must not resurrect Count rows from memory.
+            scene.click(scene.requireExact("Remove region").boundsInRoot.center)
+            advance()
+            assertNull(viewModel.visualizationConfig.series)
+            scene.click(scene.requireExact("Line").boundsInRoot.center)
+            advance()
+            assertEquals(
+                listOf("sum_amount"),
+                viewModel.visualizationConfig.values.map { it.alias },
+            )
+
+            // Re-add Series, add a 2nd value (dropping Series), then round-trip through Histogram
+            // -> Bar to verify both measures stay and Series does not resurrect.
+            scene.click(scene.requireContaining("Add series").boundsInRoot.center)
+            advance()
+            scene.click(scene.requireContaining("region").boundsInRoot.center)
+            advance()
+            assertEquals("t0__region", viewModel.visualizationConfig.series?.column)
+
+            scene.click(scene.requireContaining("Add value").boundsInRoot.center)
+            advance()
+            scene.click(scene.requireContaining("Count rows").boundsInRoot.center)
+            advance()
+            assertEquals(2, viewModel.visualizationConfig.values.size)
+            assertNull(viewModel.visualizationConfig.series)
+
+            scene.click(scene.requireExact("Histogram").boundsInRoot.center)
+            advance()
+            assertEquals(emptyList(), viewModel.visualizationConfig.values)
+
+            scene.click(scene.requireExact("Bar").boundsInRoot.center)
+            advance()
+            assertEquals(2, viewModel.visualizationConfig.values.size)
+            assertNull(viewModel.visualizationConfig.series)
+        }
+    }
+
+    @Test
+    fun recipeReplacementClearsChartSwitchMemoryWhileSidebarHidePreservesIt() {
+        val sample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__category", "varchar"),
+                        ResultColumn("t0__amount", "decimal"),
+                    ),
+                rows =
+                    listOf(
+                        listOf(
+                            ResultCell.text("Services"),
+                            ResultCell.float(100.0),
+                        ),
+                    ),
+                rowCount = 1,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val sumAmount =
+            VisualizationMeasure("sum_amount", MeasureFn.Sum, "t0__amount", "Sum amount")
+        val countRows = VisualizationMeasure.countRows("count_rows")
+        val spec =
+            QuerySpec(
+                tables = emptyList(),
+                columns = emptyList(),
+                joins = emptyList(),
+                filters = FilterGroup.empty(),
+                limit = 100,
+            )
+        val connection =
+            ConnectionDef(
+                id = "c1",
+                name = "Local",
+                dialect = Dialect.Postgres,
+                host = "localhost",
+                port = 5432,
+                database = "app",
+                username = "reader",
+            )
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        try {
+            val viewModel =
+                ExploreViewModel(
+                    createExploreSession(connection, spec, sample),
+                    initialWorkspace =
+                        ExploreWorkspaceState(
+                            pivot = ExploreConfig(),
+                            activeMode = ExploreMode.Visualization,
+                            visualization =
+                                VisualizationConfig(
+                                    chartType = ChartType.Bar,
+                                    x = VisualizationField("t0__category", "category"),
+                                    values = listOf(sumAmount, countRows),
+                                ),
+                        ),
+                )
+
+            withComposeScene(
+                width = 1120,
+                height = 760,
+                content = {
+                    SafeDbTheme(isDark = false) {
+                        ExploreWindowContent(
+                            viewModel = viewModel,
+                            currentSpec = spec,
+                            onClose = {},
+                            recipesViewModel = RecipesViewModel(FakeSafeDbServiceSupport(), scope),
+                        )
+                    }
+                },
+            ) { scene ->
+                var frameNanos = 0L
+                fun advance() {
+                    repeat(4) {
+                        frameNanos += 100_000_000L
+                        scene.render(frameNanos)
+                    }
+                }
+
+                // Bar([Sum amount, Count rows], x=category) -> KPI stashes X and both measures.
+                scene.click(scene.requireExact("KPI").boundsInRoot.center)
+                advance()
+                assertNull(viewModel.visualizationConfig.x)
+                assertEquals(
+                    listOf("sum_amount"),
+                    viewModel.visualizationConfig.values.map { it.alias },
+                )
+                assertNotNull(
+                    scene.findContaining("Removed incompatible X, extra value assignments."),
+                )
+
+                // Hiding and re-showing the Visualization sidebar preserves ViewModel switch memory
+                // and transition notice.
+                scene.click(scene.requireExact("Hide Visualization sidebar").boundsInRoot.center)
+                advance()
+                scene.click(scene.requireExact("Show Visualization sidebar").boundsInRoot.center)
+                advance()
+                assertNotNull(
+                    scene.findContaining("Removed incompatible X, extra value assignments."),
+                )
+
+                scene.click(scene.requireExact("Bar").boundsInRoot.center)
+                advance()
+                assertEquals("t0__category", viewModel.visualizationConfig.x?.column)
+                assertEquals(
+                    listOf("sum_amount", "count_rows"),
+                    viewModel.visualizationConfig.values.map { it.alias },
+                )
+
+                // Re-stash on KPI, then replace visualization via applyRecipe on the same sample.
+                scene.click(scene.requireExact("KPI").boundsInRoot.center)
+                advance()
+                assertNotNull(
+                    scene.findContaining("Removed incompatible X, extra value assignments."),
+                )
+
+                viewModel.applyRecipe(
+                    ExploreRecipe(
+                        id = "viz-replace",
+                        name = "KPI Recipe",
+                        createdAt = "1",
+                        updatedAt = "1",
+                        defaultMode = ExploreMode.Visualization,
+                        visualization =
+                            VisualizationConfig(
+                                chartType = ChartType.Kpi,
+                                values = listOf(sumAmount),
+                                title = "Recipe KPI",
+                            ),
+                    ),
+                )
+                advance()
+                assertNull(
+                    scene.findContaining("Removed incompatible X, extra value assignments."),
+                )
+
+                scene.click(scene.requireExact("Bar").boundsInRoot.center)
+                advance()
+                assertNull(viewModel.visualizationConfig.x)
+                assertEquals(
+                    listOf("sum_amount"),
+                    viewModel.visualizationConfig.values.map { it.alias },
+                )
             }
         } finally {
             scope.cancel()

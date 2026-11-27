@@ -5,10 +5,13 @@ import java.math.MathContext
 
 data class FormulaResult(val value: BigDecimal?, val error: String? = null)
 
-fun evaluatePivotFormula(formula: String, values: Map<String, BigDecimal?>): FormulaResult =
-    runCatching {
-        PivotFormulaParser(formula, values).parse()
-    }
+fun evaluatePivotFormula(
+    formula: String,
+    values: Map<String, BigDecimal?>,
+    referenceLabel: String = "measure",
+): FormulaResult = runCatching {
+    PivotFormulaParser(formula, values, referenceLabel).parse()
+}
     .fold(
         onSuccess = { FormulaResult(it) },
         onFailure = { FormulaResult(null, it.message ?: "Invalid formula") },
@@ -17,6 +20,7 @@ fun evaluatePivotFormula(formula: String, values: Map<String, BigDecimal?>): For
 private class PivotFormulaParser(
     private val source: String,
     private val values: Map<String, BigDecimal?>,
+    private val referenceLabel: String,
 ) {
     private var offset = 0
 
@@ -79,11 +83,13 @@ private class PivotFormulaParser(
     private fun parseReference(): BigDecimal? {
         consume('[')
         val end = source.indexOf(']', startIndex = offset)
-        require(end >= 0) { "Missing ']' in measure reference" }
+        require(end >= 0) { "Missing ']' in $referenceLabel reference" }
         val alias = source.substring(offset, end).trim()
-        require(alias.isNotEmpty()) { "Measure reference cannot be empty" }
+        require(alias.isNotEmpty()) {
+            "${referenceLabel.replaceFirstChar(Char::uppercase)} reference cannot be empty"
+        }
         offset = end + 1
-        require(values.containsKey(alias)) { "Unknown measure '$alias'" }
+        require(values.containsKey(alias)) { "Unknown $referenceLabel '$alias'" }
         return values[alias]
     }
 
@@ -102,7 +108,7 @@ private class PivotFormulaParser(
             }
         }
         require(offset > start) {
-            "Expected a number, measure reference, or '(' at position ${offset + 1}"
+            "Expected a number, $referenceLabel reference, or '(' at position ${offset + 1}"
         }
         return source.substring(start, offset).toBigDecimalOrNull()
             ?: throw IllegalArgumentException("Invalid number at position ${start + 1}")

@@ -2,6 +2,7 @@ package com.safedb.ui
 
 import androidx.compose.runtime.Composable
 import com.safedb.model.QueryRiskGate
+import com.safedb.model.TableRef
 import com.safedb.query.QueryConfirmationReasonCode
 import com.safedb.query.QueryConfirmationRequirement
 import com.safedb.query.QueryPlanStatus
@@ -32,17 +33,53 @@ internal fun riskGateIndicatorText(gate: QueryRiskGate): String =
         else -> "Risk gate: ${gate.name} · blocks ${blockingBand(gate)?.label} and above"
     }
 
+internal data class BuilderValidationNotice(val text: String, val includePrefix: Boolean = true)
+
+private val ALIAS_QUALIFIER_REGEX = Regex("'([^'.]+)\\.")
+
+internal fun formatBuilderValidationError(
+    rawError: String,
+    tables: List<TableRef>,
+    incompleteFilters: Boolean,
+): BuilderValidationNotice {
+    if (incompleteFilters && rawError.startsWith("'' is not a valid ")) {
+        return BuilderValidationNotice("Enter filter value to run", includePrefix = false)
+    }
+    val nameCounts = tables.groupingBy { it.name }.eachCount()
+    val uniqueNamesByAlias =
+        tables
+            .mapNotNull { table ->
+                if (nameCounts[table.name] == 1) table.alias to table.name else null
+            }
+            .toMap()
+    val formatted =
+        if (uniqueNamesByAlias.isEmpty()) {
+            rawError
+        } else {
+            ALIAS_QUALIFIER_REGEX.replace(rawError) { match ->
+                val name = uniqueNamesByAlias[match.groupValues[1]]
+                if (name != null) "'$name." else match.value
+            }
+        }
+    return BuilderValidationNotice(formatted)
+}
+
 internal fun queryRiskIndicatorText(
     preliminary: QueryRiskAssessment?,
     evaluation: QueryRiskEvaluation?,
     running: Boolean,
     gate: QueryRiskGate,
-    validationError: String? = null,
+    validationNotice: BuilderValidationNotice? = null,
     runAvailable: Boolean = true,
 ): String {
     val runEnabledLabel = if (runAvailable) "Run enabled" else "Run unavailable"
     return when {
-        validationError != null -> "Query validation: $validationError"
+        validationNotice != null ->
+            if (validationNotice.includePrefix) {
+                "Query validation: ${validationNotice.text}"
+            } else {
+                validationNotice.text
+            }
         running && gate == QueryRiskGate.Disabled -> "Running query · Run unavailable"
         running -> "Assessing query risk · Run unavailable"
         evaluation?.decision?.state == RiskGateState.ConfirmationRequired ->

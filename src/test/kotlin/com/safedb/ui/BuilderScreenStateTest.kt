@@ -11,12 +11,15 @@ import com.safedb.canvas.ColumnJoinPort
 import com.safedb.canvas.JoinPortSide
 import com.safedb.canvas.JoinPortVisibility
 import com.safedb.canvas.RoutedJoinEdge
+import com.safedb.model.FilterLiteral
 import com.safedb.model.GroupSpec
 import com.safedb.model.JoinSpec
+import com.safedb.model.LiteralKind
 import com.safedb.model.QueryRiskGate
 import com.safedb.model.SortDirection
 import com.safedb.model.SortSpec
 import com.safedb.model.TableInfo
+import com.safedb.model.TableRef
 import com.safedb.query.QueryConfirmationCondition
 import com.safedb.query.QueryConfirmationReasonCode
 import com.safedb.query.QueryConfirmationRequirement
@@ -269,6 +272,10 @@ class BuilderScreenStateTest {
         assertEquals(192.dp, builderFilterPanelMaxHeight(400.dp))
         assertEquals(BuilderFilterPanelMinHeight, builderFilterPanelMaxHeight(200.dp))
         assertEquals(BuilderFilterPanelMinHeight, builderFilterPanelMaxHeight(0.dp))
+        assertEquals(64.dp, builderFilterPanelMinHeight(359.dp))
+        assertEquals(BuilderFilterPanelMinHeight, builderFilterPanelMinHeight(360.dp))
+        assertEquals(288f, builderCanvasReservePx(hasFilters = true))
+        assertEquals(180f, builderCanvasReservePx(hasFilters = false))
     }
 
     @Test
@@ -400,7 +407,17 @@ class BuilderScreenStateTest {
                 null,
                 false,
                 QueryRiskGate.Standard,
-                "Choose at least one table",
+                BuilderValidationNotice("Choose at least one table"),
+            ),
+        )
+        assertEquals(
+            "Enter filter value to run",
+            queryRiskIndicatorText(
+                null,
+                null,
+                false,
+                QueryRiskGate.Standard,
+                BuilderValidationNotice("Enter filter value to run", includePrefix = false),
             ),
         )
     }
@@ -549,5 +566,162 @@ class BuilderScreenStateTest {
         assertNull(displayedPreliminaryAssessment(high, true, QueryRiskGate.Standard))
         assertEquals(high, displayedPreliminaryAssessment(high, false, QueryRiskGate.Standard))
         assertEquals(low, displayedPreliminaryAssessment(low, true, QueryRiskGate.Standard))
+    }
+
+    @Test
+    fun formatBuilderValidationErrorHidesEmptyFilterAliasLeakAndRewritesAliasesSafely() {
+        val tables = listOf(TableRef("public", "scan_events", "t0"))
+        assertEquals(
+            BuilderValidationNotice("Enter filter value to run", includePrefix = false),
+            formatBuilderValidationError(
+                "'' is not a valid decimal for 't0.amount'",
+                tables,
+                incompleteFilters = true,
+            ),
+        )
+        assertEquals(
+            BuilderValidationNotice("'abc' is not a valid decimal for 'scan_events.amount'"),
+            formatBuilderValidationError(
+                "'abc' is not a valid decimal for 't0.amount'",
+                tables,
+                incompleteFilters = false,
+            ),
+        )
+
+        // Single-pass rewrite avoids cascading t0 -> t1 -> orders and handles '$' in table names.
+        val collidingTables =
+            listOf(
+                TableRef("public", "t1", "t0"),
+                TableRef("public", "orders", "t1"),
+            )
+        assertEquals(
+            BuilderValidationNotice("'abc' is not a valid decimal for 't1.amount'"),
+            formatBuilderValidationError(
+                "'abc' is not a valid decimal for 't0.amount'",
+                collidingTables,
+                incompleteFilters = false,
+            ),
+        )
+
+        val dollarTables = listOf(TableRef("public", "price\$usd", "t0"))
+        assertEquals(
+            BuilderValidationNotice("'abc' is not a valid decimal for 'price\$usd.amount'"),
+            formatBuilderValidationError(
+                "'abc' is not a valid decimal for 't0.amount'",
+                dollarTables,
+                incompleteFilters = false,
+            ),
+        )
+    }
+
+    @Test
+    fun applyInListInputSplitsCommasForNumericButPreservesForText() {
+        val numeric = listOf(FilterLiteral(LiteralKind.Decimal, ""))
+        val split = applyInListInput(numeric, 0, "0.01, 0.02, 0.03", splitOnComma = true)
+        assertEquals(listOf("0.01", "0.02", "0.03"), split.map { it.text })
+
+        val trailingComma = applyInListInput(numeric, 0, "0.01,", splitOnComma = true)
+        assertEquals(listOf("0.01", ""), trailingComma.map { it.text })
+
+        val bareComma = applyInListInput(numeric, 0, ",", splitOnComma = true)
+        assertEquals(listOf(""), bareComma.map { it.text })
+
+        val capped = applyInListInput(numeric, 0, "0.01,", splitOnComma = true, maxSize = 1)
+        assertEquals(listOf("0.01"), capped.map { it.text })
+
+        val text = listOf(FilterLiteral(LiteralKind.Text, ""))
+        val kept = applyInListInput(text, 0, "a, b", splitOnComma = false)
+        assertEquals(listOf("a, b"), kept.map { it.text })
+    }
+
+    @Test
+    fun applyInListEditForwardsFastBurstKeystrokesBeforeFocusTransfers() {
+        var literals = listOf(FilterLiteral(LiteralKind.Int, ""))
+        var pending: PendingInListSplit? = null
+        var fieldTextAt0 = ""
+
+        fun typeCharAtIndex0(ch: Char) {
+            val result =
+                applyInListEdit(
+                    literals = literals,
+                    index = 0,
+                    text = fieldTextAt0 + ch,
+                    splitOnComma = true,
+                    pendingSplit = pending,
+                )
+            literals = result.literals
+            pending = result.pendingSplit
+            fieldTextAt0 = result.literals[0].text
+        }
+
+        // Simulate "1,2,3,4" typed into chip 0 before LaunchedEffect moves focus.
+        typeCharAtIndex0('1')
+        typeCharAtIndex0(',')
+        assertEquals(listOf("1", ""), literals.map { it.text })
+        assertEquals(PendingInListSplit(0, "1", 1), pending)
+
+        typeCharAtIndex0('2')
+        typeCharAtIndex0(',')
+        assertEquals(listOf("1", "2", ""), literals.map { it.text })
+        assertEquals(PendingInListSplit(0, "1", 2), pending)
+
+        typeCharAtIndex0('3')
+        typeCharAtIndex0(',')
+        assertEquals(listOf("1", "2", "3", ""), literals.map { it.text })
+        assertEquals(PendingInListSplit(0, "1", 3), pending)
+
+        typeCharAtIndex0('4')
+        assertEquals(listOf("1", "2", "3", "4"), literals.map { it.text })
+        assertEquals(3, pending?.targetIndex)
+
+        // Prefix insertion (e.g. cursor reset to 0) is also forwarded cleanly.
+        val prefixLiterals = listOf(FilterLiteral(LiteralKind.Int, "2"))
+        val split =
+            applyInListEdit(prefixLiterals, 0, "2,", splitOnComma = true, pendingSplit = null)
+        val afterPrefix =
+            applyInListEdit(
+                split.literals,
+                0,
+                "32",
+                splitOnComma = true,
+                pendingSplit = split.pendingSplit,
+            )
+        assertEquals(listOf("2", "3"), afterPrefix.literals.map { it.text })
+
+        // Backspace on source clears pendingSplit instead of forwarding.
+        val backspace =
+            applyInListEdit(
+                literals,
+                0,
+                "",
+                splitOnComma = true,
+                pendingSplit = pending,
+            )
+        assertEquals(listOf("", "2", "3", "4"), backspace.literals.map { it.text })
+        assertEquals(null, backspace.pendingSplit)
+
+        // Text IN never sets pendingSplit, and capped numeric IN does not set pendingSplit.
+        val textRes =
+            applyInListEdit(
+                listOf(FilterLiteral(LiteralKind.Text, "")),
+                0,
+                "a, b",
+                splitOnComma = false,
+                pendingSplit = null,
+            )
+        assertEquals(listOf("a, b"), textRes.literals.map { it.text })
+        assertEquals(null, textRes.pendingSplit)
+
+        val capped =
+            applyInListEdit(
+                listOf(FilterLiteral(LiteralKind.Int, "")),
+                0,
+                "1,",
+                splitOnComma = true,
+                pendingSplit = null,
+                maxSize = 1,
+            )
+        assertEquals(listOf("1"), capped.literals.map { it.text })
+        assertEquals(null, capped.pendingSplit)
     }
 }

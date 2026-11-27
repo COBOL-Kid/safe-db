@@ -2,9 +2,103 @@ package com.safedb.explore
 
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
+import com.safedb.model.ResultColumn
 import com.safedb.model.TableRef
+import com.safedb.model.classifyColumn
+import com.safedb.model.isNumeric
 import java.math.BigDecimal
 import java.math.MathContext
+
+fun precedingWorksheetCalculations(
+    calculations: List<WorksheetCalculation>,
+    editingId: String?,
+): List<WorksheetCalculation> {
+    val editingIndex = editingId?.let { id -> calculations.indexOfFirst { it.id == id } } ?: -1
+    return if (editingIndex >= 0) calculations.take(editingIndex) else calculations
+}
+
+private fun uniqueSampleDisplayLabels(
+    sampleColumns: List<ResultColumn>,
+    labels: Map<String, String>,
+    tables: List<TableRef> = emptyList(),
+): Map<String, String> {
+    val rawNames = sampleColumns.mapTo(mutableSetOf()) { it.name }
+    val displays = sampleColumns.map {
+        it.name to (labels[it.name] ?: displayColumnLabel(it.name, tables))
+    }
+    val labelCounts = displays.groupingBy { it.second }.eachCount()
+    return buildMap {
+        displays.forEach { (rawName, display) ->
+            if (labelCounts[display] == 1 && (display == rawName || display !in rawNames)) {
+                put(rawName, display)
+            }
+        }
+    }
+}
+
+private fun uniqueCalculationLabels(
+    calculations: List<WorksheetCalculation>,
+    reservedNames: Set<String>,
+): Map<String, String> {
+    val labelCounts = calculations.groupingBy { it.label }.eachCount()
+    val ids = calculations.mapTo(mutableSetOf()) { it.id }
+    return buildMap {
+        calculations.forEach { calc ->
+            if (
+                labelCounts[calc.label] == 1 && calc.label !in reservedNames && calc.label !in ids
+            ) {
+                put(calc.id, calc.label)
+            }
+        }
+    }
+}
+
+fun worksheetFormulaTokens(
+    sampleColumns: List<ResultColumn>,
+    priorCalculations: List<WorksheetCalculation>,
+    tables: List<TableRef> = emptyList(),
+): List<Pair<String, String>> {
+    val labels = displayColumnLabels(sampleColumns, tables)
+    val uniqueSampleLabels = uniqueSampleDisplayLabels(sampleColumns, labels, tables)
+    val columnTokens = sampleColumns.map { col ->
+        val display = labels[col.name] ?: displayColumnLabel(col.name, tables)
+        (uniqueSampleLabels[col.name] ?: col.name) to display
+    }
+    val reservedNames = sampleColumns.mapTo(mutableSetOf()) { it.name } + uniqueSampleLabels.values
+    val uniqueCalcLabels = uniqueCalculationLabels(priorCalculations, reservedNames)
+    val calcTokens = priorCalculations.map { calc ->
+        (uniqueCalcLabels[calc.id] ?: calc.id) to calc.label
+    }
+    return columnTokens + calcTokens
+}
+
+fun worksheetFormulaValues(
+    sampleColumns: List<ResultColumn>,
+    sourceValue: (String) -> BigDecimal?,
+    priorCalculations: List<WorksheetCalculation>,
+    calculationValue: (String) -> BigDecimal?,
+    tables: List<TableRef> = emptyList(),
+): Map<String, BigDecimal?> = buildMap {
+    val labels = displayColumnLabels(sampleColumns, tables)
+    val uniqueSampleLabels = uniqueSampleDisplayLabels(sampleColumns, labels, tables)
+    sampleColumns.forEach { col -> put(col.name, sourceValue(col.name)) }
+    uniqueSampleLabels.forEach { (rawName, display) ->
+        if (display !in this) {
+            put(display, this[rawName])
+        }
+    }
+    val reservedNames = sampleColumns.mapTo(mutableSetOf()) { it.name } + uniqueSampleLabels.values
+    val uniqueCalcLabels = uniqueCalculationLabels(priorCalculations, reservedNames)
+    val resolvedValues = priorCalculations.associate { it.id to calculationValue(it.id) }
+    priorCalculations.forEach { calc -> put(calc.id, resolvedValues[calc.id]) }
+    priorCalculations.forEach { calc ->
+        uniqueCalcLabels[calc.id]?.let { label ->
+            if (label !in this) {
+                put(label, resolvedValues[calc.id])
+            }
+        }
+    }
+}
 
 fun applyWorksheet(
     sample: QueryResult,
@@ -15,9 +109,17 @@ fun applyWorksheet(
 private class WorksheetEngine(
     private val sample: QueryResult,
     private val config: WorksheetConfig,
-    private val tables: List<TableRef>,
+    tables: List<TableRef>,
 ) {
     private val sampleIndex = SampleIndex(sample)
+    private val numericColumns =
+        sample.columns.associate { it.name to classifyColumn(it.dataType).isNumeric() }
+    private val rowFormulas =
+        config.calculations.filterIsInstance<WorksheetCalculation.RowFormula>()
+    private val columnLabels = displayColumnLabels(sample.columns, tables)
+    private val uniqueSampleLabels = uniqueSampleDisplayLabels(sample.columns, columnLabels, tables)
+    private val reservedRowSampleNames =
+        sample.columns.mapTo(mutableSetOf()) { it.name } + uniqueSampleLabels.values
     private val warnings = linkedSetOf<String>()
     private var errorCount = 0
 
@@ -27,7 +129,9 @@ private class WorksheetEngine(
             sample.rows
                 .mapIndexed { index, row -> WorksheetRecord(index, row) }
                 .filter(::passesFilters)
-        records.forEach(::applyRowFormulas)
+        if (rowFormulas.isNotEmpty()) {
+            records.forEach(::applyRowFormulas)
+        }
         records = records.sortedWith(recordComparator())
 
         val entries = mutableListOf<MutableWorksheetEntry>()
@@ -57,13 +161,12 @@ private class WorksheetEngine(
         }
         applyWindowCalculations(entries)
 
-        val labels = displayColumnLabels(sample.columns, tables)
         val columns = buildList {
             sample.columns.forEach { column ->
                 add(
                     WorksheetDisplayColumn(
                         id = "column:${column.name}",
-                        label = labels[column.name] ?: displayColumnLabel(column.name),
+                        label = columnLabels[column.name] ?: displayColumnLabel(column.name),
                         dataType = column.dataType,
                         sourceColumn = column.name,
                     ),
@@ -126,15 +229,34 @@ private class WorksheetEngine(
     }
 
     private fun validateCalculationDependencies() {
+        val rowCalcById = rowFormulas.associateBy { it.id }
+        val rowCalcIdByLabel =
+            uniqueCalculationLabels(rowFormulas, reservedRowSampleNames).entries.associate {
+                (id, label) ->
+                label to id
+            }
+        val groupCalcs =
+            config.calculations.filter {
+                it is WorksheetCalculation.Aggregate || it is WorksheetCalculation.GroupFormula
+            }
+        val groupCalcById = groupCalcs.associateBy { it.id }
+        val groupCalcIdByLabel =
+            uniqueCalculationLabels(groupCalcs, emptySet()).entries.associate { (id, label) ->
+                label to id
+            }
         val dependencies =
             config.calculations.associate { calculation ->
                 val ids =
                     when (calculation) {
                         is WorksheetCalculation.GroupFormula ->
-                            formulaReferences(calculation.formula)
+                            formulaReferences(calculation.formula).mapNotNullTo(mutableSetOf()) {
+                                ref ->
+                                groupCalcById[ref]?.id ?: groupCalcIdByLabel[ref]
+                            }
                         is WorksheetCalculation.RowFormula ->
-                            formulaReferences(calculation.formula).filterTo(mutableSetOf()) { ref ->
-                                config.calculations.any { it.id == ref }
+                            formulaReferences(calculation.formula).mapNotNullTo(mutableSetOf()) {
+                                ref ->
+                                rowCalcById[ref]?.id ?: rowCalcIdByLabel[ref]
                             }
                         is WorksheetCalculation.Window ->
                             setOfNotNull((calculation.source as? WorksheetValueRef.Calculation)?.id)
@@ -160,51 +282,85 @@ private class WorksheetEngine(
         config.filters.all { filter ->
             val cell = record.source(filter.column)
             val text = resultCellText(cell)
-            val comparison = compareTextOrNumber(text, filter.value)
+            val numericText = numericColumns[filter.column] == true
+            val numeric = cell.usesNumericComparison(numericText)
+            fun compareNumber(expected: String): Int? {
+                val number = ResultNumber.fromCell(cell, numericText) ?: return null
+                return ResultNumber.parse(expected)?.let(number::compareTo)
+            }
+            fun equalsExpected(): Boolean =
+                if (numeric) compareNumber(filter.value) == 0
+                else text.equals(filter.value, ignoreCase = true)
+            fun ordered(expected: String, matches: (Int) -> Boolean): Boolean =
+                (if (numeric) compareNumber(expected) else compareTextOrNumber(text, expected))
+                    ?.let(matches) == true
             when (filter.op) {
                 WorksheetFilterOp.Members -> pivotCellMatches(cell, filter.includedKeys)
-                WorksheetFilterOp.Equals -> filterEquals(cell, text, filter.value)
-                WorksheetFilterOp.NotEquals -> !filterEquals(cell, text, filter.value)
+                WorksheetFilterOp.Equals -> equalsExpected()
+                WorksheetFilterOp.NotEquals -> !equalsExpected()
                 WorksheetFilterOp.Contains ->
                     matchesLabelOp(text, LabelFilterOp.Contains, filter.value)
                 WorksheetFilterOp.StartsWith ->
                     matchesLabelOp(text, LabelFilterOp.StartsWith, filter.value)
                 WorksheetFilterOp.EndsWith ->
                     matchesLabelOp(text, LabelFilterOp.EndsWith, filter.value)
-                WorksheetFilterOp.GreaterThan -> comparison > 0
-                WorksheetFilterOp.GreaterThanOrEqual -> comparison >= 0
-                WorksheetFilterOp.LessThan -> comparison < 0
-                WorksheetFilterOp.LessThanOrEqual -> comparison <= 0
+                WorksheetFilterOp.GreaterThan -> ordered(filter.value) { it > 0 }
+                WorksheetFilterOp.GreaterThanOrEqual -> ordered(filter.value) { it >= 0 }
+                WorksheetFilterOp.LessThan -> ordered(filter.value) { it < 0 }
+                WorksheetFilterOp.LessThanOrEqual -> ordered(filter.value) { it <= 0 }
                 WorksheetFilterOp.Between ->
-                    comparison >= 0 && compareTextOrNumber(text, filter.secondValue.orEmpty()) <= 0
+                    ordered(filter.value) { it >= 0 } &&
+                        ordered(filter.secondValue.orEmpty()) { it <= 0 }
                 WorksheetFilterOp.IsNull -> cell is ResultCell.Null
                 WorksheetFilterOp.IsNotNull -> cell !is ResultCell.Null
             }
         }
 
     private fun applyRowFormulas(record: WorksheetRecord) {
-        config.calculations.filterIsInstance<WorksheetCalculation.RowFormula>().forEach {
-            calculation ->
-            val values = buildMap {
-                sample.columns.forEach { column ->
-                    put(column.name, resultCellDecimal(record.source(column.name)))
-                }
-                record.calculations.forEach { (id, cell) -> put(id, resultCellDecimal(cell.value)) }
+        val baseValues = buildMap {
+            sample.columns.forEach { col ->
+                put(col.name, resultCellDecimal(record.source(col.name)))
             }
-            val result = evaluatePivotFormula(calculation.formula, values)
-            record.calculations[calculation.id] =
+            uniqueSampleLabels.forEach { (rawName, display) ->
+                if (display !in this) {
+                    put(display, this[rawName])
+                }
+            }
+        }
+        val priorCalculations = mutableListOf<WorksheetCalculation>()
+        val priorValues = linkedMapOf<String, BigDecimal?>()
+        rowFormulas.forEach { calculation ->
+            val values =
+                if (priorCalculations.isEmpty()) {
+                    baseValues
+                } else {
+                    val uniqueCalcLabels =
+                        uniqueCalculationLabels(priorCalculations, reservedRowSampleNames)
+                    buildMap(baseValues.size + priorCalculations.size * 2) {
+                        putAll(baseValues)
+                        putAll(priorValues)
+                        uniqueCalcLabels.forEach { (id, label) -> put(label, priorValues[id]) }
+                    }
+                }
+            val result = evaluatePivotFormula(calculation.formula, values, referenceLabel = "field")
+            val cell =
                 if (result.error != null) {
                     errorCount++
                     WorksheetCell(error = result.error)
                 } else {
                     WorksheetCell(result.value.toResultCell())
                 }
+            record.calculations[calculation.id] = cell
+            priorCalculations += calculation
+            priorValues[calculation.id] = resultCellDecimal(cell.value)
         }
     }
 
     private fun recordComparator(): Comparator<WorksheetRecord> = Comparator { left, right ->
         for ((target, dir) in config.sorts) {
-            val compared = compareCells(left.value(target), right.value(target))
+            val numericText =
+                target is WorksheetValueRef.Column && numericColumns[target.column] == true
+            val compared = compareCells(left.value(target), right.value(target), numericText)
             if (compared != 0) return@Comparator if (dir == SortDir.Desc) -compared else compared
         }
         left.index.compareTo(right.index)
@@ -234,15 +390,22 @@ private class WorksheetEngine(
                     for ((target, dir) in config.sorts) {
                         val compared =
                             when (target) {
-                                is WorksheetValueRef.Column ->
+                                is WorksheetValueRef.Column -> {
+                                    val numericText = numericColumns[target.column] == true
                                     if (target.column == group.column) {
-                                        compareCells(leftKey.sortValue, rightKey.sortValue)
+                                        compareCells(
+                                            leftKey.sortValue,
+                                            rightKey.sortValue,
+                                            numericText,
+                                        )
                                     } else {
                                         compareCells(
                                             leftRecords.firstOrNull()?.source(target.column),
                                             rightRecords.firstOrNull()?.source(target.column),
+                                            numericText,
                                         )
                                     }
+                                }
                                 is WorksheetValueRef.Calculation ->
                                     compareCells(
                                         groupCalculationValue(leftRecords, group.column, target.id),
@@ -319,6 +482,7 @@ private class WorksheetEngine(
             .also { entry -> entry.calculations.putAll(record.calculations) }
 
     private fun applyGroupCalculations(entry: MutableWorksheetEntry) {
+        val priorGroupCalculations = mutableListOf<WorksheetCalculation>()
         config.calculations.forEach { calculation ->
             when (calculation) {
                 is WorksheetCalculation.Aggregate -> {
@@ -329,6 +493,7 @@ private class WorksheetEngine(
                     ) {
                         entry.calculations[calculation.id] =
                             WorksheetCell(aggregate(entry.records, calculation))
+                        priorGroupCalculations += calculation
                     }
                 }
                 is WorksheetCalculation.GroupFormula -> {
@@ -338,8 +503,20 @@ private class WorksheetEngine(
                             entry.kind == WorksheetRowKind.GrandTotal
                     ) {
                         val values =
-                            entry.calculations.mapValues { resultCellDecimal(it.value.value) }
-                        val result = evaluatePivotFormula(calculation.formula, values)
+                            worksheetFormulaValues(
+                                sampleColumns = emptyList(),
+                                sourceValue = { null },
+                                priorCalculations = priorGroupCalculations,
+                                calculationValue = {
+                                    resultCellDecimal(entry.calculations[it]?.value)
+                                },
+                            )
+                        val result =
+                            evaluatePivotFormula(
+                                calculation.formula,
+                                values,
+                                referenceLabel = "field",
+                            )
                         entry.calculations[calculation.id] =
                             if (result.error != null) {
                                 errorCount++
@@ -347,6 +524,7 @@ private class WorksheetEngine(
                             } else {
                                 WorksheetCell(result.value.toResultCell())
                             }
+                        priorGroupCalculations += calculation
                     }
                 }
                 else -> Unit
@@ -384,10 +562,19 @@ private class WorksheetEngine(
                         .divide(values.size.toBigDecimal(), MathContext.DECIMAL128)
                         .toResultCell()
             }
-            WorksheetAggregateFn.Minimum ->
-                concrete.minWithOrNull(::compareCells) ?: ResultCell.Null
-            WorksheetAggregateFn.Maximum ->
-                concrete.maxWithOrNull(::compareCells) ?: ResultCell.Null
+            WorksheetAggregateFn.Minimum,
+            WorksheetAggregateFn.Maximum -> {
+                val numericText = numericColumns[calculation.sourceColumn] == true
+                val usable = concrete.filter { cell ->
+                    !cell.usesNumericComparison(numericText) ||
+                        ResultNumber.fromCell(cell, numericText) != null
+                }
+                val comparator =
+                    Comparator<ResultCell> { left, right -> compareCells(left, right, numericText) }
+                (if (calculation.fn == WorksheetAggregateFn.Minimum)
+                    usable.minWithOrNull(comparator)
+                else usable.maxWithOrNull(comparator)) ?: ResultCell.Null
+            }
         }
     }
 
@@ -570,29 +757,38 @@ private fun BigDecimal?.toResultCell(): ResultCell =
 
 private fun List<BigDecimal>.sumDecimals(): BigDecimal = fold(BigDecimal.ZERO, BigDecimal::add)
 
-private fun compareCells(left: ResultCell?, right: ResultCell?): Int {
-    if (left == null || left is ResultCell.Null)
-        return if (right == null || right is ResultCell.Null) 0 else -1
-    if (right == null || right is ResultCell.Null) return 1
-    val leftNumber = resultCellDecimal(left)
-    val rightNumber = resultCellDecimal(right)
-    return if (leftNumber != null && rightNumber != null) leftNumber.compareTo(rightNumber)
-    else resultCellText(left).compareTo(resultCellText(right), ignoreCase = true)
+private fun ResultCell?.usesNumericComparison(numericText: Boolean): Boolean =
+    this is ResultCell.IntegerCell ||
+        this is ResultCell.FloatCell ||
+        (numericText && this is ResultCell.TextCell)
+
+private fun compareCells(
+    left: ResultCell?,
+    right: ResultCell?,
+    numericText: Boolean = false,
+): Int {
+    val leftNumber = ResultNumber.fromCell(left, numericText)
+    val rightNumber = ResultNumber.fromCell(right, numericText)
+    val leftMissing =
+        left == null ||
+            left is ResultCell.Null ||
+            (left.usesNumericComparison(numericText) && leftNumber == null)
+    val rightMissing =
+        right == null ||
+            right is ResultCell.Null ||
+            (right.usesNumericComparison(numericText) && rightNumber == null)
+    if (leftMissing || rightMissing) return rightMissing.compareTo(leftMissing)
+    // Keep numeric and text keys in separate ranges even if a column mixes representations.
+    if (leftNumber != null && rightNumber != null) return leftNumber.compareTo(rightNumber)
+    if (leftNumber != null) return -1
+    if (rightNumber != null) return 1
+    return resultCellText(left).compareTo(resultCellText(right), ignoreCase = true)
 }
 
+// Ordered text filters keep their legacy numeric comparison for pairs of decimal-looking strings.
 private fun compareTextOrNumber(left: String, right: String): Int {
     val leftNumber = left.toBigDecimalOrNull()
     val rightNumber = right.toBigDecimalOrNull()
     return if (leftNumber != null && rightNumber != null) leftNumber.compareTo(rightNumber)
     else left.compareTo(right, ignoreCase = true)
-}
-
-private fun filterEquals(cell: ResultCell, text: String, expected: String): Boolean {
-    val numeric = cell is ResultCell.IntegerCell || cell is ResultCell.FloatCell
-    if (numeric) {
-        val left = resultCellDecimal(cell)
-        val right = expected.toBigDecimalOrNull()
-        if (left != null && right != null) return left.compareTo(right) == 0
-    }
-    return text.equals(expected, ignoreCase = true)
 }

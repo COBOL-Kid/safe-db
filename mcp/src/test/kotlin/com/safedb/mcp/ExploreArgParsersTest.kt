@@ -2,6 +2,7 @@ package com.safedb.mcp
 
 import com.safedb.explore.DateGroupUnit
 import com.safedb.explore.DimensionSortMode
+import com.safedb.explore.ExploreConfig
 import com.safedb.explore.ExploreSort
 import com.safedb.explore.ExploreSortTarget
 import com.safedb.explore.LabelFilterOp
@@ -129,6 +130,21 @@ class ExploreArgParsersTest {
                 .single()
 
         assertEquals(PivotGrouping.NumberBin(size = "25", start = "0"), dimension.grouping)
+
+        val trimmed =
+            assertIs<Arg.Ok<List<PivotDimension>>>(
+                    parseDimensions(
+                        objects(
+                            """{"column":"amount","grouping":{"bin_size":" 25 ","bin_start":" 0 "}}""",
+                        ),
+                        columns,
+                        "row_dimensions",
+                    ),
+                )
+                .value
+                .single()
+
+        assertEquals(PivotGrouping.NumberBin(size = "25", start = "0"), trimmed.grouping)
     }
 
     @Test
@@ -259,6 +275,46 @@ class ExploreArgParsersTest {
         assertEquals(ValueFilterOp.Between, value.op)
         assertEquals("count", value.measureAlias)
         assertEquals("10", value.secondValue)
+    }
+
+    @Test
+    fun validatePivotConfigRequiresFiniteDecimalBoundsAndTrimsForExecution() {
+        val filter =
+            PivotFilter.Value(
+                id = "filter-0",
+                column = "region",
+                label = "Region",
+                measureAlias = "count",
+                op = ValueFilterOp.Between,
+                value = " +1.00000000000000000001 ",
+                secondValue = " 1e309 ",
+            )
+        val config = ExploreConfig(measures = emptyList(), filters = listOf(filter))
+        val validated =
+            assertIs<Arg.Ok<ExploreConfig>>(
+                validatePivotConfig(config, columns, ERROR_INVALID_ARGUMENTS),
+            )
+        assertEquals(
+            listOf(filter.copy(value = "+1.00000000000000000001", secondValue = "1e309")),
+            validated.value.filters,
+        )
+        for (bad in listOf("  ", "10O", "NaN", "-Infinity", "0x1p3")) {
+            for ((candidate, field) in
+                listOf(
+                    filter.copy(value = bad) to "value",
+                    filter.copy(secondValue = bad) to "second_value",
+                )) {
+                val error =
+                    assertIs<Arg.Err>(
+                        validatePivotConfig(
+                            config.copy(filters = listOf(candidate)),
+                            columns,
+                            ERROR_INVALID_ARGUMENTS,
+                        ),
+                    )
+                assertEquals("filters[0].$field must be a finite decimal", error.message())
+            }
+        }
     }
 
     @Test
@@ -642,7 +698,8 @@ class ExploreArgParsersTest {
                     parseWorksheetFilters(
                         objects(
                             """{"column":" region ","op":"members","included_keys":[" east "]}""",
-                            """{"column":" region ","op":"eq","value":" east ","second_value":" west "}""",
+                            """{"column":" region ","op":"eq","value":" east "}""",
+                            """{"column":" amount ","op":"between","value":" 1 ","second_value":" 10 "}""",
                         ),
                         paddedColumns,
                     ),
@@ -651,7 +708,8 @@ class ExploreArgParsersTest {
         assertEquals(" region ", worksheetFilters[0].column)
         assertEquals(setOf(" east "), worksheetFilters[0].includedKeys)
         assertEquals(" east ", worksheetFilters[1].value)
-        assertEquals(" west ", worksheetFilters[1].secondValue)
+        assertEquals(" 1 ", worksheetFilters[2].value)
+        assertEquals(" 10 ", worksheetFilters[2].secondValue)
 
         val dimensions =
             assertIs<Arg.Ok<List<PivotDimension>>>(
@@ -794,20 +852,20 @@ class ExploreArgParsersTest {
 
         val valueOps =
             listOf(
-                "gt" to ValueFilterOp.GreaterThan,
-                "gte" to ValueFilterOp.GreaterThanOrEqual,
-                "lt" to ValueFilterOp.LessThan,
-                "lte" to ValueFilterOp.LessThanOrEqual,
-                "between" to ValueFilterOp.Between,
-                "top" to ValueFilterOp.Top,
-                "bottom" to ValueFilterOp.Bottom,
+                Triple("gt", ValueFilterOp.GreaterThan, """"value":"1""""),
+                Triple("gte", ValueFilterOp.GreaterThanOrEqual, """"value":"1""""),
+                Triple("lt", ValueFilterOp.LessThan, """"value":"1""""),
+                Triple("lte", ValueFilterOp.LessThanOrEqual, """"value":"1""""),
+                Triple("between", ValueFilterOp.Between, """"value":"1","second_value":"9""""),
+                Triple("top", ValueFilterOp.Top, """"count":5"""),
+                Triple("bottom", ValueFilterOp.Bottom, """"count":5"""),
             )
-        for ((raw, expected) in valueOps) {
+        for ((raw, expected, fields) in valueOps) {
             val parsed =
                 assertIs<Arg.Ok<List<PivotFilter>>>(
                     parsePivotFilters(
                         objects(
-                            """{"column":"region","op":"$raw","measure_alias":"m1","value":"1","second_value":"9","count":5}""",
+                            """{"column":"region","op":"$raw","measure_alias":"m1",$fields}""",
                         ),
                         columns,
                     ),
@@ -817,31 +875,119 @@ class ExploreArgParsersTest {
 
         val worksheetOps =
             listOf(
-                "eq" to WorksheetFilterOp.Equals,
-                "ne" to WorksheetFilterOp.NotEquals,
-                "contains" to WorksheetFilterOp.Contains,
-                "starts_with" to WorksheetFilterOp.StartsWith,
-                "ends_with" to WorksheetFilterOp.EndsWith,
-                "gt" to WorksheetFilterOp.GreaterThan,
-                "gte" to WorksheetFilterOp.GreaterThanOrEqual,
-                "lt" to WorksheetFilterOp.LessThan,
-                "lte" to WorksheetFilterOp.LessThanOrEqual,
-                "between" to WorksheetFilterOp.Between,
-                "is_null" to WorksheetFilterOp.IsNull,
-                "is_not_null" to WorksheetFilterOp.IsNotNull,
-                "members" to WorksheetFilterOp.Members,
+                Triple("eq", WorksheetFilterOp.Equals, ""","value":"a""""),
+                Triple("ne", WorksheetFilterOp.NotEquals, ""","value":"a""""),
+                Triple("contains", WorksheetFilterOp.Contains, ""","value":"a""""),
+                Triple("starts_with", WorksheetFilterOp.StartsWith, ""","value":"a""""),
+                Triple("ends_with", WorksheetFilterOp.EndsWith, ""","value":"a""""),
+                Triple("gt", WorksheetFilterOp.GreaterThan, ""","value":"a""""),
+                Triple("gte", WorksheetFilterOp.GreaterThanOrEqual, ""","value":"a""""),
+                Triple("lt", WorksheetFilterOp.LessThan, ""","value":"a""""),
+                Triple("lte", WorksheetFilterOp.LessThanOrEqual, ""","value":"a""""),
+                Triple("between", WorksheetFilterOp.Between, ""","value":"a","second_value":"z""""),
+                Triple("is_null", WorksheetFilterOp.IsNull, ""),
+                Triple("is_not_null", WorksheetFilterOp.IsNotNull, ""),
+                Triple("members", WorksheetFilterOp.Members, ""","included_keys":["a"]"""),
             )
-        for ((raw, expected) in worksheetOps) {
+        for ((raw, expected, fields) in worksheetOps) {
             val parsed =
                 assertIs<Arg.Ok<List<WorksheetFilter>>>(
                     parseWorksheetFilters(
-                        objects(
-                            """{"column":"region","op":"$raw","value":"a","second_value":"z"}""",
-                        ),
+                        objects("""{"column":"region","op":"$raw"$fields}"""),
                         columns,
                     ),
                 )
             assertEquals(expected, parsed.value.single().op)
+        }
+    }
+
+    @Test
+    fun strictPerOpFilterAndNumericBinValidationRejectsSilentNoOps() {
+        for (badSize in listOf("0", "-5", "abc", "NaN", "Infinity")) {
+            val err =
+                assertIs<Arg.Err>(
+                    parseDimensions(
+                        objects("""{"column":"amount","grouping":{"bin_size":"$badSize"}}"""),
+                        columns,
+                        "row_dimensions",
+                    ),
+                )
+            assertEquals(
+                "row_dimensions[0].grouping.bin_size must be a positive number",
+                err.message(),
+            )
+        }
+        for (badStart in listOf("abc", "   ")) {
+            val badBinStart =
+                assertIs<Arg.Err>(
+                    parseDimensions(
+                        objects(
+                            """{"column":"amount","grouping":{"bin_size":"10","bin_start":"$badStart"}}""",
+                        ),
+                        columns,
+                        "row_dimensions",
+                    ),
+                )
+            assertEquals(
+                "row_dimensions[0].grouping.bin_start must be a number",
+                badBinStart.message(),
+            )
+        }
+
+        val formulaOnly =
+            assertIs<Arg.Ok<List<PivotMeasure>>>(
+                parseMeasures(
+                    objects("""{"alias":"avg","formula":"[s] / [c]","label":"Avg"}"""),
+                    columns,
+                ),
+            )
+        assertEquals(MeasureFn.Sum, formulaOnly.value.single().fn)
+        assertEquals("[s] / [c]", formulaOnly.value.single().formula)
+
+        val pivotFilterErrors =
+            listOf(
+                """{"column":"region","op":"members"}""" to "filters[0].included_keys is required",
+                """{"column":"region","op":"members","included_keys":[]}""" to
+                    "filters[0].included_keys must not be empty",
+                """{"column":"region","op":"equals"}""" to "filters[0].value is required",
+                """{"column":"region","op":"top","measure_alias":"m1","count":0}""" to
+                    "filters[0].count must be 1 or more",
+                """{"column":"region","op":"top","measure_alias":"m1","count":-1}""" to
+                    "filters[0].count must be 1 or more",
+                """{"column":"region","op":"top","measure_alias":"m1","value":"1"}""" to
+                    "unknown field 'filters[0].value'",
+                """{"column":"amount","op":"gt","measure_alias":"m1","value":"1","count":5}""" to
+                    "unknown field 'filters[0].count'",
+                """{"column":"amount","op":"between","measure_alias":"m1","value":"1"}""" to
+                    "filters[0].second_value is required",
+            )
+        for ((filterJson, expectedMessage) in pivotFilterErrors) {
+            assertEquals(
+                expectedMessage,
+                assertIs<Arg.Err>(parsePivotFilters(objects(filterJson), columns)).message(),
+            )
+        }
+
+        val worksheetFilterErrors =
+            listOf(
+                """{"column":"region","op":"members","value":"east"}""" to
+                    "unknown field 'filters[0].value'",
+                """{"column":"region","op":"members"}""" to "filters[0].included_keys is required",
+                """{"column":"region","op":"members","included_keys":[]}""" to
+                    "filters[0].included_keys must not be empty",
+                """{"column":"amount","op":"between","value":"5"}""" to
+                    "filters[0].second_value is required",
+                """{"column":"amount","op":"is_null","value":"5"}""" to
+                    "unknown field 'filters[0].value'",
+                """{"column":"region","op":"eq","value":"east","second_value":"west"}""" to
+                    "unknown field 'filters[0].second_value'",
+                """{"column":"region","op":"eq"}""" to "filters[0].value is required",
+            )
+        for ((filterJson, expectedMessage) in worksheetFilterErrors) {
+            assertEquals(
+                expectedMessage,
+                assertIs<Arg.Err>(parseWorksheetFilters(objects(filterJson), columns)).message(),
+            )
         }
     }
 }

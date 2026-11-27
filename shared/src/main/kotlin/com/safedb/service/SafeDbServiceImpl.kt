@@ -1,6 +1,7 @@
 package com.safedb.service
 
 import com.safedb.adapter.Adapter
+import com.safedb.adapter.formatQueryExecutionError
 import com.safedb.explore.ExploreRecipe
 import com.safedb.model.CompiledQuery
 import com.safedb.model.ConnectionDef
@@ -339,7 +340,16 @@ internal constructor(
 
     private fun persistConnection(def: ConnectionDef, password: String?) {
         def.validate().getOrThrow()
-        val previous = configStore.get(def.id)
+        val existing = configStore.list()
+        val previous = existing.firstOrNull { it.id == def.id }
+        val normalizedName = def.name.trim()
+        if (
+            existing.any {
+                it.id != def.id && it.name.trim().equals(normalizedName, ignoreCase = true)
+            }
+        ) {
+            throw IllegalArgumentException("A connection named '$normalizedName' already exists")
+        }
         if (
             previous != null &&
                 previous.credentialFingerprint() != def.credentialFingerprint() &&
@@ -432,7 +442,7 @@ internal constructor(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                Outcome.err(error.message ?: error.toString())
+                Outcome.err(formatQueryExecutionError(error, timeoutMs))
             }
     }
 }

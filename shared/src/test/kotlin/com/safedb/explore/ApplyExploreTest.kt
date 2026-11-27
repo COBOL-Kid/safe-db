@@ -243,6 +243,51 @@ class ApplyExploreTest {
     }
 
     @Test
+    fun pivotSumSkipsNonFiniteNumbersInBothRepresentations() {
+        val values = listOf(Double.NEGATIVE_INFINITY, 1.5, Double.POSITIVE_INFINITY, Double.NaN)
+        val sample =
+            QueryResult.fromRows(
+                listOf(
+                    ResultColumn("category", "varchar"),
+                    ResultColumn("floating", "float8"),
+                    ResultColumn("decimal", "numeric"),
+                ),
+                values.map {
+                    listOf(
+                        ResultCell.text("A"),
+                        ResultCell.float(it),
+                        ResultCell.text(it.toString()),
+                    )
+                },
+            )
+
+        val preview =
+            applyExplore(
+                sample,
+                ExploreConfig(
+                    rowDimensions = listOf(PivotDimension("category")),
+                    measures =
+                        listOf(
+                            PivotMeasure("floating_sum", MeasureFn.Sum, "floating", "Float sum"),
+                            PivotMeasure("decimal_sum", MeasureFn.Sum, "decimal", "Decimal sum"),
+                        ),
+                ),
+            )
+
+        assertEquals(
+            listOf(ResultCell.text("A"), ResultCell.float(1.5), ResultCell.float(1.5)),
+            preview.result.rows.first(),
+        )
+        assertEquals(
+            setOf(
+                "Measure 'Float sum' skipped 3 non-numeric cells",
+                "Measure 'Decimal sum' skipped 3 non-numeric cells",
+            ),
+            preview.warnings.toSet(),
+        )
+    }
+
+    @Test
     fun emptySamplesStillExposeConfiguredColumns() {
         val preview =
             applyExplore(

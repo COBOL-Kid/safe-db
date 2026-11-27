@@ -662,9 +662,114 @@ class ParseConnectionStringTest {
                 parseConnectionString("//db.example.com:5432/app")
             }
         assertEquals(
-            "This connection string format is not recognized. Try the guided setup instead.",
+            "This connection string format is not recognized. Enter connection details below, or paste a PostgreSQL, MySQL, SQL Server, Oracle, or Db2 URL.",
             error.message,
         )
+    }
+
+    @Test
+    fun parsesSqlServerAndMssqlUriSchemes() {
+        val parsed =
+            parseConnectionString("sqlserver://sa:secret@db.example.com:14333/app_db?encrypt=true")
+        assertEquals(Dialect.Mssql, parsed.dialect)
+        assertEquals("db.example.com", parsed.host)
+        assertEquals(14333, parsed.port)
+        assertEquals("app_db", parsed.database)
+        assertEquals("sa", parsed.username)
+        assertEquals("secret", parsed.password)
+        assertEquals(
+            "sqlserver://sa@db.example.com:14333/app_db?encrypt=true",
+            parsed.sanitizedInput,
+        )
+
+        val mssql = parseConnectionString("mssql://reader:pw@localhost/reports")
+        assertEquals(Dialect.Mssql, mssql.dialect)
+        assertEquals(1433, mssql.port)
+        assertEquals("reports", mssql.database)
+    }
+
+    @Test
+    fun parsesSqlServerUriQueryDatabaseAndPathPrecedence() {
+        val queryDb =
+            parseConnectionString(
+                "sqlserver://sa:secret@db.example.com:1433?database=app_db&encrypt=true",
+            )
+        assertEquals("app_db", queryDb.database)
+        assertEquals(emptyList(), queryDb.warnings)
+
+        val queryDbName =
+            parseConnectionString("sqlserver://sa:secret@db.example.com:1433?databaseName=app_db")
+        assertEquals("app_db", queryDbName.database)
+        assertEquals(emptyList(), queryDbName.warnings)
+
+        val emptyDatabaseFallback =
+            parseConnectionString(
+                "sqlserver://sa:secret@db.example.com:1433?database=&databaseName=app_db",
+            )
+        assertEquals("app_db", emptyDatabaseFallback.database)
+        assertTrue(emptyDatabaseFallback.warnings.any { "database" in it })
+
+        val repeatedBlankThenValueDatabase =
+            parseConnectionString(
+                "sqlserver://sa:secret@db.example.com:1433?database=&database=app_db",
+            )
+        assertEquals("app_db", repeatedBlankThenValueDatabase.database)
+        assertEquals(emptyList(), repeatedBlankThenValueDatabase.warnings)
+    }
+
+    @Test
+    fun warnsOnDuplicateOrConflictingSqlServerUriDatabaseParameters() {
+        val conflicting =
+            parseConnectionString(
+                "sqlserver://sa:pw@db.example.com/app?password=leak&database=other",
+            )
+        assertEquals("app", conflicting.database)
+        assertTrue(conflicting.warnings.any { "password" in it })
+        assertTrue(conflicting.warnings.any { "database" in it })
+        assertEquals("sqlserver://sa@db.example.com/app?database=other", conflicting.sanitizedInput)
+
+        val duplicateQueryDatabase =
+            parseConnectionString(
+                "sqlserver://sa:secret@db.example.com:1433?database=app_db&databaseName=other_db",
+            )
+        assertEquals("app_db", duplicateQueryDatabase.database)
+        assertTrue(duplicateQueryDatabase.warnings.any { "databaseName" in it })
+
+        val repeatedSameDatabaseKey =
+            parseConnectionString(
+                "sqlserver://sa:secret@db.example.com:1433?database=app_db&database=other_db",
+            )
+        assertEquals("app_db", repeatedSameDatabaseKey.database)
+        assertTrue(
+            repeatedSameDatabaseKey.warnings.any {
+                "database" in it && "appeared more than once" in it
+            },
+        )
+
+        val repeatedDatabaseNameKey =
+            parseConnectionString(
+                "sqlserver://sa:secret@db.example.com:1433?databaseName=app_db&databaseName=other_db",
+            )
+        assertEquals("app_db", repeatedDatabaseNameKey.database)
+        assertEquals(
+            listOf(
+                "Driver parameter 'databasename' appeared more than once; the first value was imported.",
+            ),
+            repeatedDatabaseNameKey.warnings,
+        )
+    }
+
+    @Test
+    fun db2JdbcImportsUserAndPasswordWithoutWarningAndSanitizesPassword() {
+        val parsed =
+            parseConnectionString(
+                "jdbc:db2://127.0.0.1:50000/SAFEDB:user=db2inst1;password=secret;",
+            )
+        assertEquals(Dialect.Db2, parsed.dialect)
+        assertEquals("db2inst1", parsed.username)
+        assertEquals("secret", parsed.password)
+        assertEquals(emptyList(), parsed.warnings)
+        assertEquals("jdbc:db2://127.0.0.1:50000/SAFEDB:user=db2inst1;", parsed.sanitizedInput)
     }
 
     @Test

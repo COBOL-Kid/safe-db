@@ -32,10 +32,16 @@ import com.safedb.explore.WorksheetSort
 import com.safedb.explore.WorksheetValueRef
 import com.safedb.explore.WorksheetWindowFn
 import com.safedb.explore.displayColumnLabel
+import com.safedb.explore.displayColumnLabels
 import com.safedb.explore.evaluatePivotFormula
 import com.safedb.explore.formatExploreNumber
+import com.safedb.explore.precedingWorksheetCalculations
+import com.safedb.explore.worksheetFormulaTokens
+import com.safedb.explore.worksheetFormulaValues
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
+import com.safedb.model.ResultColumn
+import com.safedb.model.TableRef
 import com.safedb.model.classifyColumn
 import com.safedb.model.isNumeric
 import com.safedb.model.isTemporal
@@ -52,6 +58,7 @@ internal fun WorksheetCalculationEditor(
     existing: WorksheetCalculation?,
     onSave: (WorksheetCalculation, WorksheetSort?) -> Unit,
     onCancel: () -> Unit,
+    tables: List<TableRef> = emptyList(),
 ) {
     var kind by remember { mutableStateOf(calculationKind(existing)) }
     var label by remember { mutableStateOf(existing?.label.orEmpty()) }
@@ -93,6 +100,9 @@ internal fun WorksheetCalculationEditor(
     }
     val id =
         remember(existing?.id) { existing?.id ?: "calc_${UUID.randomUUID().toString().take(8)}" }
+    val columnLabels =
+        remember(sample.columns, tables) { displayColumnLabels(sample.columns, tables) }
+    fun columnLabel(raw: String): String = columnLabels[raw] ?: displayColumnLabel(raw, tables)
     val numericColumns = sample.columns.filter { isNumericType(it.dataType) }
     val sourceOptions =
         when (kind) {
@@ -124,32 +134,45 @@ internal fun WorksheetCalculationEditor(
         groupColumn = reconciledSelection.groupColumn
         grain = reconciledSelection.grain
     }
-    val groupCalculations =
-        config.calculations.filter {
-            it is WorksheetCalculation.Aggregate || it is WorksheetCalculation.GroupFormula
+    val isFormulaKind = kind == CalculationKind.RowFormula || kind == CalculationKind.GroupFormula
+    val (formulaColumns, priorFormulaCalcs) =
+        if (isFormulaKind) {
+            val precedingCalculations =
+                precedingWorksheetCalculations(config.calculations, existing?.id)
+            if (kind == CalculationKind.GroupFormula) {
+                emptyList<ResultColumn>() to
+                    precedingCalculations.filter {
+                        it is WorksheetCalculation.Aggregate ||
+                            it is WorksheetCalculation.GroupFormula
+                    }
+            } else {
+                sample.columns to
+                    precedingCalculations.filterIsInstance<WorksheetCalculation.RowFormula>()
+            }
+        } else {
+            emptyList<ResultColumn>() to emptyList()
         }
     val formulaTokens =
-        if (kind == CalculationKind.GroupFormula) {
-            groupCalculations.filterNot { it.id == id }.map { it.id to it.label }
-        } else {
-            sample.columns.map { it.name to displayColumnLabel(it.name) } +
-                config.calculations
-                    .filterIsInstance<WorksheetCalculation.RowFormula>()
-                    .filterNot { it.id == id }
-                    .map { it.id to it.label }
-        }
+        if (isFormulaKind) worksheetFormulaTokens(formulaColumns, priorFormulaCalcs, tables)
+        else emptyList()
     val formulaValidation =
-        if (
-            formula.isBlank() ||
-                kind !in setOf(CalculationKind.RowFormula, CalculationKind.GroupFormula)
-        ) {
-            null
-        } else {
+        if (isFormulaKind && formula.isNotBlank()) {
+            val formulaValidationMap =
+                worksheetFormulaValues(
+                    sampleColumns = formulaColumns,
+                    sourceValue = { BigDecimal.ONE },
+                    priorCalculations = priorFormulaCalcs,
+                    calculationValue = { BigDecimal.ONE },
+                    tables = tables,
+                )
             evaluatePivotFormula(
                     formula,
-                    formulaTokens.associate { it.first to BigDecimal.ONE },
+                    formulaValidationMap,
+                    referenceLabel = "field",
                 )
                 .error
+        } else {
+            null
         }
     val orderedWindow =
         windowFn in
@@ -239,7 +262,7 @@ internal fun WorksheetCalculationEditor(
                     "Value",
                     sourceOptions,
                     source,
-                    { if (it.isBlank()) "Rows" else displayColumnLabel(it) },
+                    { if (it.isBlank()) "Rows" else columnLabel(it) },
                 ) {
                     source = it
                 }
@@ -259,7 +282,7 @@ internal fun WorksheetCalculationEditor(
                     source,
                     { token ->
                         config.calculations.firstOrNull { it.id == token }?.label
-                            ?: displayColumnLabel(token)
+                            ?: columnLabel(token)
                     },
                 ) {
                     source = it
@@ -300,7 +323,7 @@ internal fun WorksheetCalculationEditor(
                 "Group level",
                 listOf("") + config.groups.map { it.column },
                 groupColumn,
-                { if (it.isBlank()) "All / grand total" else displayColumnLabel(it) },
+                { if (it.isBlank()) "All / grand total" else columnLabel(it) },
             ) {
                 groupColumn = it
             }
@@ -455,11 +478,19 @@ internal fun cycleSort(sorts: List<WorksheetSort>, target: WorksheetValueRef): L
     }
 }
 
-internal fun calculationSummary(calculation: WorksheetCalculation): String =
+internal fun calculationSummary(
+    calculation: WorksheetCalculation,
+    columnLabels: Map<String, String> = emptyMap(),
+    tables: List<TableRef> = emptyList(),
+): String =
     when (calculation) {
         is WorksheetCalculation.RowFormula -> calculation.formula
-        is WorksheetCalculation.Aggregate ->
-            "${calculation.fn.name.toDisplayWords()} · ${calculation.sourceColumn?.let(::displayColumnLabel) ?: "rows"}"
+        is WorksheetCalculation.Aggregate -> {
+            val source =
+                calculation.sourceColumn?.let { columnLabels[it] ?: displayColumnLabel(it, tables) }
+                    ?: "rows"
+            "${calculation.fn.name.toDisplayWords()} · $source"
+        }
         is WorksheetCalculation.GroupFormula -> calculation.formula
         is WorksheetCalculation.Window ->
             "${calculation.fn.name.toDisplayWords()} · ${calculation.grain.name.toDisplayWords()}"

@@ -25,9 +25,11 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.FrameWindowScope
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import com.safedb.model.ThemePalette
 import com.safedb.query.sql.SqlParseResult
 import com.safedb.secrets.SecretsManager
 import com.safedb.service.SafeDbService
@@ -40,22 +42,55 @@ import com.safedb.viewmodel.AppViewModel
 import java.awt.Dimension
 import java.awt.event.WindowAdapter
 import java.awt.event.WindowEvent
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
-@Composable
-fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window) {
+private fun windowActivityListener(
+    onChange: () -> Unit,
+    onMainWindowClose: (() -> Unit)? = null,
+): WindowAdapter =
+    object : WindowAdapter() {
+        override fun windowActivated(e: WindowEvent?) {
+            onChange()
+        }
+
+        override fun windowDeactivated(e: WindowEvent?) {
+            onChange()
+        }
+
+        override fun windowIconified(e: WindowEvent?) {
+            onChange()
+        }
+
+        override fun windowClosing(e: WindowEvent?) {
+            onMainWindowClose?.invoke()
+        }
+
+        override fun windowClosed(e: WindowEvent?) {
+            onMainWindowClose?.invoke()
+        }
+    }
+
+fun runApp(appState: AppState, service: SafeDbService) = application {
     val viewModel = remember(appState, service) { AppViewModel(service) }
     DisposableEffect(viewModel) { onDispose(viewModel::close) }
-    // Read through a ref: listeners attached once must see the live Explore window.
-    val exploreWindowRef = remember { mutableStateOf<java.awt.Window?>(null) }
+
+    val mainWindowRef = remember { AtomicReference<java.awt.Window?>(null) }
+    val exploreWindowRef = remember { AtomicReference<java.awt.Window?>(null) }
     val republishWindowActivity = {
-        viewModel.setWindowActive(mainWindow.isActive || exploreWindowRef.value?.isActive == true)
+        viewModel.setWindowActive(
+            mainWindowRef.get()?.isActive == true || exploreWindowRef.get()?.isActive == true,
+        )
     }
-    DisposableEffect(viewModel, mainWindow) {
-        republishWindowActivity()
-        val listener = windowActivityListener(republishWindowActivity)
-        mainWindow.addWindowListener(listener)
-        onDispose { mainWindow.removeWindowListener(listener) }
+    val exiting = remember { AtomicBoolean(false) }
+    val closeAll = {
+        if (exiting.compareAndSet(false, true)) {
+            viewModel.closeExplore()
+            runCatching { SecretsManager.lockCredentials() }
+            exitApplication()
+        }
     }
+
     val settings by viewModel.settings.settings.collectAsState()
     val exploreViewModel by viewModel.explore.collectAsState()
     val pendingRecipeRun by viewModel.pendingRecipeRun.collectAsState()
@@ -64,7 +99,6 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
     val activeConnectionId by appState.activeConnectionId.collectAsState()
     val useDarkTheme = settings.isDark()
     val themePalette = settings.palette()
-    var paletteOpen by remember { mutableStateOf(false) }
     // Derived on text so cursor/selection changes do not recompose the root App composable.
     val sqlText by
         remember(viewModel.sqlEditor) { derivedStateOf { viewModel.sqlEditor.text.text } }
@@ -75,6 +109,11 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
             sqlText = sqlText,
             connection = connections.firstOrNull { it.id == activeConnectionId },
             schemaViewModel = viewModel.schema,
+        )
+    val windowState =
+        rememberWindowState(
+            width = APP_DEFAULT_WINDOW_WIDTH_DP.dp,
+            height = APP_DEFAULT_WINDOW_HEIGHT_DP.dp,
         )
     val exploreWindowState = rememberWindowState(width = 1120.dp, height = 760.dp)
 
@@ -108,148 +147,8 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
         viewModel.onQuerySettled(activeConnectionId, connections)
     }
 
-    SafeDbTheme(isDark = useDarkTheme, palette = themePalette) {
-        val bgColor = MaterialTheme.colorScheme.background
-        SideEffect { mainWindow.background = java.awt.Color(bgColor.toArgb()) }
-        CompositionLocalProvider(LocalAppWindow provides mainWindow) {
-            Surface(
-                modifier =
-                    Modifier.fillMaxSize().onPreviewKeyEvent { event ->
-                        if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                        val shortcut =
-                            event.key == Key.K && (event.isCtrlPressed || event.isMetaPressed)
-                        if (shortcut) {
-                            paletteOpen = true
-                            true
-                        } else {
-                            false
-                        }
-                    },
-                color = MaterialTheme.colorScheme.background,
-            ) {
-                AppShell(
-                    appState = appState,
-                    viewModel = viewModel,
-                    paletteOpen = paletteOpen,
-                    onPaletteOpenChange = { paletteOpen = it },
-                    sqlParseResult = sqlParseResult,
-                )
-            }
-        }
-
-        exploreViewModel?.let { explore ->
-            val exploreOrigin by viewModel.exploreOrigin.collectAsState()
-            val sqlSpec = (sqlParseResult as? SqlParseResult.Success)?.spec
-            val originContext =
-                viewModel.exploreOriginContext(
-                    activeConnectionId = activeConnectionId,
-                    sqlSpec = sqlSpec,
-                    connections = connections,
-                    origin = exploreOrigin,
-                )
-            Window(
-                onCloseRequest = viewModel::closeExplore,
-                title = "Explore - Safe-DB",
-                icon = rememberAppWindowIcon(),
-                state = exploreWindowState,
-            ) {
-                LaunchedEffect(window) { window.minimumSize = Dimension(920, 560) }
-                LaunchedEffect(window, explore) {
-                    if (exploreWindowState.isMinimized) {
-                        exploreWindowState.isMinimized = false
-                        withFrameNanos {}
-                    }
-                    window.toFront()
-                    window.requestFocus()
-                }
-                DisposableEffect(viewModel, window) {
-                    val exploreWindow = window
-                    exploreWindowRef.value = exploreWindow
-                    republishWindowActivity()
-                    val listener = windowActivityListener(republishWindowActivity)
-                    exploreWindow.addWindowListener(listener)
-                    onDispose {
-                        exploreWindow.removeWindowListener(listener)
-                        if (exploreWindowRef.value === exploreWindow) {
-                            exploreWindowRef.value = null
-                        }
-                        // Closing Explore while main is inactive must pause probes.
-                        republishWindowActivity()
-                    }
-                }
-                CompositionLocalProvider(LocalAppWindow provides window) {
-                    SafeDbTheme(isDark = useDarkTheme, palette = themePalette) {
-                        val exploreBgColor = MaterialTheme.colorScheme.background
-                        SideEffect { window.background = java.awt.Color(exploreBgColor.toArgb()) }
-                        Surface(color = MaterialTheme.colorScheme.background) {
-                            ExploreWindowContent(
-                                viewModel = explore,
-                                currentSpec = originContext.currentSpec,
-                                activeConnectionId = activeConnectionId,
-                                latestSampleRunId = originContext.latestSampleRunId,
-                                onClose = viewModel::closeExplore,
-                                origin = exploreOrigin,
-                                onRefreshSample =
-                                    if (originContext.sampleRefreshEnabled) {
-                                        {
-                                            viewModel.refreshActiveExploreSample(
-                                                activeConnectionId =
-                                                    appState.activeConnectionId.value,
-                                                sqlSpec = sqlSpec,
-                                                connections = connections,
-                                            )
-                                        }
-                                    } else {
-                                        null
-                                    },
-                                recipesViewModel = viewModel.recipes,
-                                connections = connections,
-                                onRunRecipe = { recipe, connection ->
-                                    viewModel.runRecipeFromExplore(
-                                        connection = connection,
-                                        recipe = recipe,
-                                        onSelectConnection = { selection ->
-                                            appState.setActiveConnection(connection.id, selection)
-                                        },
-                                        onRestored = { appState.navigate(AppRoute.Builder) },
-                                    )
-                                },
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-private fun windowActivityListener(onChange: () -> Unit): WindowAdapter =
-    object : WindowAdapter() {
-        override fun windowActivated(e: WindowEvent?) {
-            onChange()
-        }
-
-        override fun windowDeactivated(e: WindowEvent?) {
-            onChange()
-        }
-
-        override fun windowIconified(e: WindowEvent?) {
-            onChange()
-        }
-    }
-
-fun runApp(appState: AppState, service: SafeDbService) = application {
-    val windowState =
-        rememberWindowState(
-            width = APP_DEFAULT_WINDOW_WIDTH_DP.dp,
-            height = APP_DEFAULT_WINDOW_HEIGHT_DP.dp,
-        )
-
     Window(
-        onCloseRequest = {
-            runCatching { SecretsManager.lockCredentials() }
-            exitApplication()
-        },
+        onCloseRequest = closeAll,
         title = "Safe-DB",
         icon = rememberAppWindowIcon(),
         state = windowState,
@@ -257,7 +156,144 @@ fun runApp(appState: AppState, service: SafeDbService) = application {
         LaunchedEffect(window) {
             window.minimumSize = Dimension(APP_MIN_WINDOW_WIDTH_PX, APP_MIN_WINDOW_HEIGHT_PX)
         }
-        App(appState, service, window)
+        var paletteOpen by remember { mutableStateOf(false) }
+        SafeDbWindowShell(
+            viewModel = viewModel,
+            windowRef = mainWindowRef,
+            republishWindowActivity = republishWindowActivity,
+            useDarkTheme = useDarkTheme,
+            themePalette = themePalette,
+            onMainWindowClose = closeAll,
+            surfaceModifier =
+                Modifier.fillMaxSize().onPreviewKeyEvent { event ->
+                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    val shortcut =
+                        event.key == Key.K && (event.isCtrlPressed || event.isMetaPressed)
+                    if (shortcut) {
+                        paletteOpen = true
+                        true
+                    } else {
+                        false
+                    }
+                },
+        ) {
+            AppShell(
+                appState = appState,
+                viewModel = viewModel,
+                paletteOpen = paletteOpen,
+                onPaletteOpenChange = { paletteOpen = it },
+                sqlParseResult = sqlParseResult,
+            )
+        }
+    }
+
+    exploreViewModel?.let { explore ->
+        val exploreOrigin by viewModel.exploreOrigin.collectAsState()
+        val sqlSpec = (sqlParseResult as? SqlParseResult.Success)?.spec
+        val originContext =
+            viewModel.exploreOriginContext(
+                activeConnectionId = activeConnectionId,
+                sqlSpec = sqlSpec,
+                connections = connections,
+                origin = exploreOrigin,
+            )
+        Window(
+            onCloseRequest = viewModel::closeExplore,
+            title = "Explore - Safe-DB",
+            icon = rememberAppWindowIcon(),
+            state = exploreWindowState,
+        ) {
+            LaunchedEffect(window) { window.minimumSize = Dimension(920, 560) }
+            LaunchedEffect(window, explore) {
+                if (exploreWindowState.isMinimized) {
+                    exploreWindowState.isMinimized = false
+                    withFrameNanos {}
+                }
+                window.toFront()
+                window.requestFocus()
+            }
+            SafeDbWindowShell(
+                viewModel = viewModel,
+                windowRef = exploreWindowRef,
+                republishWindowActivity = republishWindowActivity,
+                useDarkTheme = useDarkTheme,
+                themePalette = themePalette,
+                // Closing Explore while main is inactive must pause probes.
+                republishOnDispose = true,
+            ) {
+                ExploreWindowContent(
+                    viewModel = explore,
+                    currentSpec = originContext.currentSpec,
+                    activeConnectionId = activeConnectionId,
+                    latestSampleRunId = originContext.latestSampleRunId,
+                    onClose = viewModel::closeExplore,
+                    origin = exploreOrigin,
+                    onRefreshSample =
+                        if (originContext.sampleRefreshEnabled) {
+                            {
+                                viewModel.refreshActiveExploreSample(
+                                    activeConnectionId = appState.activeConnectionId.value,
+                                    sqlSpec = sqlSpec,
+                                    connections = connections,
+                                )
+                            }
+                        } else {
+                            null
+                        },
+                    recipesViewModel = viewModel.recipes,
+                    connections = connections,
+                    onRunRecipe = { recipe, connection ->
+                        viewModel.runRecipeFromExplore(
+                            connection = connection,
+                            recipe = recipe,
+                            onSelectConnection = { selection ->
+                                appState.setActiveConnection(connection.id, selection)
+                            },
+                            onRestored = { appState.navigate(AppRoute.Builder) },
+                        )
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FrameWindowScope.SafeDbWindowShell(
+    viewModel: AppViewModel,
+    windowRef: AtomicReference<java.awt.Window?>,
+    republishWindowActivity: () -> Unit,
+    useDarkTheme: Boolean,
+    themePalette: ThemePalette,
+    onMainWindowClose: (() -> Unit)? = null,
+    republishOnDispose: Boolean = false,
+    surfaceModifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    DisposableEffect(viewModel, window) {
+        val activeWindow = window
+        windowRef.set(activeWindow)
+        republishWindowActivity()
+        val listener =
+            windowActivityListener(
+                onChange = republishWindowActivity,
+                onMainWindowClose = onMainWindowClose,
+            )
+        activeWindow.addWindowListener(listener)
+        onDispose {
+            activeWindow.removeWindowListener(listener)
+            windowRef.compareAndSet(activeWindow, null)
+            if (republishOnDispose) {
+                republishWindowActivity()
+            }
+        }
+    }
+    SafeDbTheme(isDark = useDarkTheme, palette = themePalette) {
+        val bgColor = MaterialTheme.colorScheme.background
+        SideEffect { window.background = java.awt.Color(bgColor.toArgb()) }
+        CompositionLocalProvider(LocalAppWindow provides window) {
+            Surface(modifier = surfaceModifier, color = bgColor, content = content)
+        }
     }
 }
 

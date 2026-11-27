@@ -49,6 +49,7 @@ Commands:
                              (N is required before X Y, e.g. scroll down 5 400 500).
   type <text>                Type text into the focused window.
   key <combo>...             Press key or combo (e.g. ctrl+a, Return, Tab, Escape).
+  resize W H [title]         Resize the matching window (default title Safe-DB) to W x H pixels.
   logs [N]                   Show last N lines of build/agent-gui/app.log (default 50).
   reset                      Stop everything and wipe build/agent-gui/data and shots (overrides outside those paths are kept).
   smoke [--require-db]       Run an isolated headless Xvfb + Ctrl+K smoke test (seeds Smoke MySQL when reachable).
@@ -457,6 +458,24 @@ cmd_focus() {
   echo "Focused $wid ($title)"
 }
 
+cmd_resize() {
+  local width="${1:?resize requires WIDTH}" height="${2:?resize requires HEIGHT}"
+  local pattern="${3:-Safe-DB}"
+  if [[ ! "$width" =~ ^[1-9][0-9]*$ || ! "$height" =~ ^[1-9][0-9]*$ ]]; then
+    echo "resize WIDTH and HEIGHT must be positive integers." >&2
+    exit 2
+  fi
+  require_display
+  local wid
+  wid="$(pick_window_match "$pattern" --onlyvisible)"
+  if [[ -z "$wid" ]]; then
+    echo "No window matching '$pattern' found." >&2
+    exit 1
+  fi
+  xdotool windowsize "$wid" "$width" "$height"
+  echo "Resized $wid to ${width}x${height}"
+}
+
 cmd_click() {
   require_display
   local x="${1:?click requires X}"
@@ -754,8 +773,6 @@ smoke_palette_navigate() {
   sleep 0.2
   cmd_key ctrl+k
   sleep 0.5
-  cmd_key Tab
-  sleep 0.2
   cmd_type "$query"
   sleep 0.3
   cmd_key Return
@@ -887,6 +904,7 @@ main() {
     scroll) cmd_scroll "$@" ;;
     type) cmd_type "$@" ;;
     key) cmd_key "$@" ;;
+    resize) cmd_resize "$@" ;;
     logs) cmd_logs "$@" ;;
     reset) cmd_reset "$@" ;;
     smoke) cmd_smoke "$@" ;;

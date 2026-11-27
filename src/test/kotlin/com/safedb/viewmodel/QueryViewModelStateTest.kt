@@ -447,8 +447,29 @@ class QueryViewModelStateTest {
         viewModel.addTable(table("orders", "id"))
         viewModel.addTable(table("customers", "id"))
 
-        assertEquals(0f, viewModel.canvasTables[0].y)
-        assertEquals(30f, viewModel.canvasTables[1].y)
+        assertEquals(40f, viewModel.canvasTables[0].x)
+        assertEquals(24f, viewModel.canvasTables[0].y)
+        assertEquals(350f, viewModel.canvasTables[1].x)
+        assertEquals(24f, viewModel.canvasTables[1].y)
+    }
+
+    @Test
+    fun nextCanvasTablePositionWrapsGridRowsAndSkipsOccupiedSlots() {
+        val sample = table("orders", "id")
+        val rowZero =
+            listOf(
+                CanvasTable(sample, "t0", 40f, 24f),
+                CanvasTable(sample, "t1", 350f, 24f),
+                CanvasTable(sample, "t2", 660f, 24f),
+            )
+        assertEquals(40f to 284f, nextCanvasTablePosition(rowZero))
+
+        // Near-collision within 40px still treats slot 0 as occupied; freeing slot 0 reuses it.
+        val nearSlotZero = listOf(CanvasTable(sample, "t0", 70f, 50f))
+        assertEquals(350f to 24f, nextCanvasTablePosition(nearSlotZero))
+
+        val movedFar = listOf(CanvasTable(sample, "t0", 500f, 500f))
+        assertEquals(40f to 24f, nextCanvasTablePosition(movedFar))
     }
 
     @Test
@@ -482,7 +503,7 @@ class QueryViewModelStateTest {
         viewModel.addTable(table("customers", "id"))
 
         assertEquals(40f, viewModel.canvasTables.single().x)
-        assertEquals(0f, viewModel.canvasTables.single().y)
+        assertEquals(24f, viewModel.canvasTables.single().y)
         assertEquals(1f, viewModel.canvasViewport.zoom)
         assertEquals(Offset.Zero, viewModel.canvasViewport.pan)
     }
